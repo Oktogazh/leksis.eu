@@ -1,0 +1,67 @@
+# Single-VPS deployment for Glosis.
+# One host runs four containers on a private network: Caddy (the only one
+# exposed to the internet), the static web app, the Hono API, and ArangoDB.
+# ArangoDB is NOT published to a host port — it is reachable only from the
+# other containers as http://arangodb:8529.
+#
+#   cp .env.example .env   # then set ARANGO_ROOT_PASSWORD
+#   docker compose up -d --build
+#   docker compose exec api npm run db:init   # once, to create collections
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # ":80" = plain HTTP (default). Set to "glosis.eu" once DNS points here
+      # and Caddy will obtain a Let's Encrypt cert automatically.
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+      - api
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    expose:
+      - "8080"
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    expose:
+      - "8080"
+    environment:
+      PORT: "8080"
+      NODE_ENV: production
+      ARANGO_URL: http://arangodb:8529
+      ARANGO_DB: ${ARANGO_DB:-glosis}
+      ARANGO_USER: root
+      ARANGO_PASSWORD: ${ARANGO_ROOT_PASSWORD:?set ARANGO_ROOT_PASSWORD in .env}
+      WEB_ORIGIN: ${WEB_ORIGIN:-*}
+    depends_on:
+      - arangodb
+
+  arangodb:
+    image: arangodb/arangodb:3.12
+    restart: unless-stopped
+    environment:
+      ARANGO_ROOT_PASSWORD: ${ARANGO_ROOT_PASSWORD:?set ARANGO_ROOT_PASSWORD in .env}
+    volumes:
+      - arango_data:/var/lib/arangodb3
+
+volumes:
+  caddy_data:
+  caddy_config:
+  arango_data:

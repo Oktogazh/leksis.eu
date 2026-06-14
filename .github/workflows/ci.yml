@@ -1,0 +1,50 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # Type-check, lint and build on every push, PR and tag.
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run build
+
+  # Deploy to the VPS ONLY when a version tag (v*) is pushed. CI SSHes in,
+  # checks out the tag, and rebuilds the compose stack.
+  deploy:
+    needs: verify
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    concurrency: deploy-production
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_SSH_PORT || 22 }}
+          envs: GITHUB_REF_NAME
+          script: |
+            set -euo pipefail
+            cd "${VPS_APP_DIR:-/opt/glosis}"
+            git fetch --tags --prune
+            git checkout --force "${GITHUB_REF_NAME}"
+            docker compose pull arangodb caddy
+            docker compose up -d --build
+            docker compose exec -T api npm run db:init
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}

@@ -1,0 +1,28 @@
+{
+  "name": "glosis",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Glosis — distributed crowdsourced multilingual dictionary (glosis.eu)",
+  "packageManager": "npm@10.8.1",
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "db:init": "npm run db:init --workspace @glosis/api"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.9.1",
+    "eslint": "^9.9.1",
+    "turbo": "^2.1.1",
+    "typescript": "^5.5.4",
+    "typescript-eslint": "^8.4.0"
+  }
+}

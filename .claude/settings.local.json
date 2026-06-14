@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//usr/local/bin/**)",
+      "Read(//Users/alan/.volta/**)",
+      "Bash(command -v fly flyctl)",
+      "Read(//Users/alan/.nvm/versions/node/v22.5.1/bin/**)",
+      "Read(//Users/alan/.nvm/versions/node/**)",
+      "Read(//opt/homebrew/bin/**)",
+      "Bash(git rm *)",
+      "Bash(rm -f apps/api/fly.toml apps/web/fly.toml)",
+      "Bash(cd \"/Users/alan/.claude/projects/-Users-alan-Library-CloudStorage-ProtonDrive-alan-kersaudy-proton-me-folder-Repos-glosis-eu/memory/\")",
+      "Bash(cat MEMORY.md)",
+      "Bash(command -v docker)",
+      "Bash(ARANGO_ROOT_PASSWORD=test docker compose config)"
+    ]
+  }
+}

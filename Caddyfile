@@ -1,0 +1,13 @@
+# Reverse proxy. SITE_ADDRESS is ":80" (HTTP) by default; set it to "glosis.eu"
+# (via the env in docker-compose) once DNS points at this server and Caddy will
+# provision HTTPS automatically — no other change needed.
+{$SITE_ADDRESS} {
+	# API lives under /api/* — handle_path strips the prefix, so the browser's
+	# /api/health reaches the Hono app as /health. Same origin = no CORS.
+	handle_path /api/* {
+		reverse_proxy api:8080
+	}
+
+	# Everything else is the static SPA.
+	reverse_proxy web:8080
+}

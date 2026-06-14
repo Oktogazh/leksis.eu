@@ -1,0 +1,24 @@
+{
+  "name": "@glosis/api",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "db:init": "tsx src/scripts/init-db.ts"
+  },
+  "dependencies": {
+    "@glosis/types": "*",
+    "@hono/node-server": "^1.13.1",
+    "arangojs": "^9.1.0",
+    "hono": "^4.6.3",
+    "tsx": "^4.19.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.4"
+  }
+}
