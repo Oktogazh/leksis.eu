@@ -11,7 +11,7 @@ RUN npm install --workspaces --include-workspace-root
 COPY tsconfig.base.json ./
 COPY packages/types ./packages/types
 COPY apps/web ./apps/web
-RUN npm run build --workspace @glosis/web
+RUN npm run build --workspace @leksis/web
 
 FROM nginx:1.27-alpine AS run
 COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf

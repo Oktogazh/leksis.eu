@@ -6,14 +6,14 @@
 // left untouched.
 //
 //   npm run db:init            (from repo root)
-//   npm run db:init -w @glosis/api
+//   npm run db:init -w @leksis/api
 //
 // Requires ARANGO_URL / ARANGO_DB / ARANGO_USER / ARANGO_PASSWORD in the env.
 
 import { Database } from "arangojs";
 
 const url = process.env.ARANGO_URL ?? "http://127.0.0.1:8529";
-const dbName = process.env.ARANGO_DB ?? "glosis";
+const dbName = process.env.ARANGO_DB ?? "leksis";
 const username = process.env.ARANGO_USER ?? "root";
 const password = process.env.ARANGO_PASSWORD ?? "";
 

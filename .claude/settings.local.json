@@ -9,7 +9,7 @@
       "Read(//opt/homebrew/bin/**)",
       "Bash(git rm *)",
       "Bash(rm -f apps/api/fly.toml apps/web/fly.toml)",
-      "Bash(cd \"/Users/alan/.claude/projects/-Users-alan-Library-CloudStorage-ProtonDrive-alan-kersaudy-proton-me-folder-Repos-glosis-eu/memory/\")",
+      "Bash(cd \"/Users/alan/.claude/projects/-Users-alan-Library-CloudStorage-ProtonDrive-alan-kersaudy-proton-me-folder-Repos-leksis-eu/memory/\")",
       "Bash(cat MEMORY.md)",
       "Bash(command -v docker)",
       "Bash(ARANGO_ROOT_PASSWORD=test docker compose config)"

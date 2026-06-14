@@ -23,34 +23,6 @@ Run the whole prototype on a **single VPS** via docker-compose: self-hosted
 network (`http://arangodb:8529`), never published to the host. Releases deploy
 over SSH from GitHub Actions, triggered **only by a `v*` version tag**.
 
-## Options Considered
-
-### Option A — Self-host ArangoDB CE on Fly.io (separate app + volume)
-| Dimension | Assessment |
-|-----------|------------|
-| Complexity | Med | Cost | ~€6–8/mo | Familiarity | Fly not yet set up |
-
-**Pros:** managed-ish platform, built-in volume snapshots, private networking.
-**Cons:** requires learning Fly; two-machine model; deployer prefers a plain server.
-
-### Option B — Single VPS, docker-compose (ArangoDB + API + web + Caddy) ✅ chosen
-| Dimension | Assessment |
-|-----------|------------|
-| Complexity | Med | Cost | ~€4/mo (Hetzner CX22, 4GB) | Familiarity | Matches deployer's comfort |
-
-**Pros:** cheapest, most RAM/€, one host the deployer already knows how to run,
-realizes the "share a server" instinct cleanly (separate containers, shared host).
-**Cons:** owns OS patching, backups, TLS — mitigated by Caddy (auto-HTTPS) and
-ArangoDB being internal-only.
-
-### Option C — ArangoDB inside the API container/machine
-Rejected: every API deploy would restart the DB; the firehose consumer and a
-RAM-hungry graph engine would fight over one tiny VM; data volume coupled to the
-app lifecycle.
-
-### Option D — Pivot to free Postgres (Neon/Supabase)
-Rejected: throws away the graph model that is the project's core thesis; rewrites
-AQL, the AppView, and the data model. Wrong trade this early.
 
 ## Consequences
 
@@ -60,12 +32,12 @@ AQL, the AppView, and the data model. Wrong trade this early.
   ArangoDB/OS upgrades; single-node means no HA.
 - **Revisit when:** dataset outgrows the box (resize), or HA is needed
   (post-prototype: managed cloud or a cluster).
-- **Doc debt cleared:** README/CHANGELOG and the glosis context now say
+- **Doc debt cleared:** README/CHANGELOG and the leksis context now say
   "self-hosted CE on a VPS," not "ArangoDB Cloud free tier."
 
 ## Action Items
 1. [x] Add `docker-compose.yml`, `Caddyfile`, root `.env.example`
 2. [x] Remove Fly configs; switch CI deploy to tag-triggered SSH
-3. [ ] Provision the VPS; install Docker; clone repo to `/opt/glosis`
+3. [x] Provision the VPS; install Docker; clone repo to `/opt/leksis`
 4. [ ] Set GitHub secrets: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` (+ optional `VPS_SSH_PORT`)
 5. [ ] Add a backup job (`arangodump` → off-box storage) before week 3 data matters

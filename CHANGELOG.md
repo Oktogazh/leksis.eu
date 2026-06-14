@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Glosis. This project follows the 8-week development
+All notable changes to Leksis. This project follows the 8-week development
 timeline; each entry maps to a weekly milestone.
 
 ## [Unreleased] — Week 1: Foundation & CI/CD
@@ -16,14 +16,14 @@ toggle (real AT Proto OAuth is week 2).
 - Root config: `package.json`, `turbo.json`, shared `tsconfig.base.json`,
   flat-config `eslint.config.js`, `.gitignore`, `.dockerignore`.
 - `packages/types`: shared `HealthResponse` and `Session` types, consumed by
-  both apps via the `@glosis/types` workspace alias.
+  both apps via the `@leksis/types` workspace alias.
 
 ### API (`apps/api`) — Hono + Node
 
 - Hono server with `GET /` and `GET /health` (reports DB connectivity).
 - `src/db.ts`: shared ArangoDB connection (`arangojs`) from env vars + a
   `pingDb()` liveness check.
-- `src/scripts/init-db.ts`: idempotent bootstrap that creates the `glosis`
+- `src/scripts/init-db.ts`: idempotent bootstrap that creates the `leksis`
   database and the first empty collections — `languages`, `entries`,
   `definitions` (documents) and `translations` (edge).
 - `.env.example` documenting required ArangoDB credentials.

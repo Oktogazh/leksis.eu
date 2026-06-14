@@ -40,7 +40,7 @@ jobs:
           envs: GITHUB_REF_NAME
           script: |
             set -euo pipefail
-            cd "${VPS_APP_DIR:-/opt/glosis}"
+            cd "${VPS_APP_DIR:-/opt/leksis}"
             git fetch --tags --prune
             git checkout --force "${GITHUB_REF_NAME}"
             docker compose pull arangodb caddy

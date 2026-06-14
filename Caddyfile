@@ -1,4 +1,4 @@
-# Reverse proxy. SITE_ADDRESS is ":80" (HTTP) by default; set it to "glosis.eu"
+# Reverse proxy. SITE_ADDRESS is ":80" (HTTP) by default; set it to "leksis.eu"
 # (via the env in docker-compose) once DNS points at this server and Caddy will
 # provision HTTPS automatically — no other change needed.
 {$SITE_ADDRESS} {

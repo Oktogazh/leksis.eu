@@ -1,4 +1,4 @@
-# Single-VPS deployment for Glosis.
+# Single-VPS deployment for Leksis.
 # One host runs four containers on a private network: Caddy (the only one
 # exposed to the internet), the static web app, the Hono API, and ArangoDB.
 # ArangoDB is NOT published to a host port — it is reachable only from the
@@ -16,7 +16,7 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      # ":80" = plain HTTP (default). Set to "glosis.eu" once DNS points here
+      # ":80" = plain HTTP (default). Set to "leksis.eu" once DNS points here
       # and Caddy will obtain a Let's Encrypt cert automatically.
       SITE_ADDRESS: ${SITE_ADDRESS:-:80}
     volumes:
@@ -46,7 +46,7 @@ services:
       PORT: "8080"
       NODE_ENV: production
       ARANGO_URL: http://arangodb:8529
-      ARANGO_DB: ${ARANGO_DB:-glosis}
+      ARANGO_DB: ${ARANGO_DB:-leksis}
       ARANGO_USER: root
       ARANGO_PASSWORD: ${ARANGO_ROOT_PASSWORD:?set ARANGO_ROOT_PASSWORD in .env}
       WEB_ORIGIN: ${WEB_ORIGIN:-*}

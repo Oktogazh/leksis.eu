@@ -1,8 +1,8 @@
 {
-  "name": "glosis",
+  "name": "leksis",
   "private": true,
   "version": "0.0.1",
-  "description": "Glosis — distributed crowdsourced multilingual dictionary (glosis.eu)",
+  "description": "Leksis — distributed crowdsourced multilingual dictionary (leksis.eu)",
   "packageManager": "npm@10.8.1",
   "engines": {
     "node": ">=20"
@@ -16,7 +16,7 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
-    "db:init": "npm run db:init --workspace @glosis/api"
+    "db:init": "npm run db:init --workspace @leksis/api"
   },
   "devDependencies": {
     "@eslint/js": "^9.9.1",

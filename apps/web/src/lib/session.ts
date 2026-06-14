@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Session } from "@glosis/types";
+import type { Session } from "@leksis/types";
 
 // --- Week 1 placeholder session store -------------------------------------
 //
@@ -9,7 +9,7 @@ import type { Session } from "@glosis/types";
 // PDS OAuth (redirect to /auth/login, httpOnly cookie session) while this
 // hook's shape — `{ session, connect, disconnect }` — stays the same.
 
-const STORAGE_KEY = "glosis.session";
+const STORAGE_KEY = "leksis.session";
 
 function load(): Session {
   try {

@@ -1,7 +1,7 @@
-# Glosis
+# Leksis
 
 A distributed, crowdsourced multilingual dictionary for low-resource languages,
-built on the AT Protocol and ArangoDB. See [glosis.eu](https://glosis.eu).
+built on the AT Protocol and ArangoDB. See [leksis.eu](https://leksis.eu).
 
 > **Status:** Week 1 — Foundation & CI/CD. A deployed empty shell with a working
 > pipeline. The only visible feature is a placeholder PDS connect/disconnect

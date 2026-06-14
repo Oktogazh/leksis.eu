@@ -9,7 +9,7 @@ export default function App() {
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto max-w-3xl px-6 py-4 flex items-center justify-between">
-          <span className="font-semibold tracking-tight">Glosis</span>
+          <span className="font-semibold tracking-tight">Leksis</span>
           {session.state === "connected" ? (
             <div className="flex items-center gap-3 text-sm">
               <span className="text-slate-500">

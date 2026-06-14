@@ -1,5 +1,5 @@
 {
-  "name": "@glosis/api",
+  "name": "@leksis/api",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -12,7 +12,7 @@
     "db:init": "tsx src/scripts/init-db.ts"
   },
   "dependencies": {
-    "@glosis/types": "*",
+    "@leksis/types": "*",
     "@hono/node-server": "^1.13.1",
     "arangojs": "^9.1.0",
     "hono": "^4.6.3",

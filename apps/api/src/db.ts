@@ -9,7 +9,7 @@ import { Database } from "arangojs";
  */
 export const db = new Database({
   url: process.env.ARANGO_URL ?? "http://127.0.0.1:8529",
-  databaseName: process.env.ARANGO_DB ?? "glosis",
+  databaseName: process.env.ARANGO_DB ?? "leksis",
   auth: {
     username: process.env.ARANGO_USER ?? "root",
     password: process.env.ARANGO_PASSWORD ?? "",
