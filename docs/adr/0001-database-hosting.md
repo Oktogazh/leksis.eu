@@ -39,5 +39,5 @@ over SSH from GitHub Actions, triggered **only by a `v*` version tag**.
 1. [x] Add `docker-compose.yml`, `Caddyfile`, root `.env.example`
 2. [x] Remove Fly configs; switch CI deploy to tag-triggered SSH
 3. [x] Provision the VPS; install Docker; clone repo to `/opt/leksis`
-4. [ ] Set GitHub secrets: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` (+ optional `VPS_SSH_PORT`)
+4. [x] Set GitHub secrets: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` (+ optional `VPS_SSH_PORT`)
 5. [ ] Add a backup job (`arangodump` → off-box storage) before week 3 data matters
