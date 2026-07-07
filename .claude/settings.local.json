@@ -19,7 +19,13 @@
       "Bash(lsof -ti:5173)",
       "Bash(xargs kill -9)",
       "Bash(echo \"port 5173 freed: $\\(lsof -ti:5173)",
-      "mcp__Claude_Preview__preview_start"
+      "mcp__Claude_Preview__preview_start",
+      "Read(//Users/alan/.claude/**)",
+      "Read(//Users/alan/.claude/skills/**)",
+      "Bash(chmod +x /Users/alan/Repos/leksis.eu/.claude/hooks/verify-edit.sh)",
+      "Bash(export CLAUDE_PROJECT_DIR=/Users/alan/Repos/leksis.eu)",
+      "Bash(./.claude/hooks/verify-edit.sh)",
+      "Bash(echo \"exit code: $?\")"
     ]
   }
 }
