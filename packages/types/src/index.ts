@@ -1,7 +1,7 @@
 // Shared TypeScript types imported by both apps/web and apps/api.
-// Week 1 keeps this intentionally tiny: the API health contract and the
-// minimal PDS session shape used by the login workflow. Domain types
-// (LanguageID, IETFTag, Entry, ...) arrive with the lexicon in week 2+.
+// Week 2 keeps this tiny: the API health contract and the PDS session shape.
+// Domain types (LanguageID, IETFTag, Entry, ...) arrive with the lexicon in the
+// dictionary loops (week 3+).
 
 /** Response shape for the API health-check endpoint. */
 export interface HealthResponse {
@@ -12,13 +12,15 @@ export interface HealthResponse {
 }
 
 /**
- * Minimal session model for the PDS connect / disconnect workflow.
+ * Serializable view of the PDS session, used by the frontend's
+ * connected / disconnected workflow.
  *
- * Week 1 is a local-only placeholder: `handle` is whatever the user typed.
- * Week 2 replaces this with a real AT Proto OAuth session (DID, tokens,
- * httpOnly cookie) without changing the frontend's connected/disconnected
- * mental model.
+ * Authentication is **browser-only** AT Proto OAuth (see
+ * docs/adr/0002-atproto-oauth-client-model.md): the SPA is the OAuth client,
+ * DPoP-bound tokens live client-side, and the API is never in the auth path —
+ * so there is no server session or cookie here, just the identity the frontend
+ * resolved after login.
  */
 export type Session =
   | { state: "disconnected" }
-  | { state: "connected"; handle: string };
+  | { state: "connected"; did: string; handle: string };

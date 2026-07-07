@@ -1,0 +1,12 @@
+{
+  "client_id": "https://leksis.eu/client-metadata.json",
+  "client_name": "Leksis",
+  "client_uri": "https://leksis.eu",
+  "application_type": "web",
+  "dpop_bound_access_tokens": true,
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
+  "redirect_uris": ["https://leksis.eu/"],
+  "scope": "atproto transition:generic",
+  "token_endpoint_auth_method": "none"
+}

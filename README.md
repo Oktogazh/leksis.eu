@@ -3,9 +3,12 @@
 A distributed, crowdsourced multilingual dictionary for low-resource languages,
 built on the AT Protocol and ArangoDB. See [leksis.eu](https://leksis.eu).
 
-> **Status:** Week 1 — Foundation & CI/CD. A deployed empty shell with a working
-> pipeline. The only visible feature is a placeholder PDS connect/disconnect
-> toggle; real AT Proto OAuth arrives in week 2.
+> **Status:** Week 2 — AT Proto OAuth + frontend foundations (implemented;
+> pending live verification). A landing page introduces the project and lets
+> visitors log in against their own PDS via browser-only AT Protocol OAuth;
+> connected users see a search shell. The frontend now ships i18n and theming
+> scaffolding. No backend changes — see
+> [docs/adr/0002](docs/adr/0002-atproto-oauth-client-model.md).
 
 ## Monorepo layout
 
@@ -38,6 +41,12 @@ cp apps/api/.env.example apps/api/.env   # point ARANGO_URL at a local/remote Ar
 npm run db:init                          # create the database + empty collections
 npm run dev                              # web on :5173, api on :8080
 ```
+
+> **Testing login locally:** the dev server binds **http://127.0.0.1:5173**
+> (not `localhost`) because AT Protocol's loopback OAuth callback always targets
+> `127.0.0.1`. If you open `localhost`, the app redirects you to the `127.0.0.1`
+> origin automatically so the whole login flow shares one origin. Production over
+> HTTPS has no such constraint.
 
 **B. Full stack via compose** (mirrors production, includes ArangoDB):
 

@@ -1,3 +1,59 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/*
+ * Theme tokens.
+ *
+ * Every colour the UI paints with is a *semantic* CSS variable expressed as
+ * space-separated RGB channels — so Tailwind's `<alpha-value>` keeps working
+ * (e.g. `bg-primary/50`). Components reference only these tokens, never raw
+ * palette colours. Adding a theme (dark, high-contrast, colour-blind safe…) is
+ * therefore a pure data change: copy the `:root` block under a new
+ * `[data-theme="…"]` selector, override the channel values, and register the id
+ * in src/theme/themes.ts. No component markup changes. The provider that flips
+ * `data-theme` on <html> lives in src/theme/ThemeProvider.tsx.
+ */
+@layer base {
+  :root,
+  [data-theme="light"] {
+    color-scheme: light;
+
+    --color-canvas: 248 250 252; /* page background   (slate-50)  */
+    --color-surface: 255 255 255; /* cards, header     (white)     */
+    --color-surface-muted: 241 245 249; /* subtle fills (slate-100) */
+    --color-border: 226 232 240; /* hairlines         (slate-200) */
+
+    --color-content: 15 23 42; /* primary text        (slate-900) */
+    --color-content-muted: 71 85 105; /* secondary text (slate-600) */
+    --color-content-subtle: 148 163 184; /* placeholders (slate-400) */
+
+    --color-primary: 79 70 229; /* brand / actions     (indigo-600) */
+    --color-primary-hover: 67 56 202; /*                (indigo-700) */
+    --color-primary-fg: 255 255 255; /* text on primary (white)     */
+
+    --color-ring: 99 102 241; /* focus ring            (indigo-500) */
+    --color-danger: 220 38 38; /* errors               (red-600)    */
+  }
+
+  /*
+   * Template for a future theme — intentionally commented out. Uncomment,
+   * rename the selector, tune the channels, then add `{ id: "dark", … }` to
+   * THEMES in src/theme/themes.ts to make it selectable.
+   *
+   * [data-theme="dark"] {
+   *   color-scheme: dark;
+   *   --color-canvas: 2 6 23;
+   *   --color-surface: 15 23 42;
+   *   ...
+   * }
+   */
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-canvas text-content antialiased;
+  }
+}

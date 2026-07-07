@@ -12,7 +12,14 @@
       "Bash(cd \"/Users/alan/.claude/projects/-Users-alan-Library-CloudStorage-ProtonDrive-alan-kersaudy-proton-me-folder-Repos-leksis-eu/memory/\")",
       "Bash(cat MEMORY.md)",
       "Bash(command -v docker)",
-      "Bash(ARANGO_ROOT_PASSWORD=test docker compose config)"
+      "Bash(ARANGO_ROOT_PASSWORD=test docker compose config)",
+      "Bash(npm run *)",
+      "Read(//tmp/**)",
+      "Bash(kill 55842)",
+      "Bash(lsof -ti:5173)",
+      "Bash(xargs kill -9)",
+      "Bash(echo \"port 5173 freed: $\\(lsof -ti:5173)",
+      "mcp__Claude_Preview__preview_start"
     ]
   }
 }

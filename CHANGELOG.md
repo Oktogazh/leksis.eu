@@ -3,7 +3,62 @@
 All notable changes to Leksis. This project follows the 8-week development
 timeline; each entry maps to a weekly milestone.
 
-## [Unreleased] — Week 1: Foundation & CI/CD
+## [Unreleased] — Week 2: AT Proto OAuth + frontend foundations
+
+Real login replaces the Week-1 placeholder: visitors get a landing page that
+introduces the project, and connecting authenticates against their own PDS via
+AT Protocol OAuth. Connected users land on a search shell (the search itself
+arrives with the dictionary loops). The frontend also grows two foundations —
+internationalisation and theming — chosen now to avoid a later refactor. **No
+backend changes** (see `docs/adr/0002`): the API stays a pure indexer.
+
+### Authentication — browser-only AT Proto OAuth
+
+- `@atproto/oauth-client-browser` + `@atproto/api`. The SPA is the OAuth client;
+  DPoP-bound tokens live client-side. See `docs/adr/0002-atproto-oauth-client-model.md`.
+- `src/auth/client.ts`: loads the `BrowserOAuthClient` — a hosted
+  `client-metadata.json` in production, the `127.0.0.1` loopback client in dev.
+- `src/auth/SessionProvider.tsx`: restores/processes the session on load and
+  exposes `{ status, did, handle, agent, signIn, signOut }` via `useSession`.
+- `public/client-metadata.json`: production OAuth client id
+  (`https://leksis.eu/client-metadata.json`), served by the existing web/nginx
+  container — no API route added.
+- Local dev pinned to `http://127.0.0.1:5173` (AT Proto loopback callback always
+  targets `127.0.0.1`): Vite binds that host, and `ensureLoopbackHost()`
+  redirects any `localhost`/`::1` load to it before rendering, so the whole flow
+  shares one origin. Production over HTTPS is unaffected.
+- Removed the Week-1 placeholder `src/lib/session.ts`; corrected the shared
+  `Session` type in `packages/types` (no httpOnly cookie — browser-only).
+
+### Internationalisation (`react-i18next`)
+
+- `src/i18n/`: i18next init, `en.json` resource (all UI copy lives here, keyed by
+  feature — `landing.*`, `auth.*`, `search.*`, …), and a typed-key augmentation
+  so `t()` keys are checked at compile time.
+- `SUPPORTED_LANGUAGES` registry + `setLanguage()` (persists + syncs `<html lang>`).
+  English only for now; adding a locale is a JSON file + a registry entry, no
+  component changes.
+
+### Theming (CSS-variable tokens)
+
+- `src/index.css`: semantic colour tokens (`--color-canvas`, `--color-content`,
+  `--color-primary`, …) as RGB channels; Tailwind maps them so opacity modifiers
+  still work. Components paint only with tokens.
+- `src/theme/`: a `THEMES` registry + `ThemeProvider` that flips
+  `<html data-theme>` and persists the choice. Only the default `light` theme
+  ships; adding one (dark, high-contrast…) is a CSS block + a registry line.
+
+### Interface
+
+- Mobile-first throughout (Tailwind base = mobile, `sm:` enhances).
+- `pages/LandingPage.tsx`: project pitch + PDS login form.
+- `pages/HomePage.tsx`: connected search shell (language scope + term box, inert
+  until the dictionary loops wire it up).
+- `components/`: `Header` (brand + connected user/logout), `Footer`,
+  `LoadingScreen`, `Brand`. `App.tsx` routes loading/landing/home off session.
+- `.claude/launch.json`: dev-server config for the preview tooling.
+
+## Week 1 — Foundation & CI/CD (released `v0.1.x`)
 
 Scaffolds a deployable empty shell with a green pipeline. No dictionary
 features yet. The only visible UI is a placeholder PDS connect/disconnect

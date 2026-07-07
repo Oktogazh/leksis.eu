@@ -1,0 +1,51 @@
+{
+  "app": {
+    "name": "Leksis",
+    "tagline": "A dictionary built by its speakers."
+  },
+  "common": {
+    "loading": "Loading…",
+    "poweredBy": "Built on the AT Protocol — your words, your server."
+  },
+  "languages": {
+    "en": "English"
+  },
+  "themes": {
+    "light": "Light"
+  },
+  "auth": {
+    "handleLabel": "Your handle",
+    "handlePlaceholder": "alice.bsky.social",
+    "logIn": "Log in",
+    "connecting": "Redirecting to your PDS…",
+    "disconnect": "Log out",
+    "connectedAs": "@{{handle}}",
+    "errors": {
+      "handleRequired": "Enter your handle to continue.",
+      "signInFailed": "We couldn't reach that handle's server. Check the handle and try again."
+    }
+  },
+  "landing": {
+    "hero": {
+      "title": "The omnilingual dictionary",
+      "subtitle": "Leksis is a distributed, multilingual dictionary, with a low entry barrier for the world's under-resourced languages — built one richly described word at a time."
+    },
+    "points": {
+      "own": "Own your contributions — every entry lives on your own AT Protocol server, never locked inside ours.",
+      "universal": "Built for every language — designed from the ground up for low-resource and minority languages, not retrofitted from a big one. Unilike Wiktionary, we don't have to replicate dictionary for every language, the definitions are homolingual and translations helps learners fill the gaps.",
+      "depth": "Structure over density — one richly annotated entry is worth more than a pile of raw text. Through its complex design, the dictionary breaks the barriers between languages and between new learners and professional lexicographers. This design is thought to counter resource scarcity and to describe exhaustively the world's languages with minimum redundancy."
+    },
+    "cta": {
+      "title": "Connect your PDS to start",
+      "subtitle": "Log in with your Bluesky or AT Protocol handle. We never see your password — authentication happens on your own server."
+    }
+  },
+  "search": {
+    "title": "Search the dictionary",
+    "languageLabel": "Language",
+    "languageAny": "Any language",
+    "placeholder": "Search for a word…",
+    "submit": "Search",
+    "comingSoon": "Search arrives with the dictionary in an upcoming milestone — this is a preview of where it will live."
+  }
+}
