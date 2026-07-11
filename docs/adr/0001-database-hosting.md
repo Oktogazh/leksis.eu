@@ -40,4 +40,4 @@ over SSH from GitHub Actions, triggered **only by a `v*` version tag**.
 2. [x] Remove Fly configs; switch CI deploy to tag-triggered SSH
 3. [x] Provision the VPS; install Docker; clone repo to `/opt/leksis`
 4. [x] Set GitHub secrets: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` (+ optional `VPS_SSH_PORT`)
-5. [ ] Add a backup job (`arangodump` → off-box storage) before week 3 data matters
+5. [ ] Add a backup job (`arangodump` → off-box storage) — **deferred (2026-07-07)** until the first active users; pre-Week-3 data is re-creatable test data + a re-consumable firehose, so there is nothing irreplaceable to protect yet. Trigger: first real contributor writes.

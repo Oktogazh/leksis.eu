@@ -94,4 +94,4 @@ OAuth. Rejected — Week 2's milestone is real OAuth.
 2. [x] Add `apps/web/public/client-metadata.json` (production client id)
 3. [x] Remove the placeholder session store; correct the `Session` type/comments
 4. [x] Pin dev to `127.0.0.1` (Vite `host` + `ensureLoopbackHost()` redirect) + document it
-5. [ ] Verify the live OAuth round-trip on the deployed HTTPS site (a real PDS login) — pending deploy
+5. [x] Verify the live OAuth round-trip on the deployed HTTPS site (a real PDS login) — verified on leksis.eu (v0.2.0)

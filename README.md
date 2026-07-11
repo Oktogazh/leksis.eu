@@ -3,8 +3,8 @@
 A distributed, crowdsourced multilingual dictionary for low-resource languages,
 built on the AT Protocol and ArangoDB. See [leksis.eu](https://leksis.eu).
 
-> **Status:** Week 2 — AT Proto OAuth + frontend foundations (implemented;
-> pending live verification). A landing page introduces the project and lets
+> **Status:** Week 2 — AT Proto OAuth + frontend foundations (released
+> `v0.2.0`, live on leksis.eu). A landing page introduces the project and lets
 > visitors log in against their own PDS via browser-only AT Protocol OAuth;
 > connected users see a search shell. The frontend now ships i18n and theming
 > scaffolding. No backend changes — see

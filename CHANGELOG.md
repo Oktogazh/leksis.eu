@@ -3,7 +3,7 @@
 All notable changes to Leksis. This project follows the 8-week development
 timeline; each entry maps to a weekly milestone.
 
-## [Unreleased] — Week 2: AT Proto OAuth + frontend foundations
+## Week 2 — AT Proto OAuth + frontend foundations (released `v0.2.0`)
 
 Real login replaces the Week-1 placeholder: visitors get a landing page that
 introduces the project, and connecting authenticates against their own PDS via
