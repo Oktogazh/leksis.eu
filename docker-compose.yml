@@ -2,7 +2,9 @@
 # One host runs four containers on a private network: Caddy (the only one
 # exposed to the internet), the static web app, the Hono API, and ArangoDB.
 # ArangoDB is NOT published to a host port — it is reachable only from the
-# other containers as http://arangodb:8529.
+# other containers as http://arangodb:8529. Its Aardvark admin UI can be
+# exposed at aardvark.leksis.eu THROUGH Caddy (double-gated by IP + password);
+# see the AARDVARK_* vars below and the Caddyfile. Still no host port.
 #
 #   cp .env.example .env   # then set ARANGO_ROOT_PASSWORD
 #   docker compose up -d --build
@@ -19,6 +21,15 @@ services:
       # ":80" = plain HTTP (default). Set to "leksis.eu" once DNS points here
       # and Caddy will obtain a Let's Encrypt cert automatically.
       SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+      # Aardvark (ArangoDB admin UI) exposure — all fail-closed by default; see
+      # .env.example. ":8529" is an unpublished internal listener (unreachable).
+      AARDVARK_ADDRESS: ${AARDVARK_ADDRESS:-:8529}
+      # Default allowlist is localhost-only, i.e. nobody, until you set yours.
+      AARDVARK_ALLOW_IPS: ${AARDVARK_ALLOW_IPS:-127.0.0.1/32}
+      AARDVARK_USER: ${AARDVARK_USER:-admin}
+      # Throwaway bcrypt hash of a random string (nobody knows the plaintext).
+      # In .env, DOUBLE every "$" to "$$" — compose reads a lone "$" as a var.
+      AARDVARK_PASSWORD_HASH: ${AARDVARK_PASSWORD_HASH:-$$2y$$12$$YuxAwJg5ULec6CmVOSTmL.Kux3uXdVcWjEiVZ1LUQfHk/WrkanOzu}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -26,6 +37,7 @@ services:
     depends_on:
       - web
       - api
+      - arangodb
 
   web:
     build:
