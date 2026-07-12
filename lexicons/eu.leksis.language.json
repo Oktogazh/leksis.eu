@@ -1,0 +1,50 @@
+{
+  "lexicon": 1,
+  "id": "eu.leksis.language",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A language of the Leksis dictionary, identified by its IETF (BCP 47) tag. Records prove authorship, not ownership: any user may publish a record for any tag, and the AppView treats the latest record for a tag as the current version, archiving previous ones. By convention the record key is the normalized (lowercase) tag.",
+      "key": "any",
+      "record": {
+        "type": "object",
+        "required": ["tag", "translations", "createdAt"],
+        "properties": {
+          "tag": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "Well-formed IETF BCP 47 language tag, normalized to lowercase (e.g. \"br\", \"br-gw\")."
+          },
+          "translations": {
+            "type": "array",
+            "minLength": 1,
+            "items": { "type": "ref", "ref": "#translation" },
+            "description": "Names of this language in other languages. Must contain the endonym: an item whose languageID equals this record's tag, giving the language's name in itself."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "Client-declared creation time of this record version."
+          }
+        }
+      }
+    },
+    "translation": {
+      "type": "object",
+      "required": ["languageID", "translation"],
+      "properties": {
+        "languageID": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "BCP 47 tag of the language this name is written in."
+        },
+        "translation": {
+          "type": "string",
+          "maxLength": 256,
+          "maxGraphemes": 128,
+          "description": "The language's name written in the language identified by languageID."
+        }
+      }
+    }
+  }
+}

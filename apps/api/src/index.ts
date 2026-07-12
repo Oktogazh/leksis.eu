@@ -1,8 +1,10 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import type { HealthResponse } from "@leksis/types";
+import type { HealthResponse, LanguagesResponse } from "@leksis/types";
 import { pingDb } from "./db";
+import { listLanguages } from "./languages";
+import { startJetstream } from "./firehose/jetstream";
 
 const app = new Hono();
 
@@ -22,7 +24,21 @@ app.get("/health", async (c) => {
   return c.json(body);
 });
 
+app.get("/languages", async (c) => {
+  try {
+    const languages = await listLanguages();
+    const body: LanguagesResponse = { languages };
+    return c.json(body);
+  } catch (err) {
+    console.error("GET /languages failed:", err);
+    return c.json({ error: "database unavailable" }, 503);
+  }
+});
+
 const port = Number(process.env.PORT ?? 8080);
 serve({ fetch: app.fetch, port }, (info) => {
   console.log(`leksis-api listening on :${info.port}`);
+  // The consumer manages its own reconnection and never throws; this catch
+  // only guards startup so a firehose problem cannot take down HTTP.
+  startJetstream().catch((err) => console.error("jetstream: failed to start:", err));
 });

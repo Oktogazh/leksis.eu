@@ -40,6 +40,35 @@
       "subtitle": "Log in with your Bluesky or AT Protocol handle. We never see your password — authentication happens on your own server."
     }
   },
+  "languageSelector": {
+    "shortlist": "Recently used",
+    "all": "All languages",
+    "add": "＋ Add a language…"
+  },
+  "addLanguage": {
+    "title": "Add a language",
+    "intro": "Create the language's record so words can be added to it. Anyone can improve it later — records prove authorship, not ownership.",
+    "tagLabel": "Language code",
+    "tagPlaceholder": "br, br-gw, oc…",
+    "tagHelp": "The language's IETF (BCP 47) tag — the code used everywhere on the web to identify it.",
+    "endonymLabel": "Name in the language itself",
+    "endonymPlaceholder": "Brezhoneg…",
+    "translationsLegend": "Names in other languages",
+    "translationLanguageLabel": "In language",
+    "translationNameLabel": "Name",
+    "addTranslation": "＋ Add a translation",
+    "removeTranslation": "Remove",
+    "submit": "Create the record",
+    "submitting": "Writing to your PDS…",
+    "cancel": "Cancel",
+    "syncing": "Record created — waiting for the network to index it…",
+    "errors": {
+      "invalidTag": "This is not a well-formed language code (like \"br\" or \"br-gw\").",
+      "duplicateTag": "This language already exists in Leksis — pick it in the list instead.",
+      "endonymRequired": "Give the language's name in the language itself.",
+      "writeFailed": "Writing the record to your PDS failed. Try again."
+    }
+  },
   "search": {
     "title": "Search the dictionary",
     "languageLabel": "Language",

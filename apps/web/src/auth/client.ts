@@ -8,9 +8,11 @@ import { BrowserOAuthClient, buildLoopbackClientId } from "@atproto/oauth-client
 // firehose; writes go browser → the user's own PDS directly).
 
 // `atproto` is the required base scope; `transition:generic` grants the broad
-// XRPC access we'll need later to write `eu.leksis.entry` records to the user's
-// PDS. (For production this is declared in /client-metadata.json; the dev
-// loopback client grants it automatically.)
+// XRPC access needed to write `eu.leksis.*` records to the user's PDS.
+// It must be declared by the OAuth client in BOTH environments: in production
+// via /client-metadata.json, and in dev via a `scope` query param on the
+// loopback client id — a bare `buildLoopbackClientId()` defaults to just
+// `atproto`, which silently produces read-only sessions (putRecord → 403).
 export const OAUTH_SCOPE = "atproto transition:generic";
 
 // Public resolver used to turn a handle/DID into its PDS + auth server.
@@ -41,9 +43,10 @@ export function ensureLoopbackHost(): boolean {
 
 function resolveClientId(): string {
   // In local dev (loopback host) AT Proto allows a special development client
-  // id derived from the current URL — no hosted metadata file required.
+  // id derived from the current URL — no hosted metadata file required. The
+  // scope must ride along in the client id, or the session is read-only.
   if (LOOPBACK_HOSTS.has(window.location.hostname)) {
-    return buildLoopbackClientId(window.location);
+    return `${buildLoopbackClientId(window.location)}&scope=${encodeURIComponent(OAUTH_SCOPE)}`;
   }
   // In production the client id is the public URL of the static metadata file
   // served by nginx at the site root (apps/web/public/client-metadata.json).

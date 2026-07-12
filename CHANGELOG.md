@@ -3,6 +3,54 @@
 All notable changes to Leksis. This project follows the 8-week development
 timeline; each entry maps to a weekly milestone.
 
+## [Unreleased] — Week 3: Loop 1, Languages
+
+The first dictionary loop: languages exist, and **firehose consumption
+starts**. Users create languages as `eu.leksis.language` records on their own
+PDS; the AppView indexes them from Jetstream into a versioned ArangoDB
+collection; the search bar's language selector is now real. See
+`docs/adr/0003-language-records-and-firehose.md` for the decisions (dedicated
+lexicon, Wikipedia edit model, Jetstream, syntax-only tag validation).
+
+### Lexicon & types
+
+- `lexicons/eu.leksis.language.json`: `{ tag, translations[{languageID,
+  translation}], createdAt }`; rkey = the tag; endonym (self-translation)
+  required, so the list is human-readable from the very first record.
+- `packages/types`: `LeksisLanguageRecord`, `LanguageView`,
+  `LanguagesResponse`, `LEKSIS_LANGUAGE_COLLECTION`, and a shared BCP 47
+  syntax validator (`isValidLanguageTag` / `normalizeLanguageTag`) used
+  identically by the web form and the AppView ingestion.
+
+### API (`apps/api`) — first AppView behaviour
+
+- **Jetstream consumer** (`src/firehose/jetstream.ts`): native Node-22
+  WebSocket, `wantedCollections=eu.leksis.language`, cursor persisted in the
+  new `firehoseState` collection (resume on restart), capped-backoff
+  reconnection; runs inside the api process and can never take down HTTP.
+- **Ingestion** (`src/firehose/ingest-language.ts`): validates and normalizes
+  records (invalid → logged and skipped), then applies last-write-wins **across
+  authors** with archival — the previous version of a tag is marked
+  `current: false`, never deleted; record deletion archives the current
+  version. Idempotent on `recordURI + cid`, so cursor-replay overlap is safe.
+- `GET /languages`: current languages (tag, translations, createdAt), 503
+  when ArangoDB is unreachable.
+- `db:init`: adds `firehoseState` + a persistent `["tag", "current"]` index on
+  the now-versioned `languages` collection.
+
+### Web (`apps/web`) — language selector + creation flow
+
+- `components/LanguageSelector.tsx`: native select showing a "recently used"
+  shortlist first (localStorage, promoted on every selection), then all
+  languages (endonym display, tag fallback), then "＋ Add a language…".
+- `components/AddLanguageModal.tsx`: tag field (live syntax validation +
+  advisory duplicate check), endonym field, optional translations in existing
+  languages; writes the record straight to the user's PDS
+  (`putRecord`, per ADR-0002 — the API never sees it).
+- Post-create UX: optimistic insert + shortlist promotion, then polling until
+  the record round-trips PDS → Jetstream → ArangoDB.
+- `lib/api.ts`: first web→API client (`/api` same-origin in prod, `:8080` dev).
+
 ## Week 2 — AT Proto OAuth + frontend foundations (released `v0.2.0`)
 
 Real login replaces the Week-1 placeholder: visitors get a landing page that

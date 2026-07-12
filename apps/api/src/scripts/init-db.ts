@@ -17,7 +17,8 @@ const dbName = process.env.ARANGO_DB ?? "leksis";
 const username = process.env.ARANGO_USER ?? "root";
 const password = process.env.ARANGO_PASSWORD ?? "";
 
-const documentCollections = ["languages", "entries", "definitions"];
+// `firehoseState` holds the Jetstream cursor (single doc, _key "jetstream").
+const documentCollections = ["languages", "entries", "definitions", "firehoseState"];
 const edgeCollections = ["translations"];
 
 async function main() {
@@ -53,6 +54,16 @@ async function main() {
       console.log(`edge collection "${name}" already exists`);
     }
   }
+
+  // Languages are versioned (many docs per tag, one with current: true);
+  // every read filters on tag and/or current. ensureIndex is idempotent.
+  await db.collection("languages").ensureIndex({
+    type: "persistent",
+    name: "idx_tag_current",
+    fields: ["tag", "current"],
+    unique: false,
+  });
+  console.log('ensured index "idx_tag_current" on "languages"');
 
   console.log("database init complete.");
 }
