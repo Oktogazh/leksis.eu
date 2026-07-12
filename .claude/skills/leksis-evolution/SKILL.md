@@ -170,3 +170,5 @@ atom* (the dictionary) that the rest can grow from.
 - **Don't delete records or skip version archival** — it destroys the substrate the voting system needs.
 - **Don't end a loop on localhost** — a milestone is reached when it's verified on the live URL.
 - **Don't let the white paper and the code silently disagree** — record the divergence as an amendment/ADR.
+- **Add the new versions to the package files** – the package.json and package-lock.json must be updated to reflect the new versions of dependencies used in the project, then give the new version number as the conclusion of the answers in the chat session, so that they can be added manually after review.
+- **Always edit the code in the master branch without creating new worktrees**, so that the codebase can be navigated and reviewed easily without confusion.
