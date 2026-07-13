@@ -17,25 +17,21 @@
 # it. Set AARDVARK_ADDRESS to "aardvark.leksis.eu" in .env once a DNS record
 # points here and Caddy will provision HTTPS automatically.
 #
-# This is the full database admin console, so it is double-gated — an IP
-# allowlist AND a Caddy-level password, both fail-closed: a missing setting
-# denies access rather than exposing the database. route{} keeps the checks in
-# this written order (IP first, then password, then proxy).
+# This is the full database admin console, so access is gated two ways: an IP
+# allowlist here (fail-closed — a missing setting denies rather than exposes)
+# plus ArangoDB's own root login on the Aardvark page itself. We deliberately do
+# NOT add a Caddy basic_auth layer: Aardvark's frontend sends its own
+# "Authorization: bearer …" header on every XHR, which displaces the browser's
+# Basic credential and makes Caddy 401 every in-app request. route{} keeps the
+# IP check ahead of the proxy.
 {$AARDVARK_ADDRESS} {
 	route {
-		# Gate 1 — source IP. Only these IPs/CIDRs pass; everyone else gets 403.
+		# Source-IP gate. Only these IPs/CIDRs pass; everyone else gets 403.
 		# Default AARDVARK_ALLOW_IPS is localhost-only (i.e. nobody), so
 		# forgetting to set it fails closed. Caddy is the edge here, so
 		# remote_ip is the real, un-spoofable client address.
 		@denied not remote_ip {$AARDVARK_ALLOW_IPS}
 		respond @denied "Forbidden" 403
-
-		# Gate 2 — a Caddy password, SEPARATE from the ArangoDB root password.
-		# The default hash is a throwaway of a random string nobody knows; set
-		# AARDVARK_USER and AARDVARK_PASSWORD_HASH in .env to a real credential.
-		basic_auth {
-			{$AARDVARK_USER} {$AARDVARK_PASSWORD_HASH}
-		}
 
 		reverse_proxy arangodb:8529
 	}

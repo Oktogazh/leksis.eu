@@ -26,10 +26,6 @@ services:
       AARDVARK_ADDRESS: ${AARDVARK_ADDRESS:-:8529}
       # Default allowlist is localhost-only, i.e. nobody, until you set yours.
       AARDVARK_ALLOW_IPS: ${AARDVARK_ALLOW_IPS:-127.0.0.1/32}
-      AARDVARK_USER: ${AARDVARK_USER:-admin}
-      # Throwaway bcrypt hash of a random string (nobody knows the plaintext).
-      # In .env, DOUBLE every "$" to "$$" — compose reads a lone "$" as a var.
-      AARDVARK_PASSWORD_HASH: ${AARDVARK_PASSWORD_HASH:-$$2y$$12$$YuxAwJg5ULec6CmVOSTmL.Kux3uXdVcWjEiVZ1LUQfHk/WrkanOzu}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
