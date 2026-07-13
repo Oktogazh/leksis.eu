@@ -25,7 +25,12 @@
       "Bash(chmod +x /Users/alan/Repos/leksis.eu/.claude/hooks/verify-edit.sh)",
       "Bash(export CLAUDE_PROJECT_DIR=/Users/alan/Repos/leksis.eu)",
       "Bash(./.claude/hooks/verify-edit.sh)",
-      "Bash(echo \"exit code: $?\")"
+      "Bash(echo \"exit code: $?\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(gh pr create --title 'Expose ArangoDB Aardvark via double-gated reverse proxy' --body ' *)",
+      "Bash(ssh -o ConnectTimeout=8 -o BatchMode=yes leksis \"cd opt/leksis.eu && pwd && docker compose ps --format 'table {{.Name}}\\\\t{{.Status}}' && echo '---allowlist---' && grep '^AARDVARK_ALLOW_IPS=' .env\")"
     ]
   }
 }
