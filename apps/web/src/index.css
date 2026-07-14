@@ -19,21 +19,22 @@
   [data-theme="light"] {
     color-scheme: light;
 
-    --color-canvas: 248 250 252; /* page background   (slate-50)  */
-    --color-surface: 255 255 255; /* cards, header     (white)     */
-    --color-surface-muted: 241 245 249; /* subtle fills (slate-100) */
-    --color-border: 226 232 240; /* hairlines         (slate-200) */
+    /* Palette after atproto.at: pure neutrals + Bluesky blue as sole accent. */
+    --color-canvas: 250 250 250; /* page background   (#fafafa) */
+    --color-surface: 255 255 255; /* cards, header     (#ffffff) */
+    --color-surface-muted: 245 245 245; /* subtle fills  (#f5f5f5) */
+    --color-border: 229 229 229; /* hairlines          (#e5e5e5) */
 
-    --color-content: 15 23 42; /* primary text        (slate-900) */
-    --color-content-muted: 71 85 105; /* secondary text (slate-600) */
-    --color-content-subtle: 148 163 184; /* placeholders (slate-400) */
+    --color-content: 10 10 10; /* primary text         (#0a0a0a) */
+    --color-content-muted: 72 72 72; /* secondary text   (#484848) */
+    --color-content-subtle: 161 161 161; /* placeholders (#a1a1a1) */
 
-    --color-primary: 79 70 229; /* brand / actions     (indigo-600) */
-    --color-primary-hover: 67 56 202; /*                (indigo-700) */
-    --color-primary-fg: 255 255 255; /* text on primary (white)     */
+    --color-primary: 17 133 254; /* brand / actions     (#1185fe) */
+    --color-primary-hover: 12 112 221; /*                (#0c70dd) */
+    --color-primary-fg: 255 255 255; /* text on primary  (#ffffff) */
 
-    --color-ring: 99 102 241; /* focus ring            (indigo-500) */
-    --color-danger: 220 38 38; /* errors               (red-600)    */
+    --color-ring: 17 133 254; /* focus ring             (#1185fe) */
+    --color-danger: 228 0 20; /* errors                 (#e40014) */
   }
 
   /*

@@ -90,14 +90,16 @@ export function AddLanguageModal({ languages, onClose, onCreated }: AddLanguageM
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="add-language-title"
     >
+      {/* Bottom sheet on phones (full width, capped by dvh so the browser
+          chrome never hides the buttons), centered card from sm: up. */}
       <form
         onSubmit={onSubmit}
-        className="max-h-full w-full max-w-md overflow-y-auto rounded-xl border bg-surface p-5 shadow-lg"
+        className="max-h-[calc(100dvh-2rem)] w-full overflow-y-auto rounded-t-xl border bg-surface p-4 shadow-lg sm:max-w-lg sm:rounded-xl sm:p-6"
       >
         <h2 id="add-language-title" className="text-lg font-semibold text-content">
           {t("addLanguage.title")}
@@ -114,7 +116,7 @@ export function AddLanguageModal({ languages, onClose, onCreated }: AddLanguageM
           placeholder={t("addLanguage.tagPlaceholder")}
           autoCapitalize="none"
           autoCorrect="off"
-          className="mt-1 w-full rounded-lg border bg-surface px-3 py-2 text-sm text-content outline-none placeholder:text-content-subtle focus:ring-2"
+          className="mt-1 w-full rounded-lg border bg-surface px-3 py-2 font-mono text-sm text-content outline-none placeholder:text-content-subtle focus:ring-2"
         />
         <p className="mt-1 text-xs text-content-subtle">{t("addLanguage.tagHelp")}</p>
         {isMalformed && (
@@ -152,7 +154,7 @@ export function AddLanguageModal({ languages, onClose, onCreated }: AddLanguageM
                   id={`add-language-row-lang-${i}`}
                   value={row.languageID}
                   onChange={(e) => setRow(i, { languageID: e.target.value })}
-                  className="w-36 rounded-lg border bg-surface px-2 py-2 text-sm text-content outline-none focus:ring-2"
+                  className="w-28 min-w-0 shrink-0 rounded-lg border bg-surface px-2 py-2 text-sm text-content outline-none focus:ring-2 sm:w-36"
                 >
                   <option value="" />
                   {languages.map((l) => (
@@ -173,9 +175,11 @@ export function AddLanguageModal({ languages, onClose, onCreated }: AddLanguageM
                 <button
                   type="button"
                   onClick={() => setRows((prev) => prev.filter((_, j) => j !== i))}
-                  className="text-sm text-content-subtle hover:text-content"
+                  aria-label={t("addLanguage.removeTranslation")}
+                  title={t("addLanguage.removeTranslation")}
+                  className="shrink-0 rounded-lg px-2 py-1 text-lg leading-none text-content-subtle hover:bg-surface-muted hover:text-content"
                 >
-                  {t("addLanguage.removeTranslation")}
+                  ×
                 </button>
               </div>
             ))}

@@ -3,19 +3,38 @@ import { useTranslation } from "react-i18next";
 import type { LanguageView } from "@leksis/types";
 import { AddLanguageModal } from "../components/AddLanguageModal";
 import { LanguageSelector } from "../components/LanguageSelector";
+import { SearchResults } from "../components/SearchResults";
 import { fetchLanguages } from "../lib/api";
 import { getShortlist, promoteInShortlist } from "../lib/shortlist";
 
 const SYNC_POLL_MS = 3_000;
 const SYNC_POLL_MAX_TRIES = 20; // ~60s of PDS → Jetstream → ArangoDB latency
 
-// Connected landing surface. The search experience itself is a later milestone;
-// this is the shell where it will live — a language scope + a term box.
+interface SubmittedSearch {
+  query: string;
+  /** Language scope at submit time; "" = all languages. */
+  languageTag: string;
+}
+
+/** Reads ?q=&l= from the current URL, e.g. shared as /?q=entry&l=en-US. */
+function searchFromLocation(): SubmittedSearch | null {
+  const params = new URLSearchParams(window.location.search);
+  const query = params.get("q")?.trim() ?? "";
+  if (query === "") return null;
+  return { query, languageTag: params.get("l") ?? "" };
+}
+
+// Connected landing surface: language scope + term box, with the results
+// (and the create-this-word offer) rendering below on submit. Search state
+// mirrors into the URL (?q=&l=) so a search is a shareable, reloadable link.
 export function HomePage() {
   const { t } = useTranslation();
   const [languages, setLanguages] = useState<LanguageView[]>([]);
   const [shortlist, setShortlist] = useState<string[]>(() => getShortlist());
-  const [language, setLanguage] = useState("");
+  const initialSearch = () => searchFromLocation();
+  const [language, setLanguage] = useState(() => initialSearch()?.languageTag ?? "");
+  const [term, setTerm] = useState(() => initialSearch()?.query ?? "");
+  const [submitted, setSubmitted] = useState<SubmittedSearch | null>(initialSearch);
   const [adding, setAdding] = useState(false);
   /** Tag written to the PDS but not yet seen back from the AppView. */
   const [syncingTag, setSyncingTag] = useState<string | null>(null);
@@ -24,6 +43,18 @@ export function HomePage() {
     fetchLanguages()
       .then(setLanguages)
       .catch((err) => console.error("could not load languages:", err));
+  }, []);
+
+  // Back/forward through search history restores the term, scope and results.
+  useEffect(() => {
+    function onPopState() {
+      const search = searchFromLocation();
+      setSubmitted(search);
+      setTerm(search?.query ?? "");
+      setLanguage(search?.languageTag ?? "");
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
   // After a create: poll until the record has round-tripped
@@ -69,8 +100,22 @@ export function HomePage() {
   }
 
   function onSubmit(event: FormEvent) {
-    event.preventDefault(); // wired up in a later milestone
+    event.preventDefault();
+    const query = term.trim();
+    if (query === "") return;
+    setSubmitted({ query, languageTag: language });
+
+    const params = new URLSearchParams();
+    params.set("q", query);
+    if (language !== "") params.set("l", language);
+    const url = `${window.location.pathname}?${params.toString()}`;
+    window.history.pushState(null, "", url);
   }
+
+  const scopeLanguage =
+    submitted !== null && submitted.languageTag !== ""
+      ? (languages.find((l) => l.tag === submitted.languageTag) ?? null)
+      : null;
 
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 py-10 sm:px-6 sm:py-16">
@@ -96,6 +141,8 @@ export function HomePage() {
         <input
           id="search-term"
           type="search"
+          value={term}
+          onChange={(e) => setTerm(e.target.value)}
           placeholder={t("search.placeholder")}
           autoCapitalize="none"
           className="w-full flex-1 rounded-lg border bg-surface px-3 py-2.5 text-sm text-content outline-none placeholder:text-content-subtle focus:ring-2"
@@ -112,7 +159,10 @@ export function HomePage() {
       {syncingTag !== null && (
         <p className="mt-3 text-sm text-content-subtle">{t("addLanguage.syncing")}</p>
       )}
-      <p className="mt-3 text-sm text-content-subtle">{t("search.comingSoon")}</p>
+
+      {submitted !== null && (
+        <SearchResults query={submitted.query} languages={languages} language={scopeLanguage} />
+      )}
 
       {adding && (
         <AddLanguageModal

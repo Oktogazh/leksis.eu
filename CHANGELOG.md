@@ -3,7 +3,39 @@
 All notable changes to Leksis. This project follows the 8-week development
 timeline; each entry maps to a weekly milestone.
 
-## [Unreleased] — Week 3: Loop 1, Languages
+## [Unreleased] — Week 4 prep: search flow + atproto.at restyle
+
+Frontend-only groundwork for Loop 2 (entries). No API, lexicon, or types
+changes.
+
+### Web (`apps/web`)
+
+- **Restyle after atproto.at**: theme tokens moved from slate/indigo to pure
+  neutrals + Bluesky blue (`#1185fe`) as the sole accent; monospace styling for
+  technical identifiers (language tags, the tag input). Pure token change —
+  no component markup touched for the retheme.
+- **Language creation dialog sizing fix**: bottom sheet on phones / centered
+  card from `sm:` up, height capped with `dvh` (mobile browser chrome no
+  longer hides the buttons), wider (`max-w-lg`), responsive padding, and
+  translation rows that survive narrow screens (compact `×` remove button).
+- **Word search flow** (`components/SearchResults.tsx`,
+  `components/CreateEntryPanel.tsx`): the search bar now submits. Default
+  scope is **all languages** when no language is selected; results render
+  below the bar. The (for now honestly empty) result list is always followed
+  by a "create this word" panel prefilled with the searched word and
+  carrying the week-4 slice of the `eu.leksis.entry` lexicon:
+  `orthography[]`, `grammaticality.{categories,notes}`, and
+  `definitions[{tag,text}]`. When the search had no language scope, the panel
+  offers its own language picker rather than requiring a prior selection.
+  The submit stays disabled until Loop 2 lands the record write + AppView
+  ingestion.
+- **Search state in the URL**: submitting mirrors the query and scope into
+  `?q=<word>&l=<tag>` via `history.pushState` (e.g. `/?q=entry&l=en-US`), so a
+  search is a shareable/reloadable link; back/forward restores it via
+  `popstate`. No router dependency added — plain `URLSearchParams`/History API,
+  matching the app's single-page shape.
+
+## Week 3 — Loop 1, Languages (released `v0.3.x`)
 
 The first dictionary loop: languages exist, and **firehose consumption
 starts**. Users create languages as `eu.leksis.language` records on their own
