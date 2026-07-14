@@ -18,9 +18,8 @@ import { ingestLanguage, ingestLanguageDelete } from "./ingest-language";
 // hammered. Override with JETSTREAM_URLS (comma-separated) or JETSTREAM_URL.
 const DEFAULT_JETSTREAM_URLS = [
   "wss://europe.firehose.network/subscribe",
-  "wss://jetstream2.us-east.bsky.network/subscribe",
   "wss://relay3.fr.hose.cam/subscribe",
-  "wss://relay1.eurosky.network/subscribe",
+  // "wss://relay1.eurosky.network/subscribe",
   "wss://bsky.network/subscribe",
 ];
 
