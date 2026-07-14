@@ -15,7 +15,7 @@ low-resource languages, built on AT Protocol and ArangoDB. Turborepo monorepo:
 
 ## Working method
 
-The user works step by step and keeps control of what happens and when.
+The user works, sequentially, step by step and keeps control of what happens and when. Make all changes directly on the current branch without creating worktrees, needing PR etc...
 
 1. **Orient** — establish where the project stands (evolution skill step 1).
 2. **Propose** — before any non-trivial change, state what you intend to change, in
@@ -27,6 +27,8 @@ The user works step by step and keeps control of what happens and when.
    flow has been exercised and proof shown, not when it compiles.
 5. **Record** — match the change to its home (CHANGELOG / ADR / skill update) per
    evolution skill step 4.
+6. Always work directly on the master branch. Do not create worktrees or spawn parallel subagents unless explicitly asked.
+
 
 ## Verification rules
 

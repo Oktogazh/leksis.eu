@@ -9,8 +9,33 @@ import { ingestLanguage, ingestLanguageDelete } from "./ingest-language";
 // Runs inside the api process; a consumer failure must never take down HTTP,
 // so every path here logs and retries rather than throwing.
 
-const JETSTREAM_URL =
-  process.env.JETSTREAM_URL ?? "wss://jetstream2.us-east.bsky.network/subscribe";
+// Public Jetstream instances are Bluesky-operated shared infrastructure and
+// individually flaky under load. Observed 2026-07-12: one instance flapped for
+// ~3h — connecting then dropping every 1-3s while replaying a ~1-day backlog —
+// which stalled indexing of a single language record for over three hours. So
+// the consumer keeps the list of public instances and rotates to the next one
+// on every reconnect: a bad instance is routed around in ~1s instead of being
+// hammered. Override with JETSTREAM_URLS (comma-separated) or JETSTREAM_URL.
+const DEFAULT_JETSTREAM_URLS = [
+  "wss://europe.firehose.network/subscribe",
+  "wss://jetstream2.us-east.bsky.network/subscribe",
+  "wss://relay3.fr.hose.cam/subscribe",
+  "wss://relay1.eurosky.network/subscribe",
+  "wss://bsky.network/subscribe",
+];
+
+const JETSTREAM_URLS = (
+  process.env.JETSTREAM_URLS ??
+  process.env.JETSTREAM_URL ??
+  DEFAULT_JETSTREAM_URLS.join(",")
+)
+  .split(",")
+  .map((u) => u.trim())
+  .filter(Boolean);
+
+if (JETSTREAM_URLS.length === 0) {
+  throw new Error("jetstream: no relay URL configured (JETSTREAM_URLS/JETSTREAM_URL)");
+}
 
 // Widened per loop (entries arrive in week 4).
 const WANTED_COLLECTIONS = [LEKSIS_LANGUAGE_COLLECTION];
@@ -78,13 +103,15 @@ export async function startJetstream(): Promise<void> {
   }
 
   let attempt = 0;
+  let relayIndex = 0;
   let queue: Promise<void> = Promise.resolve();
 
   const connect = () => {
+    const base = JETSTREAM_URLS[relayIndex]!;
     const params = new URLSearchParams();
     for (const c of WANTED_COLLECTIONS) params.append("wantedCollections", c);
     if (cursor !== null) params.set("cursor", String(cursor));
-    const url = `${JETSTREAM_URL}?${params.toString()}`;
+    const url = `${base}?${params.toString()}`;
 
     const ws = new WebSocket(url);
     let saveTimer: ReturnType<typeof setInterval> | undefined;
@@ -92,7 +119,7 @@ export async function startJetstream(): Promise<void> {
     ws.addEventListener("open", () => {
       attempt = 0;
       console.log(
-        `jetstream: connected (${cursor !== null ? `cursor ${cursor}` : "live tail"})`,
+        `jetstream: connected to ${new URL(base).host} (${cursor !== null ? `cursor ${cursor}` : "live tail"})`,
       );
       saveTimer = setInterval(() => {
         if (cursor !== null) {
@@ -129,9 +156,14 @@ export async function startJetstream(): Promise<void> {
       reconnectScheduled = true;
       if (saveTimer !== undefined) clearInterval(saveTimer);
       attempt += 1;
+      // Rotate to the next instance so a single flaky one can't stall
+      // indexing; backoff still grows while every instance keeps failing.
+      relayIndex = (relayIndex + 1) % JETSTREAM_URLS.length;
       const backoff = Math.min(BACKOFF_CAP_MS, BACKOFF_BASE_MS * 2 ** (attempt - 1));
       const delay = backoff / 2 + Math.random() * (backoff / 2);
-      console.warn(`jetstream: disconnected, reconnecting in ${Math.round(delay)}ms`);
+      console.warn(
+        `jetstream: disconnected, trying ${new URL(JETSTREAM_URLS[relayIndex]!).host} in ${Math.round(delay)}ms`,
+      );
       setTimeout(connect, delay);
     };
 
