@@ -17,10 +17,10 @@ import { ingestLanguage, ingestLanguageDelete } from "./ingest-language";
 // on every reconnect: a bad instance is routed around in ~1s instead of being
 // hammered. Override with JETSTREAM_URLS (comma-separated) or JETSTREAM_URL.
 const DEFAULT_JETSTREAM_URLS = [
-  "wss://europe.firehose.network/subscribe",
-  "wss://relay3.fr.hose.cam/subscribe",
-  // "wss://relay1.eurosky.network/subscribe",
-  "wss://bsky.network/subscribe",
+  "wss://jetstream1.us-east.bsky.network/subscribe",
+  "wss://jetstream2.us-east.bsky.network/subscribe",
+  "wss://jetstream1.us-west.bsky.network/subscribe",
+  "wss://jetstream2.us-west.bsky.network/subscribe",
 ];
 
 const JETSTREAM_URLS = (
