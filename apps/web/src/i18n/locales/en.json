@@ -116,14 +116,18 @@
     "annotationLongPlaceholder": "noun",
     "annotationChipHint": "Drag to reorder — click for the full form",
     "removeAnnotation": "Remove {{annotation}}",
-    "definitionsHelp": "Written in the language itself. Order matters — translations and structure will reference definitions by their position.",
+    "definitionsHelp": "Written in the language itself. Arrange them with the arrows: ↑ ↓ move a definition through the list (crossing group edges), → nests it one level deeper, ← brings it back up — up to three levels, numbered like a dictionary (I. 1. a.).",
     "notesHelp": "Notes shown before this definition — “by ext.” / “by extension”, “arch.” / “archaic”…",
     "addNote": "Add this note",
     "submitting": "Publishing…",
     "submitModify": "Publish the proposal",
     "errors": {
       "writeFailed": "The entry could not be written to your PDS. Try again."
-    }
+    },
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "moveDeeper": "Move one level deeper",
+    "moveShallower": "Move one level up"
   },
   "entry": {
     "loading": "Loading the entry…",

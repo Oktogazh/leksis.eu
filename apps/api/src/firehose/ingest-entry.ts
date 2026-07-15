@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
 import { aql } from "arangojs";
 import {
+  isValidDefinitionPlace,
   isValidLanguageTag,
   normalizeLanguageTag,
+  validDefinitionPlaces,
   type EntryAnnotation,
 } from "@leksis/types";
 import { db } from "../db";
@@ -57,6 +59,26 @@ function parseAnnotations(value: unknown): EntryAnnotation[] | null {
 }
 
 /**
+ * Validate the flat definitions list: a non-empty array of
+ * {place, notes?, text} definitions whose places, in array order, satisfy
+ * the whole-list invariants (sorted reading order, contiguous sibling
+ * indices, no place a prefix of another).
+ */
+function validDefinitions(value: unknown): boolean {
+  if (!Array.isArray(value) || value.length === 0) return false;
+  const places: number[][] = [];
+  for (const item of value) {
+    if (typeof item !== "object" || item === null) return false;
+    const def = item as Record<string, unknown>;
+    if (typeof def.text !== "string" || def.text.trim() === "") return false;
+    if (parseAnnotations(def.notes) === null) return false;
+    if (!isValidDefinitionPlace(def.place)) return false;
+    places.push(def.place);
+  }
+  return validDefinitionPlaces(places);
+}
+
+/**
  * Validate an incoming record (unknown shape — anyone can put anything on
  * their PDS). The content fields (categories, definitions) are validated so
  * malformed records are rejected whole, but only the indexed fields are
@@ -81,13 +103,7 @@ function parseRecord(record: unknown): ParsedEntry | null {
 
   if (parseAnnotations(r.categories) === null) return null;
 
-  if (!Array.isArray(r.definitions) || r.definitions.length === 0) return null;
-  for (const item of r.definitions) {
-    if (typeof item !== "object" || item === null) return null;
-    const d = item as Record<string, unknown>;
-    if (typeof d.text !== "string" || d.text.trim() === "") return null;
-    if (parseAnnotations(d.notes) === null) return null;
-  }
+  if (!validDefinitions(r.definitions)) return null;
 
   let subject: string | null = null;
   if (r.subject !== undefined) {
@@ -202,17 +218,42 @@ export async function ingestEntry(
 }
 
 /**
- * Handle a delete op: archive the current version if it is the one whose
- * record was deleted. Older versions stay archived; no reinstatement
- * (deferred until the voting mechanism).
+ * Handle a delete op: the DB mirrors the state of the network. An entry
+ * version whose record is gone from its author's PDS is removed from the
+ * index (unlike `languages`, which archive forever — language references
+ * are structural to the app; the entry version history lives on the
+ * network, not in this index). If the deleted version was current, the
+ * most recently indexed remaining version is promoted back to current;
+ * when nothing remains, the entry disappears from search.
  */
 export async function ingestEntryDelete(recordURI: string): Promise<void> {
-  const cursor = await db.query<string>(aql`
+  const removedCursor = await db.query<{ entryKey: string; current: boolean }>(aql`
     FOR e IN entries
-      FILTER e.recordURI == ${recordURI} AND e.current == true
-      UPDATE e WITH { current: false } IN entries
-      RETURN e.entryKey
+      FILTER e.recordURI == ${recordURI}
+      REMOVE e IN entries
+      RETURN { entryKey: OLD.entryKey, current: OLD.current }
   `);
-  const entryKey = await cursor.next();
-  if (entryKey) console.log(`firehose: archived entry "${entryKey}" (record deleted)`);
+  const removed = await removedCursor.all();
+  if (removed.length === 0) return;
+
+  const entryKey = removed[0]!.entryKey;
+  if (!removed.some((r) => r.current)) {
+    console.log(`firehose: removed archived version of entry "${entryKey}" (record deleted)`);
+    return;
+  }
+
+  const promotedCursor = await db.query<string>(aql`
+    FOR e IN entries
+      FILTER e.entryKey == ${entryKey}
+      SORT e.indexedAt DESC
+      LIMIT 1
+      UPDATE e WITH { current: true } IN entries
+      RETURN NEW.recordURI
+  `);
+  const promoted = await promotedCursor.next();
+  console.log(
+    promoted
+      ? `firehose: removed current version of entry "${entryKey}" (record deleted); promoted ${promoted}`
+      : `firehose: removed entry "${entryKey}" entirely (last record deleted)`,
+  );
 }

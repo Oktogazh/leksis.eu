@@ -12,13 +12,29 @@ record straight from its author's PDS.
 ### Lexicon & types (`lexicons/`, `packages/types`)
 
 - **`lexicons/eu.leksis.entry.json`** (rkey = TID): `{ languageID,
-  orthography[], categories[{short,long}], definitions[{notes[{short,long}],
-  text}], subject?, createdAt }`. Grammatical categories and definition
-  notes share one shape — an ordered list of short/long annotation pairs
-  ("n." / "noun", "arch." / "archaic"); a definition can carry several
-  notes, an entry several categories, both freely reordered. The earlier
-  drafts' entry-level freeform `grammaticality.notes` and per-definition
-  `tag` string are gone.
+  orthography[], categories[{short,long}], definitions[…], subject?,
+  createdAt }`. Grammatical categories and definition notes share one shape
+  — an ordered list of short/long annotation pairs ("n." / "noun",
+  "arch." / "archaic"); a definition can carry several notes, an entry
+  several categories, both freely reordered. The earlier drafts'
+  entry-level freeform `grammaticality.notes` and per-definition `tag`
+  string are gone.
+- **Definitions are a flat list; each definition carries its coordinate**
+  (`place`, decided 2026-07-16, superseding the first nested-group draft
+  and, before it, the white paper's separate `structure: number[][][]`
+  presentation field): `definitions[]` items are `{ place, notes, text }`,
+  where `place` is 1–3 non-negative integers — one 0-based index per
+  dimension, deepest last, so its length is the definition's own depth
+  (`[0]` = first top-level definition, `[1, 0]` = first sub-definition of
+  the second). Variable length keeps mixed depths expressible (a standalone
+  "II." beside "I. 1."), and the raw record stays human-readable — no
+  nested group nodes. Across the entry, places must be sorted in reading
+  order, sibling indices contiguous from 0, and no place a prefix of
+  another (shared validators in `packages/types/src/entry.ts`). Display
+  numbering follows the deepest place length: one dimension → arabic
+  (1. 2.), two → roman then arabic (I. 1.), three → letters, roman, then
+  arabic (A. I. 1.). Coordinates are meaningful: future fields reference a
+  definition by its place.
 - **Entry identity is the `subject` field**: a record carrying
   `subject: at://…` (the record version it modifies) is a proposed new
   version of that record's entry; a record without one is a brand-new entry
@@ -41,9 +57,19 @@ record straight from its author's PDS.
   (BCP 47 tag, non-empty orthography/definitions, well-formed annotation
   pairs), resolves `subject` → existing entry (unknown subjects index as a
   new entry rather than being dropped), applies last-write-wins across
-  authors with archival; idempotent on `recordURI + cid`. Deletes archive
-  the current version. Jetstream `wantedCollections` now includes
-  `eu.leksis.entry`.
+  authors with archival; idempotent on `recordURI + cid`. Jetstream
+  `wantedCollections` now includes `eu.leksis.entry`. Definition validation
+  checks each `place` (1–3 non-negative integers) and the whole-list
+  invariants in one pass: sorted reading order, contiguous sibling indices,
+  no place a prefix of another.
+- **Entry deletion mirrors the network** (divergence from the
+  languages-style archive-forever model, decided 2026-07-15): when a record
+  is deleted from its author's PDS, its version docs are **removed** from
+  `entries` — the entry version history lives on the network, not in this
+  index; only language references archive forever, being structural to the
+  app. If the deleted version was current, the most recently indexed
+  remaining version is promoted back to current; deleting the last version
+  removes the entry from search entirely.
 - **`GET /entries?q=&l=`**: case-insensitive orthography prefix search over
   current entries, optionally language-scoped, exact matches first (limit
   50). **`GET /entries/:key`**: one entry's search view (404 when unknown).
@@ -63,6 +89,19 @@ record straight from its author's PDS.
   the definition tag field are gone. The dialog doubles as the
   proposal editor: given `initial` + `subject` it prefills from the current
   record and publishes a full-rewrite modification.
+- **Hierarchical definition editor** (`lib/definition-tree.ts`): the editor
+  works on a tree (groups make the movement rules natural) and serializes
+  to/from the record's flat, place-carrying shape — places are re-derived
+  from tree positions on save, so they always satisfy the ingest
+  invariants. Arrow controls on each definition: ↑/↓ move it through the
+  visual sequence and cross group edges (entering a neighbouring group at
+  its head/tail, leaving the parent group at its edges), → nests it one
+  dimension deeper (wrapping it in a new group), ← brings it back up;
+  groups are never created or deleted explicitly — they emerge from → and
+  vanish when emptied. Every definition and group shows its live dictionary
+  label (1. / I. 2. / A. II. 1.) recomputed from the tree's depth, and the
+  entry page renders each definition flat with its full place label and
+  depth indentation (`DefinitionList` in `EntryPage.tsx`).
 - **Search results are real** (`SearchResults.tsx`): `GET /entries` renders
   matches (orthographies + language), each opening the entry page; after a
   creation the list polls until the record round-trips PDS → Jetstream →

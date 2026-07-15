@@ -23,9 +23,13 @@ assertions papering over mismatches, AQL queries that don't match the collection
 
 These are project law (from ADRs and the evolution skill); flag any violation as severe:
 
-- **Archive, never delete.** No code path may hard-delete dictionary records; superseded
-  versions get `current: false`. Deletion destroys the substrate the future voting
-  system needs.
+- **The index mirrors the network; superseded versions archive.** Overwrites never
+  hard-delete: the superseded version gets `current: false` (voting substrate).
+  `languages` versions archive forever (structural to the app). The one legitimate
+  removal (Loop 2 decision, 2026-07-15): an `entries` version whose **record was
+  deleted from its author's PDS** is removed from the index, promoting the most
+  recently indexed remaining version — the entry version history lives on the
+  network, not in the DB. Any other hard-delete path is a violation.
 - **Universal for any language.** No hardcoded language codes, scripts, orthography or
   grammar assumptions in logic (i18n resource files are fine).
 - **Types are the contract.** If the diff changes the ArangoDB schema, the AT Proto

@@ -22,10 +22,66 @@ export interface EntryAnnotation {
   long: string;
 }
 
-/** One definition of an entry: ordered notes shown before the text. */
+/**
+ * One definition of an entry. `definitions` is a flat list, each definition
+ * carrying its coordinate (`place`) in a hierarchy of up to three dimensions:
+ * one 0-based index per dimension, deepest last, so the place's length is the
+ * definition's own depth ([0] = first top-level definition; [1, 0] = first
+ * sub-definition of the second). Numbering in the UI follows the entry's
+ * deepest place length: 1 → arabic; 2 → roman then arabic; 3 → letters,
+ * roman, then arabic.
+ */
 export interface EntryDefinition {
+  place: number[];
+  /** Ordered lexicographic notes shown before the text. */
   notes: EntryAnnotation[];
   text: string;
+}
+
+/** Maximum depth of the definitions hierarchy (a place's maximum length). */
+export const ENTRY_DEFINITIONS_MAX_DEPTH = 3;
+
+/** Lexicographic (reading-order) comparison of two definition places. */
+export function compareDefinitionPlaces(a: number[], b: number[]): number {
+  const shared = Math.min(a.length, b.length);
+  for (let i = 0; i < shared; i++) {
+    if (a[i] !== b[i]) return a[i]! - b[i]!;
+  }
+  return a.length - b.length;
+}
+
+/** A well-formed place: 1–3 non-negative integers. */
+export function isValidDefinitionPlace(value: unknown): value is number[] {
+  return (
+    Array.isArray(value) &&
+    value.length >= 1 &&
+    value.length <= ENTRY_DEFINITIONS_MAX_DEPTH &&
+    value.every((n) => Number.isInteger(n) && n >= 0)
+  );
+}
+
+/**
+ * Whole-list place invariants, given each place is already well-formed:
+ * sorted in reading order, sibling indices contiguous from 0, and no place a
+ * prefix of another (a definition cannot also be a group). Walked pairwise:
+ * each place must increment its predecessor at exactly one level and reset
+ * the deeper ones to 0.
+ */
+export function validDefinitionPlaces(places: number[][]): boolean {
+  let prev: number[] | null = null;
+  for (const place of places) {
+    if (prev === null) {
+      if (place.some((n) => n !== 0)) return false;
+    } else {
+      let branch = 0;
+      while (branch < prev.length && prev[branch] === place[branch]) branch++;
+      if (branch >= prev.length || branch >= place.length) return false; // prefix or duplicate
+      if (place[branch] !== prev[branch]! + 1) return false; // gap or regression
+      if (place.slice(branch + 1).some((n) => n !== 0)) return false;
+    }
+    prev = place;
+  }
+  return true;
 }
 
 /**
@@ -42,7 +98,11 @@ export interface LeksisEntryRecord {
   orthography: string[];
   /** Ordered grammatical categories of the entry. */
   categories: EntryAnnotation[];
-  /** Order is meaningful: future fields reference definitions by index. */
+  /**
+   * Flat list of definitions, sorted by `place` (see EntryDefinition).
+   * Coordinates are meaningful: future fields reference a definition by its
+   * place.
+   */
   definitions: EntryDefinition[];
   /** AT URI of the record version this modifies; absent for a new entry. */
   subject?: string;

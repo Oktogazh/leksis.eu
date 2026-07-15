@@ -43,6 +43,7 @@ The user works, sequentially, step by step and keeps control of what happens and
 - `git commit`, `git push`, and above all **`git tag` / `git push --tags`**: pushing a
   tag triggers the GitHub Actions deploy to the production VPS. Treat tagging as a
   production deploy, because it is one.
-- Deleting or migrating data in ArangoDB (dictionary records are archived with
-  `current: false`, never deleted — see the reviewer agent's guardrails).
+- Deleting or migrating data in ArangoDB (superseded versions are archived with
+  `current: false`; the only sanctioned removal is an `entries` version whose
+  record was deleted from its author's PDS — see the reviewer agent's guardrails).
 - Editing production/infra files: `docker-compose.yml`, `Caddyfile`, `.github/workflows`.

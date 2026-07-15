@@ -1,10 +1,58 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import type { EntryView, LanguageView, LeksisEntryRecord } from "@leksis/types";
+import {
+  type EntryDefinition,
+  type EntryView,
+  type LanguageView,
+  type LeksisEntryRecord,
+} from "@leksis/types";
 import { EntryEditorDialog } from "../components/CreateEntryPanel";
 import { endonym } from "../components/LanguageSelector";
 import { fetchEntry } from "../lib/api";
 import { fetchEntryRecord } from "../lib/atproto-record";
+import { definitionsDepth, placeLabel } from "../lib/definition-tree";
+
+/** Indentation per definition depth (its place's length, 1–3). */
+const DEPTH_INDENT = ["", "pl-5 sm:pl-6", "pl-10 sm:pl-12"];
+
+/**
+ * The flat definitions list, in the record's reading order. Each row shows
+ * its full place label — arabic only (1), roman → arabic (2), letters →
+ * roman → arabic (3) — and indents by its own depth.
+ */
+function DefinitionList({ definitions }: { definitions: EntryDefinition[] }): ReactNode {
+  const depth = definitionsDepth(definitions);
+  return (
+    <ol className="space-y-4">
+      {definitions.map((def, i) => (
+        <li
+          key={i}
+          className={`flex gap-3 ${DEPTH_INDENT[Math.min(def.place.length, 3) - 1]}`}
+        >
+          <span className="mt-0.5 shrink-0 font-mono text-sm text-content-subtle">
+            {placeLabel(depth, def.place)}
+          </span>
+          <div className="min-w-0">
+            {def.notes.length > 0 && (
+              <span className="mr-2">
+                {def.notes.map((note, j) => (
+                  <abbr
+                    key={j}
+                    title={note.long}
+                    className="mr-1 rounded border bg-surface-muted/60 px-1.5 py-0.5 font-mono text-xs text-content-muted no-underline"
+                  >
+                    {note.short}
+                  </abbr>
+                ))}
+              </span>
+            )}
+            <span className="text-sm text-content">{def.text}</span>
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
 
 const SYNC_POLL_MS = 3_000;
 const SYNC_POLL_MAX_TRIES = 20; // ~60s of PDS → Jetstream → ArangoDB latency
@@ -153,31 +201,7 @@ export function EntryPage({ entryKey, languages, onBack }: EntryPageProps) {
 
           <section className="mt-6">
             <h2 className="sr-only">{t("entry.definitionsLabel")}</h2>
-            <ol className="space-y-4">
-              {record.definitions.map((definition, i) => (
-                <li key={i} className="flex gap-3">
-                  <span className="mt-0.5 shrink-0 font-mono text-sm text-content-subtle">
-                    {i + 1}.
-                  </span>
-                  <div className="min-w-0">
-                    {definition.notes.length > 0 && (
-                      <span className="mr-2">
-                        {definition.notes.map((note, j) => (
-                          <abbr
-                            key={j}
-                            title={note.long}
-                            className="mr-1 rounded border bg-surface-muted/60 px-1.5 py-0.5 font-mono text-xs text-content-muted no-underline"
-                          >
-                            {note.short}
-                          </abbr>
-                        ))}
-                      </span>
-                    )}
-                    <span className="text-sm text-content">{definition.text}</span>
-                  </div>
-                </li>
-              ))}
-            </ol>
+            <DefinitionList definitions={record.definitions} />
           </section>
 
           <footer className="mt-8 border-t pt-4">

@@ -4,6 +4,7 @@ import {
   type ChangeEvent,
   type KeyboardEvent,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -13,6 +14,19 @@ import {
   type LeksisEntryRecord,
 } from "@leksis/types";
 import { useSession } from "../auth/SessionProvider";
+import {
+  editTreeLabels,
+  fromRecordDefinitions,
+  indent,
+  moveDown,
+  moveUp,
+  outdent,
+  removeLeaf,
+  toRecordDefinitions,
+  updateLeaf,
+  collectLeaves,
+  type EditNode,
+} from "../lib/definition-tree";
 import { endonym } from "./LanguageSelector";
 
 interface AnnotationTag extends EntryAnnotation {
@@ -249,14 +263,14 @@ function AnnotationEditor({
   );
 }
 
-interface DefinitionRow {
-  /** Stable identity so definition blocks survive removals above them. */
-  id: number;
+/** Editor leaf payload: one definition's note chips and text. */
+interface DefinitionDraft {
   notes: AnnotationTag[];
   text: string;
 }
 
-let nextDefinitionId = 0;
+let nextNodeId = 0;
+const mintNodeId = () => nextNodeId++;
 
 export interface EntryEditorDialogProps {
   /** All known languages, for the in-dialog picker when none was preselected. */
@@ -300,12 +314,14 @@ export function EntryEditorDialog({
   const [categories, setCategories] = useState<AnnotationTag[]>(() =>
     toAnnotationTags(initial?.categories ?? []),
   );
-  const [definitions, setDefinitions] = useState<DefinitionRow[]>(() =>
-    (initial?.definitions ?? [{ notes: [], text: "" }]).map((d) => ({
-      id: nextDefinitionId++,
-      notes: toAnnotationTags(d.notes),
-      text: d.text,
-    })),
+  const [definitions, setDefinitions] = useState<EditNode<DefinitionDraft>[]>(() =>
+    initial
+      ? fromRecordDefinitions(
+          initial.definitions,
+          (d) => ({ notes: toAnnotationTags(d.notes), text: d.text }),
+          mintNodeId,
+        )
+      : [{ kind: "leaf", id: mintNodeId(), payload: { notes: [], text: "" } }],
   );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -320,17 +336,15 @@ export function EntryEditorDialog({
     setSpellings((prev) => prev.map((s, i) => (i === index ? value : s)));
   }
 
-  function setDefinition(id: number, patch: Partial<Omit<DefinitionRow, "id">>) {
-    setDefinitions((prev) => prev.map((row) => (row.id === id ? { ...row, ...patch } : row)));
-  }
-
   const cleanSpellings = spellings.map((s) => s.trim()).filter((s) => s !== "");
-  const cleanDefinitions = definitions
-    .filter((d) => d.text.trim() !== "")
-    .map((d) => ({
-      notes: d.notes.map(({ short, long }) => ({ short, long })),
-      text: d.text.trim(),
-    }));
+  const cleanDefinitions = toRecordDefinitions(definitions, (payload) =>
+    payload.text.trim() === ""
+      ? null
+      : {
+          notes: payload.notes.map(({ short, long }) => ({ short, long })),
+          text: payload.text.trim(),
+        },
+  );
   const canSubmit =
     !submitting && target !== null && cleanSpellings.length > 0 && cleanDefinitions.length > 0;
 
@@ -364,6 +378,101 @@ export function EntryEditorDialog({
       setError(t("createEntry.errors.writeFailed"));
       setSubmitting(false);
     }
+  }
+
+  // Live numbering (1. / I. 2. / II. 1. a.) recomputed from the tree's depth,
+  // so authors see the published numbering while they arrange definitions.
+  const definitionLabels = editTreeLabels(definitions);
+  const leafCount = collectLeaves(definitions).length;
+
+  function moveButton(label: string, glyph: string, onClick: () => void) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label={label}
+        title={label}
+        className="rounded border px-1.5 py-0.5 text-xs leading-none text-content-muted hover:bg-surface-muted hover:text-content"
+      >
+        {glyph}
+      </button>
+    );
+  }
+
+  function renderDefinitionNodes(nodes: EditNode<DefinitionDraft>[]): ReactNode {
+    return nodes.map((node) => {
+      if (node.kind === "group") {
+        return (
+          <div
+            key={node.id}
+            className="mt-3 rounded-lg border border-l-4 bg-surface-muted/20 p-2 pl-3 sm:pl-4"
+          >
+            <p className="font-mono text-xs text-content-subtle">{definitionLabels.get(node.id)}</p>
+            {renderDefinitionNodes(node.children)}
+          </div>
+        );
+      }
+      return (
+        <div key={node.id} className="mt-3 rounded-lg border bg-surface-muted/30 p-3">
+          <div className="flex items-center gap-2">
+            <span className="shrink-0 font-mono text-xs text-content-subtle">
+              {definitionLabels.get(node.id)}
+            </span>
+            <div className="ml-auto flex shrink-0 items-center gap-1">
+              {moveButton(t("createEntry.moveUp"), "↑", () =>
+                setDefinitions((prev) => moveUp(prev, node.id)),
+              )}
+              {moveButton(t("createEntry.moveDown"), "↓", () =>
+                setDefinitions((prev) => moveDown(prev, node.id)),
+              )}
+              {moveButton(t("createEntry.moveShallower"), "←", () =>
+                setDefinitions((prev) => outdent(prev, node.id)),
+              )}
+              {moveButton(t("createEntry.moveDeeper"), "→", () =>
+                setDefinitions((prev) => indent(prev, node.id, mintNodeId)),
+              )}
+              {leafCount > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setDefinitions((prev) => removeLeaf(prev, node.id))}
+                  aria-label={t("createEntry.removeDefinition")}
+                  title={t("createEntry.removeDefinition")}
+                  className="rounded-lg px-1.5 py-0.5 text-base leading-none text-content-subtle hover:bg-surface-muted hover:text-content"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          </div>
+          <label className="sr-only" htmlFor={`entry-definition-text-${node.id}`}>
+            {t("createEntry.definitionTextLabel")}
+          </label>
+          <textarea
+            id={`entry-definition-text-${node.id}`}
+            value={node.payload.text}
+            onChange={(e) =>
+              setDefinitions((prev) =>
+                updateLeaf(prev, node.id, (p) => ({ ...p, text: e.target.value })),
+              )
+            }
+            placeholder={t("createEntry.definitionTextPlaceholder")}
+            rows={2}
+            className="mt-2 w-full min-w-0 rounded-lg border bg-surface px-3 py-2 text-sm text-content outline-none placeholder:text-content-subtle focus:ring-2"
+          />
+          <div className="mt-2">
+            <p className="text-xs text-content-subtle">{t("createEntry.notesHelp")}</p>
+            <AnnotationEditor
+              idPrefix={`entry-definition-note-${node.id}`}
+              tags={node.payload.notes}
+              onChange={(notes) =>
+                setDefinitions((prev) => updateLeaf(prev, node.id, (p) => ({ ...p, notes })))
+              }
+              addLabel={t("createEntry.addNote")}
+            />
+          </div>
+        </div>
+      );
+    });
   }
 
   const title = initial ? (
@@ -488,54 +597,13 @@ export function EntryEditorDialog({
             <p className="mt-1 text-xs text-content-subtle">
               {t("createEntry.definitionsHelp")}
             </p>
-            {definitions.map((row, i) => (
-              <div key={row.id} className="mt-3 rounded-lg border bg-surface-muted/30 p-3">
-                <div className="flex items-start gap-2">
-                  <span className="mt-2 shrink-0 font-mono text-xs text-content-subtle">
-                    {i + 1}.
-                  </span>
-                  <label className="sr-only" htmlFor={`entry-definition-text-${row.id}`}>
-                    {t("createEntry.definitionTextLabel")}
-                  </label>
-                  <textarea
-                    id={`entry-definition-text-${row.id}`}
-                    value={row.text}
-                    onChange={(e) => setDefinition(row.id, { text: e.target.value })}
-                    placeholder={t("createEntry.definitionTextPlaceholder")}
-                    rows={2}
-                    className="min-w-0 flex-1 rounded-lg border bg-surface px-3 py-2 text-sm text-content outline-none placeholder:text-content-subtle focus:ring-2"
-                  />
-                  {definitions.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setDefinitions((prev) => prev.filter((d) => d.id !== row.id))
-                      }
-                      aria-label={t("createEntry.removeDefinition")}
-                      title={t("createEntry.removeDefinition")}
-                      className="shrink-0 rounded-lg px-2 py-1 text-lg leading-none text-content-subtle hover:bg-surface-muted hover:text-content"
-                    >
-                      ×
-                    </button>
-                  )}
-                </div>
-                <div className="mt-2 pl-5">
-                  <p className="text-xs text-content-subtle">{t("createEntry.notesHelp")}</p>
-                  <AnnotationEditor
-                    idPrefix={`entry-definition-note-${row.id}`}
-                    tags={row.notes}
-                    onChange={(notes) => setDefinition(row.id, { notes })}
-                    addLabel={t("createEntry.addNote")}
-                  />
-                </div>
-              </div>
-            ))}
+            {renderDefinitionNodes(definitions)}
             <button
               type="button"
               onClick={() =>
                 setDefinitions((prev) => [
                   ...prev,
-                  { id: nextDefinitionId++, notes: [], text: "" },
+                  { kind: "leaf", id: mintNodeId(), payload: { notes: [], text: "" } },
                 ])
               }
               className="mt-2 text-sm text-primary hover:text-primary-hover"

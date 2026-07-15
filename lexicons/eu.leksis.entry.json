@@ -30,7 +30,7 @@
             "type": "array",
             "minLength": 1,
             "items": { "type": "ref", "ref": "#definition" },
-            "description": "The entry's definitions. Order is meaningful: other records and future fields reference definitions by index."
+            "description": "The entry's definitions as a flat list, each carrying its coordinate (`place`) in a hierarchy of up to three dimensions. The array is sorted by `place` (lexicographic reading order). Coordinates are meaningful: future fields reference a definition by its place."
           },
           "subject": {
             "type": "string",
@@ -65,8 +65,15 @@
     },
     "definition": {
       "type": "object",
-      "required": ["notes", "text"],
+      "required": ["place", "notes", "text"],
       "properties": {
+        "place": {
+          "type": "array",
+          "minLength": 1,
+          "maxLength": 3,
+          "items": { "type": "integer", "minimum": 0 },
+          "description": "Coordinate of the definition in the entry's hierarchy: one 0-based index per dimension, deepest last, so the length is the definition's own depth (e.g. [0] = first top-level definition; [1, 0] = first sub-definition of the second). Across the entry, places must be sorted, sibling indices contiguous from 0, and no place a prefix of another (a definition cannot also be a group). Display numbering follows the deepest place length used: 1 → arabic; 2 → roman, arabic; 3 → letters, roman, arabic."
+        },
         "notes": {
           "type": "array",
           "items": { "type": "ref", "ref": "#annotation" },

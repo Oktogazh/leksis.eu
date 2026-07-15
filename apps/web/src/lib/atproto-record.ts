@@ -1,4 +1,6 @@
 import {
+  compareDefinitionPlaces,
+  isValidDefinitionPlace,
   isValidLanguageTag,
   normalizeLanguageTag,
   LEKSIS_ENTRY_COLLECTION,
@@ -64,6 +66,25 @@ function parseAnnotations(value: unknown): EntryAnnotation[] {
 }
 
 /**
+ * Lenient parse of the flat definitions list: each definition is
+ * `{place, notes?, text}` with a well-formed place (1–3 non-negative
+ * integers). Malformed definitions are dropped; survivors are sorted back
+ * into reading order so rendering never depends on the record's array order.
+ */
+function parseDefinitions(value: unknown): EntryDefinition[] {
+  if (!Array.isArray(value)) return [];
+  const definitions: EntryDefinition[] = [];
+  for (const item of value) {
+    const def = item as Record<string, unknown> | null;
+    if (!def || typeof def !== "object") continue;
+    if (typeof def.text !== "string" || def.text.trim() === "") continue;
+    if (!isValidDefinitionPlace(def.place)) continue;
+    definitions.push({ place: def.place, notes: parseAnnotations(def.notes), text: def.text });
+  }
+  return definitions.sort((a, b) => compareDefinitionPlaces(a.place, b.place));
+}
+
+/**
  * Narrow an unknown PDS payload to the entry contract. Lenient where the
  * AppView's ingestion is strict: the record was already accepted for
  * indexing; rendering drops malformed pieces instead of failing whole.
@@ -80,15 +101,7 @@ function parseEntryRecord(value: unknown): LeksisEntryRecord | null {
     : [];
   if (orthography.length === 0) return null;
 
-  const definitions: EntryDefinition[] = [];
-  if (Array.isArray(r.definitions)) {
-    for (const item of r.definitions) {
-      const d = item as Record<string, unknown> | null;
-      if (d && typeof d.text === "string" && d.text.trim() !== "") {
-        definitions.push({ notes: parseAnnotations(d.notes), text: d.text });
-      }
-    }
-  }
+  const definitions = parseDefinitions(r.definitions);
   if (definitions.length === 0) return null;
 
   return {
