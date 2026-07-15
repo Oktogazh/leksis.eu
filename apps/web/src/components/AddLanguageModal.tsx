@@ -80,7 +80,7 @@ export function AddLanguageModal({ languages, onClose, onCreated }: AddLanguageM
         // putRecord wants an index signature our interface doesn't declare.
         record: { ...record },
       });
-      onCreated({ tag: normalized, translations, createdAt: record.createdAt });
+      onCreated({ tag: normalized, endonym: endonym.trim() });
     } catch (err) {
       console.error("putRecord failed:", err);
       setError(t("addLanguage.errors.writeFailed"));

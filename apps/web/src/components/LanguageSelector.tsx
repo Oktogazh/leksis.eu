@@ -7,10 +7,7 @@ export const ADD_LANGUAGE_VALUE = "__add__";
 
 /** A language's display name: its endonym, falling back to the raw tag. */
 export function endonym(language: LanguageView): string {
-  return (
-    language.translations.find((t) => t.languageID === language.tag)?.translation ??
-    language.tag
-  );
+  return language.endonym || language.tag;
 }
 
 interface LanguageSelectorProps {

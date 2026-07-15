@@ -5,8 +5,33 @@ timeline; each entry maps to a weekly milestone.
 
 ## [Unreleased] — Week 4 prep: search flow + atproto.at restyle
 
-Frontend-only groundwork for Loop 2 (entries). No API, lexicon, or types
-changes.
+Frontend-only groundwork for Loop 2 (entries), plus a language-indexing
+split in the AppView (below). No lexicon changes.
+
+### API & database (`apps/api`, `packages/types`)
+
+- **Languages split into two collections**
+  (`firehose/ingest-language.ts`, new `firehose/local-languages.ts`):
+  `languages` now stores only the record reference (`recordURI`, `cid`,
+  `authorDID`), the tag, timestamps, and the `current` flag — no name
+  content. The names live in a new **`localLanguages` read model**: one doc
+  per locale (`_key` = locale tag) listing every available language as
+  `{ tag, endonym, name? }`, where `name` is that language's name in the
+  doc's locale when its record provides one. The read model is re-synced
+  whenever a version becomes `current: true` in `languages`, so the future
+  voting mechanism can change what's current without touching the sync.
+  Locale docs are created the first time any record names the locale (the
+  required endonym guarantees each language gets its own), and deleted
+  languages stay listed (removal deferred to voting; `languages` keeps
+  archiving with `current: false`).
+- **`GET /languages` takes `?locale=`** and serves the matching
+  `localLanguages` doc; unknown/absent/invalid locales fall back to a
+  tag + endonym listing assembled from each language's own doc.
+  `LanguageView` is now `{ tag, endonym, name? }` and `LanguagesResponse`
+  carries the resolved `locale`.
+- **`db:init`** creates `localLanguages` and idempotently backfills it from
+  pre-split language docs that still carry `translations` (legacy fields are
+  left in place — nothing is migrated destructively).
 
 ### Web (`apps/web`)
 
@@ -29,6 +54,19 @@ changes.
   offers its own language picker rather than requiring a prior selection.
   The submit stays disabled until Loop 2 lands the record write + AppView
   ingestion.
+- **Create-entry panel → dialog + grammatical-category tags**
+  (`components/CreateEntryPanel.tsx`): the always-expanded panel became a
+  call-to-action button that opens an `AddLanguageModal`-style dialog (bottom
+  sheet on phones, centered card from `sm:` up). Grammatical categories are
+  now entered as a short/long pair ("n." / "noun") instead of one
+  comma-separated field; each added pair renders as a chip above the inputs
+  showing the short form, with the full form in a tooltip on hover/focus (or
+  tap on touch screens). Chips are removable (`×`) and reorderable by
+  dragging — hand-rolled with pointer events (mouse + touch, arrow keys for
+  keyboard), no drag-and-drop dependency added. The chip order is the future
+  order of the record's `grammaticality.categories` array; how the short/long
+  pair maps onto the lexicon's `categories: string[]` is a Loop 2 decision
+  (pairs on the record vs. a per-language abbreviation table).
 - **Search state in the URL**: submitting mirrors the query and scope into
   `?q=<word>&l=<tag>` via `history.pushState` (e.g. `/?q=entry&l=en-US`), so a
   search is a shareable/reloadable link; back/forward restores it via

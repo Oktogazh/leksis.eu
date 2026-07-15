@@ -5,15 +5,19 @@ import {
   type LanguageTranslation,
 } from "@leksis/types";
 import { db } from "../db";
+import { syncLocalLanguages } from "./local-languages";
 
-// Decomposition of eu.leksis.language records into the versioned `languages`
-// collection. Wikipedia model: records prove authorship, not ownership — the
-// latest record for a tag becomes current regardless of author, and the
-// previous version is archived (current: false). Nothing is ever deleted.
+// Decomposition of eu.leksis.language records into two collections:
+// - `languages` (versioned): only the record reference (URI/cid/author), the
+//   tag, and the current flag — no name content. Wikipedia model: records
+//   prove authorship, not ownership — the latest record for a tag becomes
+//   current regardless of author, the previous version is archived
+//   (current: false), nothing is ever deleted.
+// - `localLanguages` (read model): per-locale language name lists, re-synced
+//   from the record's translations whenever a version becomes current.
 
 interface LanguageDoc {
   tag: string;
-  translations: LanguageTranslation[];
   recordURI: string;
   cid: string;
   authorDID: string;
@@ -89,7 +93,6 @@ export async function ingestLanguage(
 
   const doc: LanguageDoc = {
     tag: parsed.tag,
-    translations: parsed.translations,
     recordURI,
     cid,
     authorDID,
@@ -104,6 +107,9 @@ export async function ingestLanguage(
     `);
   }
   await db.query(aql`INSERT ${doc} INTO languages`);
+  // The version just became current: propagate its names into the
+  // per-locale read model.
+  await syncLocalLanguages(db, parsed.tag, parsed.translations);
   console.log(
     `firehose: indexed language "${doc.tag}" (${current ? "new version" : "new language"}) from ${authorDID}`,
   );

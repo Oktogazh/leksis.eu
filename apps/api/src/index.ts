@@ -1,7 +1,12 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import type { HealthResponse, LanguagesResponse } from "@leksis/types";
+import {
+  isValidLanguageTag,
+  normalizeLanguageTag,
+  type HealthResponse,
+  type LanguagesResponse,
+} from "@leksis/types";
 import { pingDb } from "./db";
 import { listLanguages } from "./languages";
 import { startJetstream } from "./firehose/jetstream";
@@ -25,9 +30,12 @@ app.get("/health", async (c) => {
 });
 
 app.get("/languages", async (c) => {
+  // Invalid or absent locale degrades to the tag + endonym listing.
+  const requested = normalizeLanguageTag(c.req.query("locale") ?? "");
+  const locale = isValidLanguageTag(requested) ? requested : "";
   try {
-    const languages = await listLanguages();
-    const body: LanguagesResponse = { languages };
+    const languages = await listLanguages(locale);
+    const body: LanguagesResponse = { locale, languages };
     return c.json(body);
   } catch (err) {
     console.error("GET /languages failed:", err);

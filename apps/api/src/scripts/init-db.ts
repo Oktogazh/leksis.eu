@@ -10,7 +10,9 @@
 //
 // Requires ARANGO_URL / ARANGO_DB / ARANGO_USER / ARANGO_PASSWORD in the env.
 
-import { Database } from "arangojs";
+import { aql, Database } from "arangojs";
+import type { LanguageTranslation } from "@leksis/types";
+import { syncLocalLanguages } from "../firehose/local-languages";
 
 const url = process.env.ARANGO_URL ?? "http://127.0.0.1:8529";
 const dbName = process.env.ARANGO_DB ?? "leksis";
@@ -18,7 +20,15 @@ const username = process.env.ARANGO_USER ?? "root";
 const password = process.env.ARANGO_PASSWORD ?? "";
 
 // `firehoseState` holds the Jetstream cursor (single doc, _key "jetstream").
-const documentCollections = ["languages", "entries", "definitions", "firehoseState"];
+// `localLanguages` is the per-locale language-name read model (one doc per
+// locale tag), kept in sync by the firehose consumer.
+const documentCollections = [
+  "languages",
+  "localLanguages",
+  "entries",
+  "definitions",
+  "firehoseState",
+];
 const edgeCollections = ["translations"];
 
 async function main() {
@@ -64,6 +74,24 @@ async function main() {
     unique: false,
   });
   console.log('ensured index "idx_tag_current" on "languages"');
+
+  // Backfill the localLanguages read model from language docs indexed before
+  // the languages/localLanguages split, which still carry `translations`.
+  // Legacy fields are left in place (archive, never migrate destructively);
+  // syncLocalLanguages upserts, so re-running is safe.
+  const legacyCursor = await db.query<{ tag: string; translations: LanguageTranslation[] }>(aql`
+    FOR l IN languages
+      FILTER l.current == true AND l.translations != null
+      SORT l.tag ASC
+      RETURN { tag: l.tag, translations: l.translations }
+  `);
+  const legacy = await legacyCursor.all();
+  for (const { tag, translations } of legacy) {
+    await syncLocalLanguages(db, tag, translations);
+  }
+  if (legacy.length > 0) {
+    console.log(`backfilled "localLanguages" from ${legacy.length} pre-split language doc(s)`);
+  }
 
   console.log("database init complete.");
 }

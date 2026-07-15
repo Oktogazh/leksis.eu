@@ -28,7 +28,10 @@ function searchFromLocation(): SubmittedSearch | null {
 // (and the create-this-word offer) rendering below on submit. Search state
 // mirrors into the URL (?q=&l=) so a search is a shareable, reloadable link.
 export function HomePage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  // Locale for language-name localization; the API falls back to endonyms
+  // when no names exist for it.
+  const locale = i18n.language;
   const [languages, setLanguages] = useState<LanguageView[]>([]);
   const [shortlist, setShortlist] = useState<string[]>(() => getShortlist());
   const initialSearch = () => searchFromLocation();
@@ -40,10 +43,10 @@ export function HomePage() {
   const [syncingTag, setSyncingTag] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchLanguages()
+    fetchLanguages(locale)
       .then(setLanguages)
       .catch((err) => console.error("could not load languages:", err));
-  }, []);
+  }, [locale]);
 
   // Back/forward through search history restores the term, scope and results.
   useEffect(() => {
@@ -65,7 +68,7 @@ export function HomePage() {
     let tries = 0;
     const timer = setInterval(() => {
       tries += 1;
-      fetchLanguages()
+      fetchLanguages(locale)
         .then((indexed) => {
           if (indexed.some((l) => l.tag === syncingTag)) {
             setLanguages(indexed);

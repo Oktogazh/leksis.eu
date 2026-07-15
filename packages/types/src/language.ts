@@ -27,14 +27,22 @@ export interface LeksisLanguageRecord {
   createdAt: string;
 }
 
-/** One language as served by GET /languages (current version only). */
+/**
+ * One language as served by GET /languages and as stored in the
+ * `localLanguages` read model (one doc per locale, listing every available
+ * language). The endonym comes from the record's required self-translation;
+ * `name` is the language's name in the requested locale, present only when
+ * the language's record carries a translation into it.
+ */
 export interface LanguageView {
   tag: string;
-  translations: LanguageTranslation[];
-  createdAt: string;
+  endonym: string;
+  name?: string;
 }
 
-/** Response shape of GET /languages. */
+/** Response shape of GET /languages?locale=X. */
 export interface LanguagesResponse {
+  /** Locale the `name` fields are localized into ("" = none requested). */
+  locale: string;
   languages: LanguageView[];
 }
