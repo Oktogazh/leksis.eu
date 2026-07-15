@@ -1,6 +1,5 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
-import { cors } from "hono/cors";
 import {
   isValidLanguageTag,
   normalizeLanguageTag,
@@ -13,8 +12,10 @@ import { startJetstream } from "./firehose/jetstream";
 
 const app = new Hono();
 
-// Allow the web app to call the API from another Fly.io app / localhost.
-app.use("/*", cors({ origin: process.env.WEB_ORIGIN ?? "*" }));
+// CORS is handled entirely by Caddy for /api/* (see Caddyfile): same-origin
+// leksis.eu traffic needs none, and cross-origin dev access is granted per
+// source IP via AARDVARK_ALLOW_IPS. The API deliberately emits no CORS headers
+// so Caddy stays the single Access-Control-Allow-Origin authority.
 
 app.get("/", (c) => c.text("Leksis API"));
 

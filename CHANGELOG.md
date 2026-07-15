@@ -33,6 +33,18 @@ split in the AppView (below). No lexicon changes.
   pre-split language docs that still carry `translations` (legacy fields are
   left in place — nothing is migrated destructively).
 
+### Infra & tooling (`Caddyfile`, `apps/api`)
+
+- **Cross-origin API access for local frontends** (`Caddyfile`,
+  `apps/api/src/index.ts`): Caddy is now the sole CORS authority for `/api/*`.
+  Same-origin `leksis.eu` traffic is untouched from any IP; a developer's
+  locally-run frontend (e.g. `http://localhost:5173`) may call the production
+  API cross-origin **only** from a source IP in `AARDVARK_ALLOW_IPS` (the
+  allowlist is reused), and Caddy echoes the request Origin plus answers the
+  preflight for those IPs. All other cross-origin callers get no CORS headers,
+  so the browser blocks them. The API's Hono `cors()` and the now-unused
+  `WEB_ORIGIN` env were removed to avoid a duplicate `Access-Control-Allow-Origin`.
+
 ### Web (`apps/web`)
 
 - **Restyle after atproto.at**: theme tokens moved from slate/indigo to pure

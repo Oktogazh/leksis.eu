@@ -3,8 +3,53 @@
 # provision HTTPS automatically — no other change needed.
 {$SITE_ADDRESS} {
 	# API lives under /api/* — handle_path strips the prefix, so the browser's
-	# /api/health reaches the Hono app as /health. Same origin = no CORS.
+	# /api/health reaches the Hono app as /health.
+	#
+	# Same-origin traffic (the official leksis.eu SPA) sends no cross-origin
+	# Origin header and needs no CORS — it flows straight through, from ANY
+	# client IP. The block below ONLY *adds* permission for cross-origin callers
+	# (e.g. a developer's frontend on http://localhost:5173): it echoes their
+	# Origin back as an allowed origin, but ONLY when their source IP is in
+	# AARDVARK_ALLOW_IPS. Everyone else cross-origin gets no CORS headers, so the
+	# browser blocks them. Caddy is the edge, so remote_ip is the real,
+	# un-spoofable client address. The API itself emits no CORS headers (see
+	# apps/api/src/index.ts), so Caddy is the sole CORS authority here — no risk
+	# of a duplicate Access-Control-Allow-Origin.
 	handle_path /api/* {
+		# A cross-origin request from an allowlisted dev IP.
+		@dev_cors {
+			header Origin *
+			remote_ip {$AARDVARK_ALLOW_IPS}
+		}
+
+		# Answer the CORS preflight (OPTIONS) directly for allowlisted dev
+		# origins so the browser then lets the real request through.
+		@dev_preflight {
+			method OPTIONS
+			header Origin *
+			remote_ip {$AARDVARK_ALLOW_IPS}
+		}
+		handle @dev_preflight {
+			header Access-Control-Allow-Origin "{http.request.header.Origin}"
+			header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+			header Access-Control-Allow-Headers "Content-Type, Authorization"
+			header Access-Control-Allow-Credentials "true"
+			header Vary "Origin"
+			respond 204
+		}
+
+		# Non-preflight requests from allowlisted dev IPs: proxy to the API and
+		# add the CORS response headers the browser needs.
+		handle @dev_cors {
+			reverse_proxy api:8080 {
+				header_down Access-Control-Allow-Origin "{http.request.header.Origin}"
+				header_down Access-Control-Allow-Credentials "true"
+				header_down +Vary "Origin"
+			}
+		}
+
+		# Everyone else (same-origin users on any IP; non-allowlisted cross-
+		# origin callers) — proxied untouched, no CORS headers added.
 		reverse_proxy api:8080
 	}
 
