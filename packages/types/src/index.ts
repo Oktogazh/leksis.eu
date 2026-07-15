@@ -1,9 +1,10 @@
 // Shared TypeScript types imported by both apps/web and apps/api.
 // Week 2: the API health contract and the PDS session shape.
 // Week 3 adds the eu.leksis.language contract and the shared BCP-47 validator;
-// further domain types (Entry, ...) arrive with their loops (week 4+).
+// week 4 adds the eu.leksis.entry contract.
 
 export * from "./language.js";
+export * from "./entry.js";
 export * from "./bcp47.js";
 
 /** Response shape for the API health-check endpoint. */

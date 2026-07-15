@@ -1,9 +1,10 @@
 // One-shot, idempotent database bootstrap.
 //
-// Creates the project database (if missing) and the first empty collections
-// per the week-1 plan: `languages`, `entries`, `definitions` (document nodes)
-// and `translations` (edge). Re-running it is safe — existing collections are
-// left untouched.
+// Creates the project database (if missing) and the collections. Re-running
+// it is safe — existing collections are left untouched. It also drops the
+// week-1 `definitions` and `translations` collections (Loop 2 decision:
+// entry records carry their own definitions; the DB supports search, it
+// does not hold content — both collections were still empty).
 //
 //   npm run db:init            (from repo root)
 //   npm run db:init -w @leksis/api
@@ -26,10 +27,12 @@ const documentCollections = [
   "languages",
   "localLanguages",
   "entries",
-  "definitions",
   "firehoseState",
 ];
-const edgeCollections = ["translations"];
+// Superseded by the record-centric model (Loop 2): definitions live on the
+// entry records themselves, and translation edges will be redesigned in
+// Loop 5. Both were created empty in week 1 and never written to.
+const obsoleteCollections = ["definitions", "translations"];
 
 async function main() {
   // Connect to _system first so we can create the project DB if needed.
@@ -55,13 +58,18 @@ async function main() {
     }
   }
 
-  for (const name of edgeCollections) {
+  for (const name of obsoleteCollections) {
     const col = db.collection(name);
-    if (!(await col.exists())) {
-      await col.create({ type: 3 }); // 3 = edge collection
-      console.log(`created edge collection "${name}"`);
-    } else {
-      console.log(`edge collection "${name}" already exists`);
+    if (await col.exists()) {
+      const count = (await col.count()).count;
+      if (count > 0) {
+        // Never destroy data silently — an obsolete collection with content
+        // needs a human decision, not an automatic drop.
+        console.warn(`obsolete collection "${name}" has ${count} doc(s) — NOT dropping it`);
+      } else {
+        await col.drop();
+        console.log(`dropped obsolete empty collection "${name}"`);
+      }
     }
   }
 
@@ -74,6 +82,29 @@ async function main() {
     unique: false,
   });
   console.log('ensured index "idx_tag_current" on "languages"');
+
+  // Entries are versioned the same way (many docs per entryKey, one with
+  // current: true). Search filters on language + lowercased orthographies
+  // (`search[*]`); ingestion looks versions up by entryKey and recordURI.
+  await db.collection("entries").ensureIndex({
+    type: "persistent",
+    name: "idx_entrykey_current",
+    fields: ["entryKey", "current"],
+    unique: false,
+  });
+  await db.collection("entries").ensureIndex({
+    type: "persistent",
+    name: "idx_recorduri",
+    fields: ["recordURI"],
+    unique: false,
+  });
+  await db.collection("entries").ensureIndex({
+    type: "persistent",
+    name: "idx_language_search",
+    fields: ["languageID", "search[*]"],
+    unique: false,
+  });
+  console.log('ensured indexes on "entries"');
 
   // Backfill the localLanguages read model from language docs indexed before
   // the languages/localLanguages split, which still carry `translations`.

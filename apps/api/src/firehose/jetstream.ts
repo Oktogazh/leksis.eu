@@ -1,6 +1,7 @@
 import { aql } from "arangojs";
-import { LEKSIS_LANGUAGE_COLLECTION } from "@leksis/types";
+import { LEKSIS_ENTRY_COLLECTION, LEKSIS_LANGUAGE_COLLECTION } from "@leksis/types";
 import { db } from "../db";
+import { ingestEntry, ingestEntryDelete } from "./ingest-entry";
 import { ingestLanguage, ingestLanguageDelete } from "./ingest-language";
 
 // Jetstream consumer (ADR-0003): the AppView indexes eu.leksis.* records from
@@ -36,8 +37,8 @@ if (JETSTREAM_URLS.length === 0) {
   throw new Error("jetstream: no relay URL configured (JETSTREAM_URLS/JETSTREAM_URL)");
 }
 
-// Widened per loop (entries arrive in week 4).
-const WANTED_COLLECTIONS = [LEKSIS_LANGUAGE_COLLECTION];
+// Widened per loop.
+const WANTED_COLLECTIONS = [LEKSIS_LANGUAGE_COLLECTION, LEKSIS_ENTRY_COLLECTION];
 
 const CURSOR_KEY = "jetstream";
 const CURSOR_SAVE_INTERVAL_MS = 10_000;
@@ -77,13 +78,20 @@ async function saveCursor(timeUs: number): Promise<void> {
 async function handleEvent(event: JetstreamCommitEvent): Promise<void> {
   if (event.kind !== "commit" || !event.commit) return;
   const { operation, collection, rkey, record, cid } = event.commit;
-  if (collection !== LEKSIS_LANGUAGE_COLLECTION) return;
 
   const recordURI = `at://${event.did}/${collection}/${rkey}`;
-  if (operation === "delete") {
-    await ingestLanguageDelete(recordURI);
-  } else {
-    await ingestLanguage(event.did, recordURI, cid ?? "", record);
+  if (collection === LEKSIS_LANGUAGE_COLLECTION) {
+    if (operation === "delete") {
+      await ingestLanguageDelete(recordURI);
+    } else {
+      await ingestLanguage(event.did, recordURI, cid ?? "", record);
+    }
+  } else if (collection === LEKSIS_ENTRY_COLLECTION) {
+    if (operation === "delete") {
+      await ingestEntryDelete(recordURI);
+    } else {
+      await ingestEntry(event.did, recordURI, cid ?? "", record);
+    }
   }
 }
 

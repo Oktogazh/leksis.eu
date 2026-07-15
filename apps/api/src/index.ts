@@ -3,10 +3,12 @@ import { Hono } from "hono";
 import {
   isValidLanguageTag,
   normalizeLanguageTag,
+  type EntriesResponse,
   type HealthResponse,
   type LanguagesResponse,
 } from "@leksis/types";
 import { pingDb } from "./db";
+import { getEntry, searchEntries } from "./entries";
 import { listLanguages } from "./languages";
 import { startJetstream } from "./firehose/jetstream";
 
@@ -40,6 +42,32 @@ app.get("/languages", async (c) => {
     return c.json(body);
   } catch (err) {
     console.error("GET /languages failed:", err);
+    return c.json({ error: "database unavailable" }, 503);
+  }
+});
+
+app.get("/entries", async (c) => {
+  const q = c.req.query("q") ?? "";
+  // An invalid language scope degrades to searching all languages.
+  const requested = normalizeLanguageTag(c.req.query("l") ?? "");
+  const languageID = isValidLanguageTag(requested) ? requested : "";
+  try {
+    const entries = await searchEntries(q, languageID);
+    const body: EntriesResponse = { entries };
+    return c.json(body);
+  } catch (err) {
+    console.error("GET /entries failed:", err);
+    return c.json({ error: "database unavailable" }, 503);
+  }
+});
+
+app.get("/entries/:key", async (c) => {
+  try {
+    const entry = await getEntry(c.req.param("key"));
+    if (!entry) return c.json({ error: "entry not found" }, 404);
+    return c.json(entry);
+  } catch (err) {
+    console.error("GET /entries/:key failed:", err);
     return c.json({ error: "database unavailable" }, 503);
   }
 });

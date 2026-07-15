@@ -1,0 +1,84 @@
+{
+  "lexicon": 1,
+  "id": "eu.leksis.entry",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A dictionary entry of the Leksis dictionary. Records prove authorship, not ownership: any user may publish an entry record, and a record carrying a `subject` reference is a proposed new version of the entry that record belongs to — the AppView treats the latest version as current and archives previous ones. The record is the source of truth for its content; the AppView indexes only what search needs.",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["languageID", "orthography", "categories", "definitions", "createdAt"],
+        "properties": {
+          "languageID": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "Well-formed IETF BCP 47 tag of the entry's language, normalized to lowercase (e.g. \"br\", \"br-gw\")."
+          },
+          "orthography": {
+            "type": "array",
+            "minLength": 1,
+            "items": { "type": "string", "maxLength": 256, "maxGraphemes": 128 },
+            "description": "Valid spellings of the word: variants, archaic forms, regional spellings. The first item is the canonical form."
+          },
+          "categories": {
+            "type": "array",
+            "items": { "type": "ref", "ref": "#annotation" },
+            "description": "Ordered grammatical categories of the entry (e.g. \"n.\"/\"noun\", \"f.\"/\"feminine\"). Freeform, not an enforced vocabulary."
+          },
+          "definitions": {
+            "type": "array",
+            "minLength": 1,
+            "items": { "type": "ref", "ref": "#definition" },
+            "description": "The entry's definitions. Order is meaningful: other records and future fields reference definitions by index."
+          },
+          "subject": {
+            "type": "string",
+            "format": "at-uri",
+            "description": "AT URI of the entry record version this record modifies. Absent for a brand-new entry; present on a proposed modification, so the AppView can attach this version to the existing entry."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "Client-declared creation time of this record version."
+          }
+        }
+      }
+    },
+    "annotation": {
+      "type": "object",
+      "required": ["short", "long"],
+      "properties": {
+        "short": {
+          "type": "string",
+          "maxLength": 64,
+          "maxGraphemes": 32,
+          "description": "Abbreviated display form (e.g. \"n.\", \"bot.\")."
+        },
+        "long": {
+          "type": "string",
+          "maxLength": 256,
+          "maxGraphemes": 128,
+          "description": "Full form the abbreviation stands for (e.g. \"noun\", \"botany\")."
+        }
+      }
+    },
+    "definition": {
+      "type": "object",
+      "required": ["notes", "text"],
+      "properties": {
+        "notes": {
+          "type": "array",
+          "items": { "type": "ref", "ref": "#annotation" },
+          "description": "Ordered lexicographic notes shown before the definition text (e.g. \"by ext.\"/\"by extension\", \"arch.\"/\"archaic\"). May be empty."
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 4096,
+          "maxGraphemes": 2048,
+          "description": "The definition text."
+        }
+      }
+    }
+  }
+}

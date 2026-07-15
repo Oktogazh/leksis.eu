@@ -3,7 +3,80 @@
 All notable changes to Leksis. This project follows the 8-week development
 timeline; each entry maps to a weekly milestone.
 
-## [Unreleased] — Week 4 prep: search flow + atproto.at restyle
+## [Unreleased] — Week 4, Loop 2: Entries
+
+Dictionary entries exist: users publish `eu.leksis.entry` records on their
+own PDS, the AppView indexes them for search, and an entry page renders the
+record straight from its author's PDS.
+
+### Lexicon & types (`lexicons/`, `packages/types`)
+
+- **`lexicons/eu.leksis.entry.json`** (rkey = TID): `{ languageID,
+  orthography[], categories[{short,long}], definitions[{notes[{short,long}],
+  text}], subject?, createdAt }`. Grammatical categories and definition
+  notes share one shape — an ordered list of short/long annotation pairs
+  ("n." / "noun", "arch." / "archaic"); a definition can carry several
+  notes, an entry several categories, both freely reordered. The earlier
+  drafts' entry-level freeform `grammaticality.notes` and per-definition
+  `tag` string are gone.
+- **Entry identity is the `subject` field**: a record carrying
+  `subject: at://…` (the record version it modifies) is a proposed new
+  version of that record's entry; a record without one is a brand-new entry
+  (homonyms stay possible). Decentralised — no AppView key baked into
+  records.
+- `packages/types`: `LeksisEntryRecord`, `EntryAnnotation`,
+  `EntryDefinition`, `EntryView`, `EntriesResponse`,
+  `LEKSIS_ENTRY_COLLECTION`.
+
+### API & database (`apps/api`)
+
+- **The DB supports search; records hold the content.** The `entries`
+  collection stores only what search needs — orthographies (plus a
+  lowercased `search[*]` copy), the language tag, the record reference
+  (`recordURI`/`cid`/`authorDID`), timestamps and `current` — never
+  definitions or categories. Versioned like `languages`: many docs per
+  `entryKey` (minted as `{lang}-{orthoSlug}-{hash}` from the creating
+  record's URI), one current, previous versions archived, never deleted.
+- **Ingestion** (`firehose/ingest-entry.ts`): validates the whole record
+  (BCP 47 tag, non-empty orthography/definitions, well-formed annotation
+  pairs), resolves `subject` → existing entry (unknown subjects index as a
+  new entry rather than being dropped), applies last-write-wins across
+  authors with archival; idempotent on `recordURI + cid`. Deletes archive
+  the current version. Jetstream `wantedCollections` now includes
+  `eu.leksis.entry`.
+- **`GET /entries?q=&l=`**: case-insensitive orthography prefix search over
+  current entries, optionally language-scoped, exact matches first (limit
+  50). **`GET /entries/:key`**: one entry's search view (404 when unknown).
+- **`db:init`**: drops the never-used week-1 `definitions` and
+  `translations` collections (only when empty — a non-empty obsolete
+  collection is reported, not dropped); ensures `entries` indexes
+  (`entryKey+current`, `recordURI`, `languageID+search[*]`). The
+  `grammaticalCategories` frequency harvesting is deferred.
+
+### Web (`apps/web`)
+
+- **Entry editor is live** (`CreateEntryPanel.tsx` → `EntryEditorDialog`):
+  submit publishes the record to the logged-in user's PDS via
+  `createRecord` (fresh TID per version). Definitions each carry their own
+  reorderable short/long note chips (same interaction as the category
+  chips, one shared `AnnotationEditor`); the freeform grammar-notes box and
+  the definition tag field are gone. The dialog doubles as the
+  proposal editor: given `initial` + `subject` it prefills from the current
+  record and publishes a full-rewrite modification.
+- **Search results are real** (`SearchResults.tsx`): `GET /entries` renders
+  matches (orthographies + language), each opening the entry page; after a
+  creation the list polls until the record round-trips PDS → Jetstream →
+  ArangoDB.
+- **Entry page** (`pages/EntryPage.tsx`, URL `?e=<entry-key>`, same
+  no-router History-API pattern; search params survive, so back restores
+  the results): fetches the search view from the API, then resolves the
+  record content **directly from the author's PDS** (`lib/atproto-record.ts`:
+  DID document via plc.directory / did:web → PDS → `getRecord`, public, no
+  auth — the API stays out of the content path). Renders spellings,
+  category chips, definitions with their notes, current author, and the
+  "Propose changes" flow with its own index-sync polling.
+
+## Week 4 prep (pre-Loop 2 groundwork, released in `v0.4.x`)
 
 Frontend-only groundwork for Loop 2 (entries), plus a language-indexing
 split in the AppView (below). No lexicon changes.

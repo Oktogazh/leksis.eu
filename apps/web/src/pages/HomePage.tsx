@@ -4,6 +4,7 @@ import type { LanguageView } from "@leksis/types";
 import { AddLanguageModal } from "../components/AddLanguageModal";
 import { LanguageSelector } from "../components/LanguageSelector";
 import { SearchResults } from "../components/SearchResults";
+import { EntryPage } from "./EntryPage";
 import { fetchLanguages } from "../lib/api";
 import { getShortlist, promoteInShortlist } from "../lib/shortlist";
 
@@ -24,6 +25,11 @@ function searchFromLocation(): SubmittedSearch | null {
   return { query, languageTag: params.get("l") ?? "" };
 }
 
+/** Reads ?e= — an entry key makes the entry page cover the search surface. */
+function entryFromLocation(): string | null {
+  return new URLSearchParams(window.location.search).get("e") || null;
+}
+
 // Connected landing surface: language scope + term box, with the results
 // (and the create-this-word offer) rendering below on submit. Search state
 // mirrors into the URL (?q=&l=) so a search is a shareable, reloadable link.
@@ -38,6 +44,7 @@ export function HomePage() {
   const [language, setLanguage] = useState(() => initialSearch()?.languageTag ?? "");
   const [term, setTerm] = useState(() => initialSearch()?.query ?? "");
   const [submitted, setSubmitted] = useState<SubmittedSearch | null>(initialSearch);
+  const [entryKey, setEntryKey] = useState<string | null>(entryFromLocation);
   const [adding, setAdding] = useState(false);
   /** Tag written to the PDS but not yet seen back from the AppView. */
   const [syncingTag, setSyncingTag] = useState<string | null>(null);
@@ -55,6 +62,7 @@ export function HomePage() {
       setSubmitted(search);
       setTerm(search?.query ?? "");
       setLanguage(search?.languageTag ?? "");
+      setEntryKey(entryFromLocation());
     }
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
@@ -115,10 +123,35 @@ export function HomePage() {
     window.history.pushState(null, "", url);
   }
 
+  // Entry page navigation keeps the search params, so "back to search"
+  // (and the browser's back button) restore the results the entry came from.
+  function openEntry(key: string) {
+    const params = new URLSearchParams(window.location.search);
+    params.set("e", key);
+    window.history.pushState(null, "", `${window.location.pathname}?${params.toString()}`);
+    setEntryKey(key);
+  }
+
+  function closeEntry() {
+    const params = new URLSearchParams(window.location.search);
+    params.delete("e");
+    const search = params.toString();
+    window.history.pushState(
+      null,
+      "",
+      search === "" ? window.location.pathname : `${window.location.pathname}?${search}`,
+    );
+    setEntryKey(null);
+  }
+
   const scopeLanguage =
     submitted !== null && submitted.languageTag !== ""
       ? (languages.find((l) => l.tag === submitted.languageTag) ?? null)
       : null;
+
+  if (entryKey !== null) {
+    return <EntryPage entryKey={entryKey} languages={languages} onBack={closeEntry} />;
+  }
 
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 py-10 sm:px-6 sm:py-16">
@@ -164,7 +197,12 @@ export function HomePage() {
       )}
 
       {submitted !== null && (
-        <SearchResults query={submitted.query} languages={languages} language={scopeLanguage} />
+        <SearchResults
+          query={submitted.query}
+          languages={languages}
+          language={scopeLanguage}
+          onOpenEntry={openEntry}
+        />
       )}
 
       {adding && (
