@@ -57,7 +57,7 @@ services:
       ARANGO_DB: ${ARANGO_DB:-leksis}
       ARANGO_USER: root
       ARANGO_PASSWORD: ${ARANGO_ROOT_PASSWORD:?set ARANGO_ROOT_PASSWORD in .env}
-      WEB_ORIGIN: ${WEB_ORIGIN:-*}
+      # CORS is handled by Caddy (see Caddyfile), not the API.
     depends_on:
       - arangodb
 
