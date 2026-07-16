@@ -1,6 +1,7 @@
 # Single-VPS deployment for Leksis.
-# One host runs four containers on a private network: Caddy (the only one
-# exposed to the internet), the static web app, the Hono API, and ArangoDB.
+# One host runs five containers on a private network: Caddy (the only one
+# exposed to the internet), the static web app, the Hono API, the bot-only
+# AT Proto PDS, and ArangoDB.
 # ArangoDB is NOT published to a host port — it is reachable only from the
 # other containers as http://arangodb:8529. Its Aardvark admin UI can be
 # exposed at aardvark.leksis.eu THROUGH Caddy (double-gated by IP + password);
@@ -26,6 +27,11 @@ services:
       AARDVARK_ADDRESS: ${AARDVARK_ADDRESS:-:8529}
       # Default allowlist is localhost-only, i.e. nobody, until you set yours.
       AARDVARK_ALLOW_IPS: ${AARDVARK_ALLOW_IPS:-127.0.0.1/32}
+      # Bot PDS exposure — fail-closed like Aardvark: ":3000" is an unpublished
+      # internal listener. Set PDS_ADDRESS=pds.leksis.eu and
+      # PDS_HANDLES_ADDRESS=*.leksis.eu in .env to go live (see .env.example).
+      PDS_ADDRESS: ${PDS_ADDRESS:-:3000}
+      PDS_HANDLES_ADDRESS: ${PDS_HANDLES_ADDRESS:-:3001}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -61,6 +67,37 @@ services:
     depends_on:
       - arangodb
 
+  # Bot-only AT Proto PDS (pds.leksis.eu). Hosts the accounts of the scraper
+  # bots; their eu.leksis.* records reach the AppView the normal way (this PDS
+  # announces itself to the Bluesky relay via PDS_CRAWLERS, the relay crawls it,
+  # Jetstream re-serves the events to our consumer). Public through Caddy —
+  # federation requires it — but account creation is IP-gated in the Caddyfile.
+  pds:
+    image: ghcr.io/bluesky-social/pds:0.4
+    restart: unless-stopped
+    expose:
+      - "3000"
+    environment:
+      PDS_HOSTNAME: ${PDS_HOSTNAME:-pds.leksis.eu}
+      # Bot handles live directly under leksis.eu (e.g. wikbot.leksis.eu),
+      # covered by the existing *.leksis.eu DNS wildcard.
+      PDS_SERVICE_HANDLE_DOMAINS: ${PDS_SERVICE_HANDLE_DOMAINS:-.leksis.eu}
+      # Secrets — generation commands in .env.example.
+      PDS_JWT_SECRET: ${PDS_JWT_SECRET:?set PDS_JWT_SECRET in .env}
+      PDS_ADMIN_PASSWORD: ${PDS_ADMIN_PASSWORD:?set PDS_ADMIN_PASSWORD in .env}
+      PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX: ${PDS_PLC_ROTATION_KEY:?set PDS_PLC_ROTATION_KEY in .env}
+      PDS_DATA_DIRECTORY: /pds
+      PDS_BLOBSTORE_DISK_LOCATION: /pds/blocks
+      PDS_DID_PLC_URL: https://plc.directory
+      # Announce to the Bluesky relay so records flow into Jetstream.
+      PDS_CRAWLERS: https://bsky.network
+      # Open signup at the PDS level; the createAccount endpoint is restricted
+      # to AARDVARK_ALLOW_IPS at the Caddy edge instead (see Caddyfile).
+      PDS_INVITE_REQUIRED: "false"
+      LOG_ENABLED: "true"
+    volumes:
+      - pds_data:/pds
+
   arangodb:
     image: arangodb/arangodb:3.12
     restart: unless-stopped
@@ -73,3 +110,4 @@ volumes:
   caddy_data:
   caddy_config:
   arango_data:
+  pds_data:

@@ -115,6 +115,25 @@ record straight from its author's PDS.
   category chips, definitions with their notes, current author, and the
   "Propose changes" flow with its own index-sync polling.
 
+### Infra (`docker-compose.yml`, `Caddyfile`) — bot PDS
+
+- **Self-hosted AT Proto PDS for scraper bots** (2026-07-16): new `pds`
+  service (`ghcr.io/bluesky-social/pds:0.4`, data in the `pds_data` named
+  volume) at `pds.leksis.eu`, bot handles directly under the apex
+  (`PDS_SERVICE_HANDLE_DOMAINS=.leksis.eu`, e.g. `wikbot.leksis.eu` —
+  covered by the existing `*.leksis.eu` DNS wildcard, with Caddy on-demand
+  TLS gated by the PDS's `/tls-check`). No app changes: the PDS announces
+  itself to the Bluesky relay (`PDS_CRAWLERS`), so bot records reach the
+  AppView through the existing Jetstream consumer like any other account's.
+  This does make record delivery depend on the relay crawling third-party
+  PDSes — standard, but now a recorded dependency. The PDS is public (as
+  federation requires) except `com.atproto.server.createAccount`, which
+  Caddy restricts to `AARDVARK_ALLOW_IPS`; both Caddy addresses fail closed
+  (internal listeners) until set in `.env`, and three new required secrets
+  (`PDS_JWT_SECRET`, `PDS_ADMIN_PASSWORD`, `PDS_PLC_ROTATION_KEY`) are
+  documented in `.env.example` — **the compose stack refuses to start until
+  they are set**.
+
 ## Week 4 prep (pre-Loop 2 groundwork, released in `v0.4.x`)
 
 Frontend-only groundwork for Loop 2 (entries), plus a language-indexing

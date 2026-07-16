@@ -1,3 +1,13 @@
+# On-demand TLS guard for the PDS wildcard block below: before minting a cert
+# for any *.leksis.eu name, Caddy asks the PDS whether the domain is one it
+# serves (its own hostname or a registered bot handle). Fail-closed — random
+# subdomains get no cert. Harmless when the PDS blocks are inactive.
+{
+	on_demand_tls {
+		ask http://pds:3000/tls-check
+	}
+}
+
 # Reverse proxy. SITE_ADDRESS is ":80" (HTTP) by default; set it to "leksis.eu"
 # (via the env in docker-compose) once DNS points at this server and Caddy will
 # provision HTTPS automatically — no other change needed.
@@ -79,5 +89,36 @@
 		respond @denied "Forbidden" 403
 
 		reverse_proxy arangodb:8529
+	}
+}
+
+# Bot-only AT Proto PDS. DISABLED by default: PDS_ADDRESS / PDS_HANDLES_ADDRESS
+# are unpublished internal listeners until set in .env (PDS_ADDRESS=
+# pds.leksis.eu, PDS_HANDLES_ADDRESS=*.leksis.eu — the DNS wildcard already
+# points here). Two addresses, one behaviour: the service hostname gets a
+# normal ACME cert; bot-handle subdomains (e.g. wikbot.leksis.eu) are covered
+# by the wildcard matcher with on-demand certs, gated by the tls-check ask in
+# the global block above. More specific hosts (leksis.eu, aardvark.leksis.eu)
+# still win over the wildcard, so the SPA and Aardvark are unaffected.
+#
+# The PDS must stay PUBLIC for federation to work — the Bluesky relay crawls
+# it and resolves handles, which is how bot records reach Jetstream and the
+# AppView. Only account creation is restricted: the createAccount endpoint is
+# IP-gated to AARDVARK_ALLOW_IPS (fail-closed, localhost-only by default), so
+# nobody else can mint accounts on this PDS.
+{$PDS_ADDRESS}, {$PDS_HANDLES_ADDRESS} {
+	tls {
+		on_demand
+	}
+	route {
+		@create_denied {
+			path /xrpc/com.atproto.server.createAccount
+			not remote_ip {$AARDVARK_ALLOW_IPS}
+		}
+		respond @create_denied "Forbidden" 403
+
+		# Proxies XRPC, the /.well-known/atproto-did handle proofs, and the
+		# com.atproto.sync.subscribeRepos WebSocket the relay consumes.
+		reverse_proxy pds:3000
 	}
 }
