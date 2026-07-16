@@ -77,6 +77,21 @@ await agent.com.atproto.repo.createRecord({
   call) and pace yourself — a PDS enforces rate limits per repo
   (~5000 write points / hour, a create = 3 points, i.e. roughly 1600
   creates/hour sustained). Batch, throttle, and make the script resumable.
+- **Rate-limit bypass key:** the PDS's per-repo write limits are hardcoded
+  (not tunable), so bulk imports bypass them with the server's
+  `PDS_RATE_LIMIT_BYPASS_KEY` secret (in the leksis.eu server `.env` — ask
+  Alan for it, keep it in the scraper's env, never commit it). Send it as a
+  header on every write:
+
+```ts
+await agent.com.atproto.repo.applyWrites(
+  { repo: agent.session!.did, writes },
+  { headers: { "x-ratelimit-bypass": process.env.PDS_RATELIMIT_BYPASS! } },
+);
+```
+
+  Without the header, normal limits apply — fine for small runs, too slow for
+  a full dictionary load.
 - **Fixing mistakes:** `putRecord` (same rkey, full rewrite) republishes a
   version; `deleteRecord` removes it — and the AppView mirrors entry deletions
   (see lifecycle below), so deleting a bad record genuinely cleans the index.
