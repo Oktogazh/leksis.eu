@@ -30,6 +30,8 @@ interface EntryDoc {
   recordURI: string;
   cid: string;
   authorDID: string;
+  /** Whether this version carries a non-empty `todo` note (needs attention). */
+  todo: boolean;
   createdAt: string;
   indexedAt: string;
   current: boolean;
@@ -39,6 +41,7 @@ interface ParsedEntry {
   languageID: string;
   orthography: string[];
   subject: string | null;
+  todo: boolean;
   createdAt: string;
 }
 
@@ -111,9 +114,16 @@ function parseRecord(record: unknown): ParsedEntry | null {
     subject = r.subject;
   }
 
+  // `todo` is freeform text on the record; the DB stores only its presence.
+  if (r.todo !== undefined && typeof r.todo !== "string") return null;
+  const todo = typeof r.todo === "string" && r.todo.trim() !== "";
+
+  // `botSource` (bot → source traceability) lives on the record only.
+  if (r.botSource !== undefined && typeof r.botSource !== "string") return null;
+
   const createdAt =
     typeof r.createdAt === "string" ? r.createdAt : new Date().toISOString();
-  return { languageID, orthography, subject, createdAt };
+  return { languageID, orthography, subject, todo, createdAt };
 }
 
 /**
@@ -200,6 +210,7 @@ export async function ingestEntry(
     recordURI,
     cid,
     authorDID,
+    todo: parsed.todo,
     createdAt: parsed.createdAt,
     indexedAt: new Date().toISOString(),
     current: true,

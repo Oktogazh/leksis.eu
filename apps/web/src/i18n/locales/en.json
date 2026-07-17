@@ -137,6 +137,8 @@
     "backToSearch": "← Back to search",
     "categoriesLabel": "Grammatical categories",
     "definitionsLabel": "Definitions",
+    "homonymsLabel": "Homonyms",
+    "homonymsHint": "Other entries written the same way in this language — distinct words, or possibly duplicates.",
     "authorLabel": "Current version by",
     "propose": "Propose changes",
     "syncing": "Publishing your proposal — the entry updates once the network has indexed it (usually under a minute)."

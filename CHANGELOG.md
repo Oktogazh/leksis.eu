@@ -40,6 +40,11 @@ record straight from its author's PDS.
   version of that record's entry; a record without one is a brand-new entry
   (homonyms stay possible). Decentralised — no AppView key baked into
   records.
+- **Bot-maintenance fields** (2026-07-16): optional `todo` (freeform note
+  on work the version still needs — the AppView indexes only its presence,
+  as a boolean) and `botSource` (external-source URL/ID set by ingestion
+  bots so a record maps back to its origin — record-only, never indexed).
+  Documented for scrapers in `.claude/skills/leksis-ingest/`.
 - `packages/types`: `LeksisEntryRecord`, `EntryAnnotation`,
   `EntryDefinition`, `EntryView`, `EntriesResponse`,
   `LEKSIS_ENTRY_COLLECTION`.
@@ -55,9 +60,12 @@ record straight from its author's PDS.
   record's URI), one current, previous versions archived, never deleted.
 - **Ingestion** (`firehose/ingest-entry.ts`): validates the whole record
   (BCP 47 tag, non-empty orthography/definitions, well-formed annotation
-  pairs), resolves `subject` → existing entry (unknown subjects index as a
-  new entry rather than being dropped), applies last-write-wins across
-  authors with archival; idempotent on `recordURI + cid`. Jetstream
+  pairs; `todo`/`botSource`, when present, must be strings), resolves
+  `subject` → existing entry (unknown subjects index as a new entry rather
+  than being dropped), applies last-write-wins across authors with
+  archival; idempotent on `recordURI + cid`. Each entry doc stores
+  `todo: boolean` (the record's `todo` is non-empty after trimming) so
+  needs-attention entries stay queryable without holding content. Jetstream
   `wantedCollections` now includes `eu.leksis.entry`. Definition validation
   checks each `place` (1–3 non-negative integers) and the whole-list
   invariants in one pass: sorted reading order, contiguous sibling indices,
@@ -114,6 +122,12 @@ record straight from its author's PDS.
   auth — the API stays out of the content path). Renders spellings,
   category chips, definitions with their notes, current author, and the
   "Propose changes" flow with its own index-sync polling.
+- **Homonyms on the entry page** (2026-07-16): a section listing other
+  current entries of the same language sharing a written form (reusing
+  `GET /entries` narrowed to exact orthography matches, keyed chips with
+  the entry key for disambiguation), so readers can hop between homonyms —
+  which coexist by design — and spot accidental duplicates. Best-effort:
+  a lookup failure never blocks the entry itself.
 
 ### Infra (`docker-compose.yml`, `Caddyfile`) — bot PDS
 

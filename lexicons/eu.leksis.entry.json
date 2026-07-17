@@ -37,6 +37,17 @@
             "format": "at-uri",
             "description": "AT URI of the entry record version this record modifies. Absent for a brand-new entry; present on a proposed modification, so the AppView can attach this version to the existing entry."
           },
+          "todo": {
+            "type": "string",
+            "maxLength": 4096,
+            "maxGraphemes": 2048,
+            "description": "Freeform note describing work this version still needs (e.g. an ingestion bot flagging an unverified conversion). Empty or absent means nothing is pending. The AppView indexes only its presence, as a boolean flag."
+          },
+          "botSource": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "Identifier of the external source this record was derived from (a URL or a source-internal ID), set by ingestion bots so a record can be traced back to its origin for maintenance. Not indexed by the AppView — it lives on the record only."
+          },
           "createdAt": {
             "type": "string",
             "format": "datetime",

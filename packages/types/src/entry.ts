@@ -106,6 +106,18 @@ export interface LeksisEntryRecord {
   definitions: EntryDefinition[];
   /** AT URI of the record version this modifies; absent for a new entry. */
   subject?: string;
+  /**
+   * Freeform note describing work this version still needs (e.g. an
+   * ingestion bot flagging an unverified conversion). Empty or absent means
+   * nothing is pending; the AppView indexes only its presence, as a boolean.
+   */
+  todo?: string;
+  /**
+   * Identifier of the external source this record was derived from (a URL
+   * or a source-internal ID), set by ingestion bots for maintenance
+   * traceability. Lives on the record only — never indexed.
+   */
+  botSource?: string;
   createdAt: string;
 }
 

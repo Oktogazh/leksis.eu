@@ -150,7 +150,14 @@ export function HomePage() {
       : null;
 
   if (entryKey !== null) {
-    return <EntryPage entryKey={entryKey} languages={languages} onBack={closeEntry} />;
+    return (
+      <EntryPage
+        entryKey={entryKey}
+        languages={languages}
+        onBack={closeEntry}
+        onOpenEntry={openEntry}
+      />
+    );
   }
 
   return (

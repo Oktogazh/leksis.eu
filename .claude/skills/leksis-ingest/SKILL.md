@@ -114,10 +114,13 @@ await agent.com.atproto.repo.applyWrites(
   harmless, but re-*creating* the same content mints a new rkey and therefore
   a **duplicate entry**. A rerunnable importer must track what it already
   published (local state file, or `com.atproto.repo.listRecords` on its own
-  repo) and use `putRecord`/`subject` to update rather than re-create.
+  repo, matching on `botSource`) and use `putRecord`/`subject` to update
+  rather than re-create.
 - The AppView validates strictly at ingest: BCP 47 syntax on `languageID`,
   non-empty `orthography` and `definitions`, well-formed `{short, long}`
-  pairs, and the `place` invariants. Invalid → skipped, no error surfaces.
+  pairs, and the `place` invariants. `todo` and `botSource`, when present,
+  must be strings — any other type rejects the whole record. Invalid →
+  skipped, no error surfaces.
 
 ## The `eu.leksis.entry` lexicon (rkey = TID)
 
@@ -131,6 +134,8 @@ Canonical JSON: `lexicons/eu.leksis.entry.json` in the leksis.eu repo.
   categories: Annotation[],  // ordered grammatical categories; may be empty
   definitions: Definition[], // ≥1, FLAT list sorted by place (reading order)
   subject?: string,          // at:// URI of the version this modifies; omit for new entries
+  todo?: string,             // freeform note on pending work; ≤2048 graphemes (see below)
+  botSource?: string,        // external-source identifier for bot maintenance; ≤2048 chars
   createdAt: string,         // ISO datetime
 }
 
@@ -170,6 +175,22 @@ repo — copy it into the scraper and run it on every record before publishing.
 A single flat list `[0], [1], [2]…` is always valid; only build hierarchy when
 the source genuinely has one.
 
+### `todo` and `botSource` — maintenance fields for bots
+
+- **`botSource`** identifies the external source item a record was derived
+  from — the source page's URL, or a stable source-internal ID. Set it on
+  every record a bot publishes: it is how a maintenance run maps records back
+  to source items (via `com.atproto.repo.listRecords` on the bot's own repo)
+  to decide what to `putRecord`-update, re-check, or delete. The AppView
+  never indexes it; it lives on the record only.
+- **`todo`** is a freeform note describing work the version still needs —
+  e.g. "conversion unverified", "sense split ambiguous in source". Leave it
+  empty or **omit it entirely** when nothing is pending: the AppView indexes
+  only its *presence* as a boolean flag (non-empty string after trimming →
+  `true`), so a whitespace-only or boilerplate `todo` pollutes the
+  needs-attention pool. Humans (or a later bot pass) clear it by publishing
+  a new version without it.
+
 ### Mapping a source into the shape — conventions
 
 - **One entry record per headword sense-block** as the source structures it;
@@ -185,9 +206,9 @@ the source genuinely has one.
 - `createdAt` = time of scraping/publication (it's client-declared version
   time, not the source's publication date).
 - **Attribution & licensing:** only ingest sources whose license permits it,
-  and make the bot account's profile state the source and license. Provenance
-  fields on the record itself don't exist yet — don't invent extra fields;
-  lexicon-unknown fields may be rejected or dropped.
+  and make the bot account's profile state the source and license. Per-record
+  provenance goes in `botSource` (URL or source-internal ID) — don't invent
+  other extra fields; lexicon-unknown fields may be rejected or dropped.
 - The language of your entries should exist as a `eu.leksis.language` record
   (shape: `{ tag, translations: [{languageID, translation}], createdAt }`,
   rkey = the lowercase tag, endonym required — i.e. one translation whose

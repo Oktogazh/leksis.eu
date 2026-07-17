@@ -8,7 +8,7 @@ import {
 } from "@leksis/types";
 import { EntryEditorDialog } from "../components/CreateEntryPanel";
 import { endonym } from "../components/LanguageSelector";
-import { fetchEntry } from "../lib/api";
+import { fetchEntry, searchEntries } from "../lib/api";
 import { fetchEntryRecord } from "../lib/atproto-record";
 import { definitionsDepth, placeLabel } from "../lib/definition-tree";
 
@@ -57,6 +57,25 @@ function DefinitionList({ definitions }: { definitions: EntryDefinition[] }): Re
 const SYNC_POLL_MS = 3_000;
 const SYNC_POLL_MAX_TRIES = 20; // ~60s of PDS → Jetstream → ArangoDB latency
 
+/**
+ * Same-language entries sharing a written form with this one — separate
+ * entries by design (a record without `subject` is a new entry), surfaced so
+ * readers can hop between homonyms and spot accidental duplicates. Reuses the
+ * prefix-search endpoint, narrowed to exact orthography matches.
+ */
+async function fetchHomonyms(view: EntryView): Promise<EntryView[]> {
+  const forms = [...new Set(view.orthography.map((o) => o.toLowerCase()))];
+  const results = await Promise.all(forms.map((form) => searchEntries(form, view.languageID)));
+  const homonyms = new Map<string, EntryView>();
+  for (const candidate of results.flat()) {
+    if (candidate.key === view.key || homonyms.has(candidate.key)) continue;
+    if (candidate.orthography.some((o) => forms.includes(o.toLowerCase()))) {
+      homonyms.set(candidate.key, candidate);
+    }
+  }
+  return [...homonyms.values()];
+}
+
 interface EntryPageProps {
   /** The entry's stable key, from the ?e= query param. */
   entryKey: string;
@@ -64,6 +83,8 @@ interface EntryPageProps {
   languages: LanguageView[];
   /** Navigate back to the search surface. */
   onBack: () => void;
+  /** Navigate to another entry's page (used by the homonyms list). */
+  onOpenEntry: (key: string) => void;
 }
 
 type LoadState = "loading" | "ready" | "not-found" | "record-gone" | "failed";
@@ -76,10 +97,11 @@ type LoadState = "loading" | "ready" | "not-found" | "record-gone" | "failed";
  * propose changes: a full-rewrite record on their own PDS carrying
  * `subject`, which the AppView indexes as the entry's new current version.
  */
-export function EntryPage({ entryKey, languages, onBack }: EntryPageProps) {
+export function EntryPage({ entryKey, languages, onBack, onOpenEntry }: EntryPageProps) {
   const { t } = useTranslation();
   const [view, setView] = useState<EntryView | null>(null);
   const [record, setRecord] = useState<LeksisEntryRecord | null>(null);
+  const [homonyms, setHomonyms] = useState<EntryView[]>([]);
   const [state, setState] = useState<LoadState>("loading");
   const [proposing, setProposing] = useState(false);
   /** Record URI written to the PDS but not yet seen back from the AppView. */
@@ -90,6 +112,7 @@ export function EntryPage({ entryKey, languages, onBack }: EntryPageProps) {
     setState("loading");
     setView(null);
     setRecord(null);
+    setHomonyms([]);
 
     (async () => {
       try {
@@ -97,6 +120,12 @@ export function EntryPage({ entryKey, languages, onBack }: EntryPageProps) {
         if (cancelled) return;
         if (found === null) return setState("not-found");
         setView(found);
+        // Best-effort side panel — a failure never blocks the entry itself.
+        fetchHomonyms(found)
+          .then((others) => {
+            if (!cancelled) setHomonyms(others);
+          })
+          .catch(() => {});
         const content = await fetchEntryRecord(found.recordURI);
         if (cancelled) return;
         if (content === null) return setState("record-gone");
@@ -203,6 +232,29 @@ export function EntryPage({ entryKey, languages, onBack }: EntryPageProps) {
             <h2 className="sr-only">{t("entry.definitionsLabel")}</h2>
             <DefinitionList definitions={record.definitions} />
           </section>
+
+          {homonyms.length > 0 && (
+            <section className="mt-8">
+              <h2 className="text-sm font-semibold text-content">
+                {t("entry.homonymsLabel")}
+              </h2>
+              <p className="mt-1 text-xs text-content-subtle">{t("entry.homonymsHint")}</p>
+              <ul className="mt-2 flex flex-wrap gap-1.5">
+                {homonyms.map((homonym) => (
+                  <li key={homonym.key}>
+                    <button
+                      type="button"
+                      onClick={() => onOpenEntry(homonym.key)}
+                      className="rounded-full border bg-surface-muted/60 px-2.5 py-1 text-xs text-content hover:border-primary hover:text-primary"
+                    >
+                      {homonym.orthography[0]}{" "}
+                      <span className="font-mono text-content-subtle">{homonym.key}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
           <footer className="mt-8 border-t pt-4">
             <p className="text-xs text-content-subtle">
