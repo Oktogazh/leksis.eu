@@ -1,11 +1,25 @@
 # On-demand TLS guard for the PDS wildcard block below: before minting a cert
-# for any *.leksis.eu name, Caddy asks the PDS whether the domain is one it
-# serves (its own hostname or a registered bot handle). Fail-closed — random
-# subdomains get no cert. Harmless when the PDS blocks are inactive.
+# for any *.leksis.eu name, Caddy asks the internal gateway (port 9999) whether
+# the domain is one we serve. The gateway short-circuits our known static
+# hostnames to 200 and forwards everything else to the PDS's own /tls-check
+# (which only approves its hostname and registered bot handles). Fail-closed —
+# random subdomains get no cert. Harmless when the PDS blocks are inactive.
 {
 	on_demand_tls {
-		ask http://pds:3000/tls-check
+		ask http://localhost:9999/tls-check
 	}
+}
+
+# Internal on-demand-TLS gateway. Unpublished (:9999 is never mapped to the
+# host), reached only by Caddy's own `ask` above. The PDS's /tls-check 404s for
+# aardvark.leksis.eu / leksis.eu (it only knows its own hostname and bot
+# handles), which under the wildcard *.leksis.eu policy would fail their certs
+# with SSL_ERROR_INTERNAL_ERROR_ALERT. So we approve our known static hostnames
+# here first, then defer to the PDS for genuine bot-handle subdomains.
+:9999 {
+	@known_hosts expression {query.domain} in ["aardvark.leksis.eu", "leksis.eu", "pds.leksis.eu"]
+	respond @known_hosts 200
+	reverse_proxy pds:3000
 }
 
 # Reverse proxy. SITE_ADDRESS is ":80" (HTTP) by default; set it to "leksis.eu"
@@ -20,7 +34,7 @@
 	# client IP. The block below ONLY *adds* permission for cross-origin callers
 	# (e.g. a developer's frontend on http://localhost:5173): it echoes their
 	# Origin back as an allowed origin, but ONLY when their source IP is in
-	# AARDVARK_ALLOW_IPS. Everyone else cross-origin gets no CORS headers, so the
+	# ALLOWED_IPS. Everyone else cross-origin gets no CORS headers, so the
 	# browser blocks them. Caddy is the edge, so remote_ip is the real,
 	# un-spoofable client address. The API itself emits no CORS headers (see
 	# apps/api/src/index.ts), so Caddy is the sole CORS authority here — no risk
@@ -29,7 +43,7 @@
 		# A cross-origin request from an allowlisted dev IP.
 		@dev_cors {
 			header Origin *
-			remote_ip {$AARDVARK_ALLOW_IPS}
+			remote_ip {$ALLOWED_IPS}
 		}
 
 		# Answer the CORS preflight (OPTIONS) directly for allowlisted dev
@@ -37,7 +51,7 @@
 		@dev_preflight {
 			method OPTIONS
 			header Origin *
-			remote_ip {$AARDVARK_ALLOW_IPS}
+			remote_ip {$ALLOWED_IPS}
 		}
 		handle @dev_preflight {
 			header Access-Control-Allow-Origin "{http.request.header.Origin}"
@@ -82,10 +96,10 @@
 {$AARDVARK_ADDRESS} {
 	route {
 		# Source-IP gate. Only these IPs/CIDRs pass; everyone else gets 403.
-		# Default AARDVARK_ALLOW_IPS is localhost-only (i.e. nobody), so
+		# Default ALLOWED_IPS is localhost-only (i.e. nobody), so
 		# forgetting to set it fails closed. Caddy is the edge here, so
 		# remote_ip is the real, un-spoofable client address.
-		@denied not remote_ip {$AARDVARK_ALLOW_IPS}
+		@denied not remote_ip {$ALLOWED_IPS}
 		respond @denied "Forbidden" 403
 
 		reverse_proxy arangodb:8529
@@ -101,21 +115,45 @@
 # the global block above. More specific hosts (leksis.eu, aardvark.leksis.eu)
 # still win over the wildcard, so the SPA and Aardvark are unaffected.
 #
-# The PDS must stay PUBLIC for federation to work — the Bluesky relay crawls
-# it and resolves handles, which is how bot records reach Jetstream and the
-# AppView. Only account creation is restricted: the createAccount endpoint is
-# IP-gated to AARDVARK_ALLOW_IPS (fail-closed, localhost-only by default), so
-# nobody else can mint accounts on this PDS.
+# Part of the PDS must stay PUBLIC for federation to work — the Bluesky relay
+# crawls it and resolves handles, which is how bot records reach Jetstream and
+# the AppView, and anyone may read a bot's published records. Everything else
+# (account/session creation, all writes, app passwords, …) is IP-gated to
+# ALLOWED_IPS. The gate is deny-by-default: a request from outside ALLOWED_IPS
+# is 403'd unless its path is on the public allowlist below, so any new write
+# or session endpoint is gated automatically without a Caddyfile change.
+#
+# Public (ungated) surface:
+#   /.well-known/*                       handle proofs, DID doc, service metadata
+#   com.atproto.sync.*                   repo sync + the subscribeRepos WebSocket
+#                                        the relay consumes (getRepo, getBlob, …)
+#   com.atproto.identity.*               handle/DID resolution
+#   com.atproto.server.describeServer    service discovery
+#   com.atproto.repo.getRecord           read a single record
+#   com.atproto.repo.listRecords         list a collection's records
+#   com.atproto.repo.describeRepo        list a repo's collections
+# Everything else on /xrpc/* (incl. createAccount, createSession, all writes)
+# reaches the PDS only from ALLOWED_IPS.
 {$PDS_ADDRESS}, {$PDS_HANDLES_ADDRESS} {
 	tls {
 		on_demand
 	}
 	route {
-		@create_denied {
-			path /xrpc/com.atproto.server.createAccount
-			not remote_ip {$AARDVARK_ALLOW_IPS}
+		# 403 anything that is NOT from an allowed IP AND NOT a public path.
+		# Caddy is the edge, so remote_ip is the real, un-spoofable client
+		# address. `not path …` matches when the path is none of the listed
+		# public prefixes; the whole matcher is that AND (not allowed IP).
+		@gated {
+			not remote_ip {$ALLOWED_IPS}
+			not path /.well-known/* \
+ /xrpc/com.atproto.sync.* \
+ /xrpc/com.atproto.identity.* \
+ /xrpc/com.atproto.server.describeServer \
+ /xrpc/com.atproto.repo.getRecord \
+ /xrpc/com.atproto.repo.listRecords \
+ /xrpc/com.atproto.repo.describeRepo
 		}
-		respond @create_denied "Forbidden" 403
+		respond @gated "Forbidden" 403
 
 		# Proxies XRPC, the /.well-known/atproto-did handle proofs, and the
 		# com.atproto.sync.subscribeRepos WebSocket the relay consumes.

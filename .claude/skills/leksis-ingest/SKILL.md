@@ -46,10 +46,15 @@ to clean up.
 - **Accounts:** one account per bot/source, handle directly under the domain,
   e.g. `wikbot.leksis.eu` (the `*.leksis.eu` wildcard covers it). DIDs are
   normal `did:plc` DIDs.
-- **Account creation** (`com.atproto.server.createAccount`) is **IP-gated at
-  the Caddy edge** to the operator's allowlist (`AARDVARK_ALLOW_IPS` in the
-  server's `.env`). Create the bot account once from an allowed IP (or ask
-  Alan to); everything else (login, writes, reads) works from anywhere.
+- **Account creation, login, and all writes** are **IP-gated at the Caddy
+  edge** to the operator's allowlist (`ALLOWED_IPS` in the server's `.env`),
+  which is deny-by-default: everything under `/xrpc/*` is 403'd from outside the
+  allowlist except the federation/read surface (`com.atproto.sync.*`,
+  `identity.*`, `server.describeServer`, `repo.getRecord`/`listRecords`/
+  `describeRepo`, and `/.well-known/*`). So `createSession` (login),
+  `createRecord`, `uploadBlob`, etc. only work from an allowed IP — run the bot
+  from the server (or an allowlisted IP), or ask Alan to. Reading records works
+  from anywhere.
 - **Auth for scripts:** plain session auth is fine for bots — no OAuth dance
   needed:
 

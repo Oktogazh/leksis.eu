@@ -30,7 +30,8 @@
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
       "Bash(gh pr create --title 'Expose ArangoDB Aardvark via double-gated reverse proxy' --body ' *)",
-      "Bash(ssh -o ConnectTimeout=8 -o BatchMode=yes leksis \"cd opt/leksis.eu && pwd && docker compose ps --format 'table {{.Name}}\\\\t{{.Status}}' && echo '---allowlist---' && grep '^AARDVARK_ALLOW_IPS=' .env\")"
+      "Bash(ssh -o ConnectTimeout=8 -o BatchMode=yes leksis \"cd opt/leksis.eu && pwd && docker compose ps --format 'table {{.Name}}\\\\t{{.Status}}' && echo '---allowlist---' && grep '^ALLOWED_IPS=' .env\")",
+      "Bash(git ls-tree *)"
     ]
   }
 }

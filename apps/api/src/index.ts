@@ -16,7 +16,7 @@ const app = new Hono();
 
 // CORS is handled entirely by Caddy for /api/* (see Caddyfile): same-origin
 // leksis.eu traffic needs none, and cross-origin dev access is granted per
-// source IP via AARDVARK_ALLOW_IPS. The API deliberately emits no CORS headers
+// source IP via ALLOWED_IPS. The API deliberately emits no CORS headers
 // so Caddy stays the single Access-Control-Allow-Origin authority.
 
 app.get("/", (c) => c.text("Leksis API"));

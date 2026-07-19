@@ -26,7 +26,7 @@ services:
       # .env.example. ":8529" is an unpublished internal listener (unreachable).
       AARDVARK_ADDRESS: ${AARDVARK_ADDRESS:-:8529}
       # Default allowlist is localhost-only, i.e. nobody, until you set yours.
-      AARDVARK_ALLOW_IPS: ${AARDVARK_ALLOW_IPS:-127.0.0.1/32}
+      ALLOWED_IPS: ${ALLOWED_IPS:-127.0.0.1/32}
       # Bot PDS exposure — fail-closed like Aardvark: ":3000" is an unpublished
       # internal listener. Set PDS_ADDRESS=pds.leksis.eu and
       # PDS_HANDLES_ADDRESS=*.leksis.eu in .env to go live (see .env.example).
@@ -92,7 +92,7 @@ services:
       # Announce to the Bluesky relay so records flow into Jetstream.
       PDS_CRAWLERS: https://bsky.network
       # Open signup at the PDS level; the createAccount endpoint is restricted
-      # to AARDVARK_ALLOW_IPS at the Caddy edge instead (see Caddyfile).
+      # to ALLOWED_IPS at the Caddy edge instead (see Caddyfile).
       PDS_INVITE_REQUIRED: "false"
       LOG_ENABLED: "true"
     volumes:
