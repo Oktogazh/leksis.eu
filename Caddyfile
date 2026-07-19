@@ -86,6 +86,14 @@
 # it. Set AARDVARK_ADDRESS to "aardvark.leksis.eu" in .env once a DNS record
 # points here and Caddy will provision HTTPS automatically.
 #
+# TLS is obtained on-demand (via the :9999 gateway, which approves this host),
+# not as a managed cert at startup. Managed issuance here failed silently: this
+# block gates every request to ALLOWED_IPS, which shadowed the ACME HTTP-01
+# challenge (Let's Encrypt's validator isn't in ALLOWED_IPS, so it got 403), and
+# with no cert in storage the handshake returned tlsv1 internal error. On-demand
+# uses the TLS-ALPN-01 challenge during the handshake, bypassing the IP gate —
+# the same path the PDS block already uses successfully.
+#
 # This is the full database admin console, so access is gated two ways: an IP
 # allowlist here (fail-closed — a missing setting denies rather than exposes)
 # plus ArangoDB's own root login on the Aardvark page itself. We deliberately do
@@ -94,6 +102,9 @@
 # Basic credential and makes Caddy 401 every in-app request. route{} keeps the
 # IP check ahead of the proxy.
 {$AARDVARK_ADDRESS} {
+	tls {
+		on_demand
+	}
 	route {
 		# Source-IP gate. Only these IPs/CIDRs pass; everyone else gets 403.
 		# Default ALLOWED_IPS is localhost-only (i.e. nobody), so
