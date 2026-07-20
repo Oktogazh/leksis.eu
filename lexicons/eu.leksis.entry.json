@@ -38,10 +38,10 @@
             "description": "AT URI of the entry record version this record modifies. Absent for a brand-new entry; present on a proposed modification, so the AppView can attach this version to the existing entry."
           },
           "todo": {
-            "type": "string",
-            "maxLength": 4096,
-            "maxGraphemes": 2048,
-            "description": "Freeform note describing work this version still needs (e.g. an ingestion bot flagging an unverified conversion). Empty or absent means nothing is pending. The AppView indexes only its presence, as a boolean flag."
+            "type": "array",
+            "maxLength": 64,
+            "items": { "type": "string", "maxLength": 2048, "maxGraphemes": 1024 },
+            "description": "Pending-work notes: each item is one task this version still needs (e.g. an ingestion bot flagging one unverified aspect), so several bots or editors can each track their own item. Empty or absent means nothing is pending. The AppView indexes only whether any item exists, as a boolean flag."
           },
           "botSource": {
             "type": "string",
@@ -58,19 +58,19 @@
     },
     "annotation": {
       "type": "object",
-      "required": ["short", "long"],
+      "required": ["long"],
       "properties": {
-        "short": {
-          "type": "string",
-          "maxLength": 64,
-          "maxGraphemes": 32,
-          "description": "Abbreviated display form (e.g. \"n.\", \"bot.\")."
-        },
         "long": {
           "type": "string",
           "maxLength": 256,
           "maxGraphemes": 128,
-          "description": "Full form the abbreviation stands for (e.g. \"noun\", \"botany\")."
+          "description": "Full form (e.g. \"noun\", \"botany\") — the only required half: a lone form is always the full one, displayed directly with nothing revealed on hover."
+        },
+        "short": {
+          "type": "string",
+          "maxLength": 64,
+          "maxGraphemes": 32,
+          "description": "Optional abbreviated display form (e.g. \"n.\", \"bot.\"); when present it is shown instead of the full form, which appears on hover."
         }
       }
     },

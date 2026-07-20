@@ -122,10 +122,14 @@ await agent.com.atproto.repo.applyWrites(
   repo, matching on `botSource`) and use `putRecord`/`subject` to update
   rather than re-create.
 - The AppView validates strictly at ingest: BCP 47 syntax on `languageID`,
-  non-empty `orthography` and `definitions`, well-formed `{short, long}`
-  pairs, and the `place` invariants. `todo` and `botSource`, when present,
-  must be strings — any other type rejects the whole record. Invalid →
-  skipped, no error surfaces.
+  non-empty `orthography` and `definitions`, well-formed annotation pairs
+  (`long` required, `short` optional), and the `place` invariants. `todo`,
+  when present, must be an **array of strings**; `botSource` a string — any
+  other type rejects the whole record. Invalid → skipped, no error surfaces.
+- **Breaking lexicon changes are handled by reset-and-republish**: while the
+  app is bots-only, the operator deletes the old records and the updated bots
+  republish in the new shape. Keep every bot able to regenerate its full
+  output from source + local state.
 
 ## The `eu.leksis.entry` lexicon (rkey = TID)
 
@@ -139,16 +143,22 @@ Canonical JSON: `lexicons/eu.leksis.entry.json` in the leksis.eu repo.
   categories: Annotation[],  // ordered grammatical categories; may be empty
   definitions: Definition[], // ≥1, FLAT list sorted by place (reading order)
   subject?: string,          // at:// URI of the version this modifies; omit for new entries
-  todo?: string,             // freeform note on pending work; ≤2048 graphemes (see below)
+  todo?: string[],           // pending-work notes, ONE ITEM PER TASK (see below);
+                             // ≤64 items, each ≤1024 graphemes
   botSource?: string,        // external-source identifier for bot maintenance; ≤2048 chars
   createdAt: string,         // ISO datetime
 }
 
-Annotation = { short: string, long: string }
-// One shape for both categories and notes: abbreviated form + what it stands
-// for, e.g. { short: "n.", long: "noun" }, { short: "arch.", long: "archaic" }.
-// Freeform — no enforced vocabulary — but keep one source's pairs consistent.
-// short ≤32 graphemes, long ≤128.
+Annotation = { long: string, short?: string }
+// One shape for both categories and notes: the full form (REQUIRED) and its
+// abbreviated display form (optional), e.g. { short: "n.", long: "noun" },
+// { short: "arch.", long: "archaic" }. If the source gives only one form,
+// put it in `long` — never publish a short without its long. Freeform — no
+// enforced vocabulary — but keep one source's pairs consistent: the AppView
+// harvests every distinct (short, long) pair per language into its
+// `abbreviations` read model and FLAGS CONFLICTS (same short with a
+// different long, or same long with a different short), which reviewers
+// then have to untangle. short ≤32 graphemes, long ≤128.
 
 Definition = {
   place: number[],           // hierarchy coordinate, 1–3 non-negative ints (see below)
@@ -188,13 +198,15 @@ the source genuinely has one.
   to source items (via `com.atproto.repo.listRecords` on the bot's own repo)
   to decide what to `putRecord`-update, re-check, or delete. The AppView
   never indexes it; it lives on the record only.
-- **`todo`** is a freeform note describing work the version still needs —
-  e.g. "conversion unverified", "sense split ambiguous in source". Leave it
-  empty or **omit it entirely** when nothing is pending: the AppView indexes
-  only its *presence* as a boolean flag (non-empty string after trimming →
-  `true`), so a whitespace-only or boilerplate `todo` pollutes the
-  needs-attention pool. Humans (or a later bot pass) clear it by publishing
-  a new version without it.
+- **`todo`** is a list of pending-work notes, **one item per task** — e.g.
+  `["conversion unverified", "sense split ambiguous in source"]` — so
+  several bots (or a bot and a human) can each track their own item on the
+  same entry. Omit it entirely when nothing is pending: the AppView indexes
+  only whether any non-empty item exists, as a boolean flag, so
+  whitespace-only or boilerplate items pollute the needs-attention pool.
+  Reviewers see the items on the entry page and each language's dashboard
+  lists the flagged entries; clearing a task = publishing a new version
+  without its item (an empty/absent list marks the entry complete).
 
 ### Mapping a source into the shape — conventions
 
@@ -206,8 +218,10 @@ the source genuinely has one.
   written in that same language for a monolingual source. Normalize the tag
   to lowercase and validate BCP 47 syntax (syntax only — like the AppView).
 - Preserve the source's own labels as annotation pairs: expand abbreviations
-  into `long` when the source documents them; if only the abbreviation is
-  known, it's acceptable to set both to it — but prefer real expansions.
+  into `long` when the source documents them. **If only one form is known,
+  publish it as `long` alone** (omit `short`) — never duplicate an
+  abbreviation into both halves; that manufactures conflicts in the
+  abbreviations read model.
 - `createdAt` = time of scraping/publication (it's client-declared version
   time, not the source's publication date).
 - **Attribution & licensing:** only ingest sources whose license permits it,
@@ -228,8 +242,11 @@ the source genuinely has one.
 2. **In the index (after relay/Jetstream propagation, usually seconds):**
    `GET https://leksis.eu/api/entries?q=<orthography>&l=<languageID>` should
    return the entry; `GET https://leksis.eu/api/entries/:key` its view.
-3. **In the app:** search on leksis.eu; the entry page (`?e=<key>`) resolves
-   the record content from the PDS — this exercises the full path.
+3. **In the app:** search on leksis.eu; the entry page (`/entry/<key>`)
+   resolves the record content from the PDS — this exercises the full path.
+   The language's dashboard (`/language/<tag>`) shows the entry counter, the
+   harvested abbreviations (with conflicts) and the todo queue your records
+   feed.
 
 If records are on the PDS but never appear in the index, they failed AppView
 validation (check the invariants) or the PDS isn't being crawled — surface

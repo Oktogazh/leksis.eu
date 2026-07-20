@@ -8,6 +8,7 @@ import {
   type EntryAnnotation,
 } from "@leksis/types";
 import { db } from "../db";
+import { syncEntryAbbreviations, type AbbreviationPair } from "./abbreviations";
 import type { IngestResult } from "./ingest-language";
 
 // Decomposition of eu.leksis.entry records into the `entries` collection.
@@ -32,6 +33,12 @@ interface EntryDoc {
   authorDID: string;
   /** Whether this version carries a non-empty `todo` note (needs attention). */
   todo: boolean;
+  /**
+   * Distinct annotation pairs (categories + definition notes) of this
+   * version, kept so the abbreviations read model can be maintained across
+   * version transitions and deletions without re-fetching records.
+   */
+  abbreviations: AbbreviationPair[];
   createdAt: string;
   indexedAt: string;
   current: boolean;
@@ -42,6 +49,7 @@ interface ParsedEntry {
   orthography: string[];
   subject: string | null;
   todo: boolean;
+  abbreviations: AbbreviationPair[];
   createdAt: string;
 }
 
@@ -52,11 +60,14 @@ function parseAnnotations(value: unknown): EntryAnnotation[] | null {
   for (const item of value) {
     if (typeof item !== "object" || item === null) return null;
     const a = item as Record<string, unknown>;
-    if (typeof a.short !== "string" || typeof a.long !== "string") return null;
-    const short = a.short.trim();
+    // `long` is the only required half; a `short` that is present must be a
+    // string, and an empty one counts as absent.
+    if (typeof a.long !== "string") return null;
     const long = a.long.trim();
-    if (short === "" || long === "") return null;
-    annotations.push({ short, long });
+    if (long === "") return null;
+    if (a.short !== undefined && typeof a.short !== "string") return null;
+    const short = typeof a.short === "string" ? a.short.trim() : "";
+    annotations.push(short === "" ? { long } : { short, long });
   }
   return annotations;
 }
@@ -65,20 +76,25 @@ function parseAnnotations(value: unknown): EntryAnnotation[] | null {
  * Validate the flat definitions list: a non-empty array of
  * {place, notes?, text} definitions whose places, in array order, satisfy
  * the whole-list invariants (sorted reading order, contiguous sibling
- * indices, no place a prefix of another).
+ * indices, no place a prefix of another). Returns every definition's notes
+ * (they feed the abbreviations read model), or null when the list is
+ * invalid.
  */
-function validDefinitions(value: unknown): boolean {
-  if (!Array.isArray(value) || value.length === 0) return false;
+function collectDefinitionNotes(value: unknown): EntryAnnotation[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
   const places: number[][] = [];
+  const notes: EntryAnnotation[] = [];
   for (const item of value) {
-    if (typeof item !== "object" || item === null) return false;
+    if (typeof item !== "object" || item === null) return null;
     const def = item as Record<string, unknown>;
-    if (typeof def.text !== "string" || def.text.trim() === "") return false;
-    if (parseAnnotations(def.notes) === null) return false;
-    if (!isValidDefinitionPlace(def.place)) return false;
+    if (typeof def.text !== "string" || def.text.trim() === "") return null;
+    const defNotes = parseAnnotations(def.notes);
+    if (defNotes === null) return null;
+    notes.push(...defNotes);
+    if (!isValidDefinitionPlace(def.place)) return null;
     places.push(def.place);
   }
-  return validDefinitionPlaces(places);
+  return validDefinitionPlaces(places) ? notes : null;
 }
 
 /**
@@ -104,9 +120,19 @@ function parseRecord(record: unknown): ParsedEntry | null {
     orthography.push(form);
   }
 
-  if (parseAnnotations(r.categories) === null) return null;
+  const categories = parseAnnotations(r.categories);
+  if (categories === null) return null;
 
-  if (!validDefinitions(r.definitions)) return null;
+  const notes = collectDefinitionNotes(r.definitions);
+  if (notes === null) return null;
+
+  // The version's distinct annotation pairs — grammatical categories and
+  // definition notes alike — for the abbreviations read model.
+  const pairs = new Map<string, AbbreviationPair>();
+  for (const { short, long } of [...categories, ...notes]) {
+    const pair = { short: short ?? null, long };
+    pairs.set(`${pair.short ?? ""}\u0000${pair.long}`, pair);
+  }
 
   let subject: string | null = null;
   if (r.subject !== undefined) {
@@ -114,16 +140,31 @@ function parseRecord(record: unknown): ParsedEntry | null {
     subject = r.subject;
   }
 
-  // `todo` is freeform text on the record; the DB stores only its presence.
-  if (r.todo !== undefined && typeof r.todo !== "string") return null;
-  const todo = typeof r.todo === "string" && r.todo.trim() !== "";
+  // `todo` is a list of freeform pending-task notes (one item per task, so
+  // several bots or editors can each track their own); the DB stores only
+  // whether any non-empty item exists.
+  let todo = false;
+  if (r.todo !== undefined) {
+    if (!Array.isArray(r.todo)) return null;
+    for (const item of r.todo) {
+      if (typeof item !== "string") return null;
+      if (item.trim() !== "") todo = true;
+    }
+  }
 
   // `botSource` (bot → source traceability) lives on the record only.
   if (r.botSource !== undefined && typeof r.botSource !== "string") return null;
 
   const createdAt =
     typeof r.createdAt === "string" ? r.createdAt : new Date().toISOString();
-  return { languageID, orthography, subject, todo, createdAt };
+  return {
+    languageID,
+    orthography,
+    subject,
+    todo,
+    abbreviations: [...pairs.values()],
+    createdAt,
+  };
 }
 
 /**
@@ -211,6 +252,7 @@ export async function ingestEntry(
     cid,
     authorDID,
     todo: parsed.todo,
+    abbreviations: parsed.abbreviations,
     createdAt: parsed.createdAt,
     indexedAt: new Date().toISOString(),
     current: true,
@@ -222,6 +264,9 @@ export async function ingestEntry(
     `);
   }
   await db.query(aql`INSERT ${doc} INTO entries`);
+  // The read model tracks current versions only: declaring the new
+  // version's pairs also retires the archived version's contribution.
+  await syncEntryAbbreviations(db, entryKey, doc.languageID, doc.abbreviations);
   console.log(
     `firehose: indexed entry "${doc.orthography[0]}" [${doc.entryKey}] (${current ? "new version" : "new entry"}) from ${authorDID}`,
   );
@@ -253,18 +298,31 @@ export async function ingestEntryDelete(recordURI: string): Promise<void> {
     return;
   }
 
-  const promotedCursor = await db.query<string>(aql`
+  const promotedCursor = await db.query<{
+    recordURI: string;
+    languageID: string;
+    abbreviations: AbbreviationPair[] | null;
+  }>(aql`
     FOR e IN entries
       FILTER e.entryKey == ${entryKey}
       SORT e.indexedAt DESC
       LIMIT 1
       UPDATE e WITH { current: true } IN entries
-      RETURN NEW.recordURI
+      RETURN { recordURI: NEW.recordURI, languageID: NEW.languageID, abbreviations: NEW.abbreviations }
   `);
   const promoted = await promotedCursor.next();
+
+  // The entry's contribution to the abbreviations model follows its new
+  // current version — or vanishes with the entry. Versions indexed before
+  // pairs were stored carry none and contribute again once re-published.
+  if (promoted) {
+    await syncEntryAbbreviations(db, entryKey, promoted.languageID, promoted.abbreviations ?? []);
+  } else {
+    await syncEntryAbbreviations(db, entryKey, null, []);
+  }
   console.log(
     promoted
-      ? `firehose: removed current version of entry "${entryKey}" (record deleted); promoted ${promoted}`
+      ? `firehose: removed current version of entry "${entryKey}" (record deleted); promoted ${promoted.recordURI}`
       : `firehose: removed entry "${entryKey}" entirely (last record deleted)`,
   );
 }

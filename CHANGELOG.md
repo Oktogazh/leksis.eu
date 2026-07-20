@@ -3,7 +3,82 @@
 All notable changes to Leksis. This project follows the 8-week development
 timeline; each entry maps to a weekly milestone.
 
-## [Unreleased] — Week 4, Loop 2: Entries
+## Post-Loop 2 — Language dashboards, abbreviations & todo lists (released `v0.6.x`)
+
+Every language gets its front matter: a dashboard page with counters, its
+harvested abbreviations (conflict-checked), a review queue of entries whose
+current version carries pending work, and an activity view. Pending work
+itself becomes a per-task list.
+
+### Lexicon & types (`lexicons/`, `packages/types`)
+
+- **`todo` is now an array of strings** — one item per pending task, so
+  several bots or editors each track their own on the same entry. The DB
+  treatment is unchanged: absent/empty list → `todo: false`, any non-empty
+  item → `true`. Breaking change absorbed by the bots-only
+  reset-and-republish workflow (old records deleted, bots updated).
+- **Annotation `short` is optional; `long` is the required half** — shared
+  `#annotation` def, so grammatical categories and definition notes alike. A
+  lone form is always the full one (nothing dangles on hover); the editor
+  asks for the full form first.
+- New contracts: `abbreviation.ts` (`AbbreviationView`,
+  `annotationConflicts()`, `formatAbbreviationRef()`) and `dashboard.ts`
+  (the dashboard response shapes).
+
+### API & database (`apps/api`)
+
+- **`abbreviations` read model** (ADR-0004): one doc per distinct
+  (language, short, long) pair used by *current* entry versions — categories
+  and definition notes alike, i.e. a dictionary's front-matter abbreviations
+  section. Each doc lists the entryKeys using the pair (the count, and a
+  maintenance pointer that stays DB-only — the API never exposes per-pair
+  entry lists) plus `conflictsWith`: same-language docs sharing a short with
+  a different long, or a long with a different short (a pair without a short
+  never conflicts). Maintained by the firehose consumer on every version
+  transition, deletion and promotion (`firehose/abbreviations.ts`); rebuilt
+  wholesale by `db:init`; derived and disposable like `localLanguages`.
+- **Entry version docs store their annotation pairs** so the model needs no
+  PDS fetches at ingest — the deliberate doctrine widening recorded in
+  ADR-0004.
+- New endpoints: `GET /languages/:tag/abbreviations` (pairs + counts +
+  conflicts) and `GET /languages/:tag/dashboard` (entries/todo counters, the
+  capped todo queue, an activity feed — last 24 h padded to ≥ 10 items — and
+  per-day activity counts over a year).
+- New indexes: `entries["languageID","current"]`,
+  `abbreviations["languageID"]` and `abbreviations["entries[*]"]`.
+
+### Web (`apps/web`)
+
+- **Path routing**: pages moved off query params — `/entry/<key>`,
+  `/language/<tag>` — with the query string reserved for the search surface
+  (`/?q=&l=`); legacy `?e=` links rewrite themselves. The search bar now
+  persists on every page (hand-rolled History routing in `lib/routes.ts`;
+  nginx's SPA fallback already covered deep links).
+- **Language dashboard page**: counters, the to-be-completed queue linking
+  to entry pages, the abbreviations section with ⚠ conflicts, a
+  GitHub-style activity grid + recent-changes feed, the language's names —
+  existing translations shown from the resolved `eu.leksis.language` record,
+  new ones published as a full-rewrite record (rkey = tag) from the
+  editor's own PDS — and the "languages named in this language" review list
+  (from the existing `/languages?locale=` read model).
+- **Entry page**: the language chip moved to the top right and opens the
+  dashboard; the raw author DID replaced by an atproto.at source-record
+  link; a pending-work panel lists the todo items; category and note chips
+  carry ⚠ conflict flags.
+- **Editor**: a todo-items section (prefilled when proposing, so tasks are
+  cleared deliberately; `botSource` now survives proposals); abbreviation
+  suggestions via datalists (most used first) with cross-prefill of the
+  matching counterpart form; ⚠ conflict flags on chips; the full form comes
+  first and is the only required half.
+
+### Deferred
+
+- **In-dashboard bulk rewrite of conflicting entries**: per-pair entry lists
+  stay DB-only, so the browser cannot republish what it cannot list
+  (ADR-0004 #3). Bots bulk-fix their own imports via `listRecords` on their
+  own repos (leksis-ingest skill).
+
+## Week 4 — Loop 2, Entries (released `v0.5.x`)
 
 Dictionary entries exist: users publish `eu.leksis.entry` records on their
 own PDS, the AppView indexes them for search, and an entry page renders the

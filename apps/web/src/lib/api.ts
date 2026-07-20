@@ -1,6 +1,9 @@
 import type {
+  AbbreviationsResponse,
+  AbbreviationView,
   EntriesResponse,
   EntryView,
+  LanguageDashboardResponse,
   LanguagesResponse,
   LanguageView,
 } from "@leksis/types";
@@ -35,6 +38,35 @@ export async function searchEntries(query: string, languageTag: string): Promise
   if (!res.ok) throw new Error(`GET /entries failed: ${res.status}`);
   const body = (await res.json()) as EntriesResponse;
   return body.entries;
+}
+
+/**
+ * A language's abbreviation pairs — categories and definition notes of its
+ * current entries — most used first, with conflicts. Powers the editor's
+ * suggestions and the conflict flags; never lists the entries themselves.
+ */
+export async function fetchAbbreviations(languageTag: string): Promise<AbbreviationView[]> {
+  const res = await fetch(
+    `${API_BASE}/languages/${encodeURIComponent(languageTag)}/abbreviations`,
+  );
+  if (!res.ok) {
+    throw new Error(`GET /languages/${languageTag}/abbreviations failed: ${res.status}`);
+  }
+  const body = (await res.json()) as AbbreviationsResponse;
+  return body.abbreviations;
+}
+
+/**
+ * A language's dashboard: counters, the to-be-completed queue, the activity
+ * feed and the per-day activity series. Null when the language is unknown.
+ */
+export async function fetchLanguageDashboard(
+  languageTag: string,
+): Promise<LanguageDashboardResponse | null> {
+  const res = await fetch(`${API_BASE}/languages/${encodeURIComponent(languageTag)}/dashboard`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`GET /languages/${languageTag}/dashboard failed: ${res.status}`);
+  return (await res.json()) as LanguageDashboardResponse;
 }
 
 /** The current version of one entry by its stable key, or null when unknown. */

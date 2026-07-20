@@ -1,6 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  annotationConflicts,
+  formatAbbreviationRef,
+  type AbbreviationView,
+  type EntryAnnotation,
   type EntryDefinition,
   type EntryView,
   type LanguageView,
@@ -8,7 +12,7 @@ import {
 } from "@leksis/types";
 import { EntryEditorDialog } from "../components/CreateEntryPanel";
 import { endonym } from "../components/LanguageSelector";
-import { fetchEntry, searchEntries } from "../lib/api";
+import { fetchAbbreviations, fetchEntry, searchEntries } from "../lib/api";
 import { fetchEntryRecord } from "../lib/atproto-record";
 import { definitionsDepth, placeLabel } from "../lib/definition-tree";
 
@@ -18,10 +22,27 @@ const DEPTH_INDENT = ["", "pl-5 sm:pl-6", "pl-10 sm:pl-12"];
 /**
  * The flat definitions list, in the record's reading order. Each row shows
  * its full place label — arabic only (1), roman → arabic (2), letters →
- * roman → arabic (3) — and indents by its own depth.
+ * roman → arabic (3) — and indents by its own depth. Notes matching a
+ * conflicted abbreviation pair carry the ⚠ flag.
  */
-function DefinitionList({ definitions }: { definitions: EntryDefinition[] }): ReactNode {
+function DefinitionList({
+  definitions,
+  abbreviations,
+}: {
+  definitions: EntryDefinition[];
+  abbreviations: AbbreviationView[];
+}): ReactNode {
+  const { t } = useTranslation();
   const depth = definitionsDepth(definitions);
+
+  function noteTitle(note: EntryAnnotation): string {
+    const conflicts = annotationConflicts(note, abbreviations);
+    if (conflicts.length === 0) return note.long;
+    return `${note.long} — ${t("entry.conflictWarning", {
+      pairs: conflicts.map(formatAbbreviationRef).join(", "),
+    })}`;
+  }
+
   return (
     <ol className="space-y-4">
       {definitions.map((def, i) => (
@@ -35,15 +56,25 @@ function DefinitionList({ definitions }: { definitions: EntryDefinition[] }): Re
           <div className="min-w-0">
             {def.notes.length > 0 && (
               <span className="mr-2">
-                {def.notes.map((note, j) => (
-                  <abbr
-                    key={j}
-                    title={note.long}
-                    className="mr-1 rounded border bg-surface-muted/60 px-1.5 py-0.5 font-mono text-xs text-content-muted no-underline"
-                  >
-                    {note.short}
-                  </abbr>
-                ))}
+                {def.notes.map((note, j) => {
+                  const conflicted = annotationConflicts(note, abbreviations).length > 0;
+                  const chipClass = `mr-1 rounded border bg-surface-muted/60 px-1.5 py-0.5 font-mono text-xs text-content-muted ${
+                    conflicted ? "border-red-400" : ""
+                  }`;
+                  return note.short !== undefined ? (
+                    <abbr key={j} title={noteTitle(note)} className={`${chipClass} no-underline`}>
+                      {conflicted && <span aria-hidden="true">⚠ </span>}
+                      {note.short}
+                    </abbr>
+                  ) : (
+                    // No abbreviation: the full form is shown directly, so
+                    // there is nothing to reveal on hover (and no conflict —
+                    // a pair without a short form never conflicts).
+                    <span key={j} className={chipClass}>
+                      {note.long}
+                    </span>
+                  );
+                })}
               </span>
             )}
             <span className="text-sm text-content">{def.text}</span>
@@ -77,7 +108,7 @@ async function fetchHomonyms(view: EntryView): Promise<EntryView[]> {
 }
 
 interface EntryPageProps {
-  /** The entry's stable key, from the ?e= query param. */
+  /** The entry's stable key, from the /entry/<key> path. */
   entryKey: string;
   /** All known languages, for name display and the editor dialog. */
   languages: LanguageView[];
@@ -85,23 +116,34 @@ interface EntryPageProps {
   onBack: () => void;
   /** Navigate to another entry's page (used by the homonyms list). */
   onOpenEntry: (key: string) => void;
+  /** Navigate to the entry's language dashboard (the header chip). */
+  onOpenLanguage: (tag: string) => void;
 }
 
 type LoadState = "loading" | "ready" | "not-found" | "record-gone" | "failed";
 
 /**
- * One entry's page (?e=<entry-key>). The AppView only serves the search
- * view — orthographies, language and the record reference; the content
- * (categories, definitions with their notes) is resolved straight from the
- * author's PDS, which stays the source of truth. From here the reader can
- * propose changes: a full-rewrite record on their own PDS carrying
- * `subject`, which the AppView indexes as the entry's new current version.
+ * One entry's page (/entry/<key>), rendered under the persistent search bar.
+ * The AppView only serves the search view — orthographies, language and the
+ * record reference; the content (categories, definitions with their notes)
+ * is resolved straight from the author's PDS, which stays the source of
+ * truth. From here the reader can propose changes: a full-rewrite record on
+ * their own PDS carrying `subject`, which the AppView indexes as the entry's
+ * new current version.
  */
-export function EntryPage({ entryKey, languages, onBack, onOpenEntry }: EntryPageProps) {
+export function EntryPage({
+  entryKey,
+  languages,
+  onBack,
+  onOpenEntry,
+  onOpenLanguage,
+}: EntryPageProps) {
   const { t } = useTranslation();
   const [view, setView] = useState<EntryView | null>(null);
   const [record, setRecord] = useState<LeksisEntryRecord | null>(null);
   const [homonyms, setHomonyms] = useState<EntryView[]>([]);
+  /** The language's abbreviation pairs, for the ⚠ conflict flags. */
+  const [abbreviations, setAbbreviations] = useState<AbbreviationView[]>([]);
   const [state, setState] = useState<LoadState>("loading");
   const [proposing, setProposing] = useState(false);
   /** Record URI written to the PDS but not yet seen back from the AppView. */
@@ -113,6 +155,7 @@ export function EntryPage({ entryKey, languages, onBack, onOpenEntry }: EntryPag
     setView(null);
     setRecord(null);
     setHomonyms([]);
+    setAbbreviations([]);
 
     (async () => {
       try {
@@ -120,10 +163,15 @@ export function EntryPage({ entryKey, languages, onBack, onOpenEntry }: EntryPag
         if (cancelled) return;
         if (found === null) return setState("not-found");
         setView(found);
-        // Best-effort side panel — a failure never blocks the entry itself.
+        // Best-effort side data — a failure never blocks the entry itself.
         fetchHomonyms(found)
           .then((others) => {
             if (!cancelled) setHomonyms(others);
+          })
+          .catch(() => {});
+        fetchAbbreviations(found.languageID)
+          .then((list) => {
+            if (!cancelled) setAbbreviations(list);
           })
           .catch(() => {});
         const content = await fetchEntryRecord(found.recordURI);
@@ -172,7 +220,7 @@ export function EntryPage({ entryKey, languages, onBack, onOpenEntry }: EntryPag
     view !== null ? (languages.find((l) => l.tag === view.languageID) ?? null) : null;
 
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 py-10 sm:px-6 sm:py-16">
+    <div className="mt-6 flex flex-col">
       <button
         type="button"
         onClick={onBack}
@@ -197,40 +245,80 @@ export function EntryPage({ entryKey, languages, onBack, onOpenEntry }: EntryPag
       {state === "ready" && view !== null && record !== null && (
         <article className="mt-6">
           <header>
-            <h1 className="text-2xl font-semibold tracking-tight text-content sm:text-3xl">
-              {record.orthography[0]}
-            </h1>
-            {record.orthography.length > 1 && (
-              <p className="mt-1 text-sm text-content-muted">
-                {record.orthography.slice(1).join(", ")}
-              </p>
-            )}
-            <p className="mt-2 text-sm text-content-muted">
-              {language !== null ? endonym(language) : view.languageID}{" "}
-              <span className="rounded border bg-surface px-1.5 py-0.5 font-mono text-xs">
-                {view.languageID}
-              </span>
-            </p>
+            {/* The language sits top right and opens its dashboard. */}
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <h1 className="text-2xl font-semibold tracking-tight text-content sm:text-3xl">
+                  {record.orthography[0]}
+                </h1>
+                {record.orthography.length > 1 && (
+                  <p className="mt-1 text-sm text-content-muted">
+                    {record.orthography.slice(1).join(", ")}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => onOpenLanguage(view.languageID)}
+                title={t("entry.openLanguage")}
+                className="mt-1 shrink-0 rounded-full border bg-surface px-3 py-1 text-sm text-content-muted hover:border-primary hover:text-primary"
+              >
+                {language !== null ? endonym(language) : view.languageID}{" "}
+                <span className="font-mono text-xs">{view.languageID}</span>
+              </button>
+            </div>
             {record.categories.length > 0 && (
               <ul className="mt-3 flex flex-wrap items-center gap-1.5" aria-label={t("entry.categoriesLabel")}>
-                {record.categories.map((category, i) => (
-                  <li
-                    key={i}
-                    title={category.long}
-                    className="rounded-full border bg-surface-muted/60 px-2.5 py-1 font-mono text-xs text-content"
-                  >
-                    <abbr title={category.long} className="no-underline">
-                      {category.short}
-                    </abbr>
-                  </li>
-                ))}
+                {record.categories.map((category, i) => {
+                  const conflicts = annotationConflicts(category, abbreviations);
+                  const title =
+                    conflicts.length === 0
+                      ? category.long
+                      : `${category.long} — ${t("entry.conflictWarning", {
+                          pairs: conflicts.map(formatAbbreviationRef).join(", "),
+                        })}`;
+                  return (
+                    <li
+                      key={i}
+                      className={`rounded-full border bg-surface-muted/60 px-2.5 py-1 font-mono text-xs text-content ${
+                        conflicts.length > 0 ? "border-red-400" : ""
+                      }`}
+                    >
+                      {conflicts.length > 0 && <span aria-hidden="true">⚠ </span>}
+                      {category.short !== undefined ? (
+                        <abbr title={title} className="no-underline">
+                          {category.short}
+                        </abbr>
+                      ) : (
+                        category.long
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </header>
 
+          {record.todo !== undefined && record.todo.length > 0 && (
+            <section className="mt-6 rounded-lg border bg-surface-muted/40 p-3">
+              <h2 className="text-sm font-semibold text-content">
+                <span aria-hidden="true">⚠ </span>
+                {t("entry.todoLabel")}
+              </h2>
+              <p className="mt-1 text-xs text-content-subtle">{t("entry.todoHint")}</p>
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                {record.todo.map((item, i) => (
+                  <li key={i} className="text-sm text-content">
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           <section className="mt-6">
             <h2 className="sr-only">{t("entry.definitionsLabel")}</h2>
-            <DefinitionList definitions={record.definitions} />
+            <DefinitionList definitions={record.definitions} abbreviations={abbreviations} />
           </section>
 
           {homonyms.length > 0 && (
@@ -257,9 +345,17 @@ export function EntryPage({ entryKey, languages, onBack, onOpenEntry }: EntryPag
           )}
 
           <footer className="mt-8 border-t pt-4">
-            <p className="text-xs text-content-subtle">
-              {t("entry.authorLabel")}{" "}
-              <span className="break-all font-mono">{view.authorDID}</span>
+            <p className="text-xs">
+              {/* The record URI goes into the path verbatim — atproto.at
+                  expects the raw at:// form, so no percent-encoding. */}
+              <a
+                href={`https://atproto.at/uri/${view.recordURI}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="break-all text-primary hover:text-primary-hover"
+              >
+                {t("entry.viewRecord")}
+              </a>
             </p>
             {syncingURI !== null ? (
               <p className="mt-3 text-sm text-content-subtle">{t("entry.syncing")}</p>
@@ -289,6 +385,6 @@ export function EntryPage({ entryKey, languages, onBack, onOpenEntry }: EntryPag
           }}
         />
       )}
-    </main>
+    </div>
   );
 }

@@ -3,10 +3,13 @@ import { Hono } from "hono";
 import {
   isValidLanguageTag,
   normalizeLanguageTag,
+  type AbbreviationsResponse,
   type EntriesResponse,
   type HealthResponse,
   type LanguagesResponse,
 } from "@leksis/types";
+import { listAbbreviations } from "./abbreviations";
+import { getLanguageDashboard } from "./dashboard";
 import { pingDb } from "./db";
 import { getEntry, searchEntries } from "./entries";
 import { listLanguages } from "./languages";
@@ -42,6 +45,36 @@ app.get("/languages", async (c) => {
     return c.json(body);
   } catch (err) {
     console.error("GET /languages failed:", err);
+    return c.json({ error: "database unavailable" }, 503);
+  }
+});
+
+app.get("/languages/:tag/dashboard", async (c) => {
+  const requested = normalizeLanguageTag(c.req.param("tag"));
+  if (!isValidLanguageTag(requested)) {
+    return c.json({ error: "invalid language tag" }, 400);
+  }
+  try {
+    const dashboard = await getLanguageDashboard(requested);
+    if (!dashboard) return c.json({ error: "language not found" }, 404);
+    return c.json(dashboard);
+  } catch (err) {
+    console.error("GET /languages/:tag/dashboard failed:", err);
+    return c.json({ error: "database unavailable" }, 503);
+  }
+});
+
+app.get("/languages/:tag/abbreviations", async (c) => {
+  const requested = normalizeLanguageTag(c.req.param("tag"));
+  if (!isValidLanguageTag(requested)) {
+    return c.json({ error: "invalid language tag" }, 400);
+  }
+  try {
+    const abbreviations = await listAbbreviations(requested);
+    const body: AbbreviationsResponse = { languageID: requested, abbreviations };
+    return c.json(body);
+  } catch (err) {
+    console.error("GET /languages/:tag/abbreviations failed:", err);
     return c.json({ error: "database unavailable" }, 503);
   }
 });

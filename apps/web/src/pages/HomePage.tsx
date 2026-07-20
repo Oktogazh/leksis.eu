@@ -5,7 +5,9 @@ import { AddLanguageModal } from "../components/AddLanguageModal";
 import { LanguageSelector } from "../components/LanguageSelector";
 import { SearchResults } from "../components/SearchResults";
 import { EntryPage } from "./EntryPage";
+import { LanguagePage } from "./LanguagePage";
 import { fetchLanguages } from "../lib/api";
+import { entryPath, languagePath, routeFromLocation, type Route } from "../lib/routes";
 import { getShortlist, promoteInShortlist } from "../lib/shortlist";
 
 const SYNC_POLL_MS = 3_000;
@@ -25,14 +27,11 @@ function searchFromLocation(): SubmittedSearch | null {
   return { query, languageTag: params.get("l") ?? "" };
 }
 
-/** Reads ?e= — an entry key makes the entry page cover the search surface. */
-function entryFromLocation(): string | null {
-  return new URLSearchParams(window.location.search).get("e") || null;
-}
-
-// Connected landing surface: language scope + term box, with the results
-// (and the create-this-word offer) rendering below on submit. Search state
-// mirrors into the URL (?q=&l=) so a search is a shareable, reloadable link.
+// Connected surface: the language scope + term box stay on every page, with
+// the routed content below — search results on /, an entry on /entry/<key>.
+// Search state mirrors into the query string (/?q=&l=) so a search is a
+// shareable, reloadable link; resource pages live at path URLs and carry no
+// query string.
 export function HomePage() {
   const { t, i18n } = useTranslation();
   // Locale for language-name localization; the API falls back to endonyms
@@ -44,7 +43,7 @@ export function HomePage() {
   const [language, setLanguage] = useState(() => initialSearch()?.languageTag ?? "");
   const [term, setTerm] = useState(() => initialSearch()?.query ?? "");
   const [submitted, setSubmitted] = useState<SubmittedSearch | null>(initialSearch);
-  const [entryKey, setEntryKey] = useState<string | null>(entryFromLocation);
+  const [route, setRoute] = useState<Route>(routeFromLocation);
   const [adding, setAdding] = useState(false);
   /** Tag written to the PDS but not yet seen back from the AppView. */
   const [syncingTag, setSyncingTag] = useState<string | null>(null);
@@ -55,14 +54,15 @@ export function HomePage() {
       .catch((err) => console.error("could not load languages:", err));
   }, [locale]);
 
-  // Back/forward through search history restores the term, scope and results.
+  // Back/forward restores the route and, on the search surface, the term,
+  // scope and results.
   useEffect(() => {
     function onPopState() {
       const search = searchFromLocation();
       setSubmitted(search);
       setTerm(search?.query ?? "");
       setLanguage(search?.languageTag ?? "");
-      setEntryKey(entryFromLocation());
+      setRoute(routeFromLocation());
     }
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
@@ -110,6 +110,8 @@ export function HomePage() {
     setSyncingTag(created.tag);
   }
 
+  // Submitting always lands on the search surface: the query string belongs
+  // to /, so a search started from an entry page navigates back to /?q=&l=.
   function onSubmit(event: FormEvent) {
     event.preventDefault();
     const query = term.trim();
@@ -119,29 +121,31 @@ export function HomePage() {
     const params = new URLSearchParams();
     params.set("q", query);
     if (language !== "") params.set("l", language);
-    const url = `${window.location.pathname}?${params.toString()}`;
-    window.history.pushState(null, "", url);
+    window.history.pushState(null, "", `/?${params.toString()}`);
+    setRoute({ kind: "search" });
   }
 
-  // Entry page navigation keeps the search params, so "back to search"
-  // (and the browser's back button) restore the results the entry came from.
   function openEntry(key: string) {
-    const params = new URLSearchParams(window.location.search);
-    params.set("e", key);
-    window.history.pushState(null, "", `${window.location.pathname}?${params.toString()}`);
-    setEntryKey(key);
+    window.history.pushState(null, "", entryPath(key));
+    setRoute({ kind: "entry", entryKey: key });
   }
 
-  function closeEntry() {
-    const params = new URLSearchParams(window.location.search);
-    params.delete("e");
+  function openLanguage(tag: string) {
+    window.history.pushState(null, "", languagePath(tag));
+    setRoute({ kind: "language", tag });
+  }
+
+  // "Back to search" rebuilds /?q=&l= from the submitted state, so the
+  // results the entry came from reappear.
+  function backToSearch() {
+    const params = new URLSearchParams();
+    if (submitted !== null) {
+      params.set("q", submitted.query);
+      if (submitted.languageTag !== "") params.set("l", submitted.languageTag);
+    }
     const search = params.toString();
-    window.history.pushState(
-      null,
-      "",
-      search === "" ? window.location.pathname : `${window.location.pathname}?${search}`,
-    );
-    setEntryKey(null);
+    window.history.pushState(null, "", search === "" ? "/" : `/?${search}`);
+    setRoute({ kind: "search" });
   }
 
   const scopeLanguage =
@@ -149,24 +153,18 @@ export function HomePage() {
       ? (languages.find((l) => l.tag === submitted.languageTag) ?? null)
       : null;
 
-  if (entryKey !== null) {
-    return (
-      <EntryPage
-        entryKey={entryKey}
-        languages={languages}
-        onBack={closeEntry}
-        onOpenEntry={openEntry}
-      />
-    );
-  }
-
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 py-10 sm:px-6 sm:py-16">
-      <h1 className="text-2xl font-semibold tracking-tight text-content sm:text-3xl">
-        {t("search.title")}
-      </h1>
+      {route.kind === "search" && (
+        <h1 className="text-2xl font-semibold tracking-tight text-content sm:text-3xl">
+          {t("search.title")}
+        </h1>
+      )}
 
-      <form className="mt-6 flex flex-col gap-3 sm:flex-row" onSubmit={onSubmit}>
+      <form
+        className={`flex flex-col gap-3 sm:flex-row ${route.kind === "search" ? "mt-6" : ""}`}
+        onSubmit={onSubmit}
+      >
         <label htmlFor="search-language" className="sr-only">
           {t("search.languageLabel")}
         </label>
@@ -203,13 +201,30 @@ export function HomePage() {
         <p className="mt-3 text-sm text-content-subtle">{t("addLanguage.syncing")}</p>
       )}
 
-      {submitted !== null && (
-        <SearchResults
-          query={submitted.query}
+      {route.kind === "entry" ? (
+        <EntryPage
+          entryKey={route.entryKey}
           languages={languages}
-          language={scopeLanguage}
+          onBack={backToSearch}
           onOpenEntry={openEntry}
+          onOpenLanguage={openLanguage}
         />
+      ) : route.kind === "language" ? (
+        <LanguagePage
+          tag={route.tag}
+          languages={languages}
+          onOpenEntry={openEntry}
+          onOpenLanguage={openLanguage}
+        />
+      ) : (
+        submitted !== null && (
+          <SearchResults
+            query={submitted.query}
+            languages={languages}
+            language={scopeLanguage}
+            onOpenEntry={openEntry}
+          />
+        )
       )}
 
       {adding && (

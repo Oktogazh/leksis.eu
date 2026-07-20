@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useRef,
   useState,
   type ChangeEvent,
@@ -8,12 +9,17 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  annotationConflicts,
+  formatAbbreviationRef,
   LEKSIS_ENTRY_COLLECTION,
+  type AbbreviationRef,
+  type AbbreviationView,
   type EntryAnnotation,
   type LanguageView,
   type LeksisEntryRecord,
 } from "@leksis/types";
 import { useSession } from "../auth/SessionProvider";
+import { fetchAbbreviations } from "../lib/api";
 import {
   editTreeLabels,
   fromRecordDefinitions,
@@ -40,6 +46,11 @@ function toAnnotationTags(annotations: EntryAnnotation[]): AnnotationTag[] {
   return annotations.map((a) => ({ ...a, id: nextAnnotationId++ }));
 }
 
+/** Back to the record shape: drop the editor identity and an empty short form. */
+function toRecordAnnotation({ short, long }: EntryAnnotation): EntryAnnotation {
+  return short !== undefined && short.trim() !== "" ? { short, long } : { long };
+}
+
 /**
  * Reorderable chip row for short/long annotation pairs (grammatical
  * categories, definition notes). Each chip shows the short form; the long
@@ -53,10 +64,13 @@ function AnnotationTagList({
   tags,
   onReorder,
   onRemove,
+  conflictsFor,
 }: {
   tags: AnnotationTag[];
   onReorder: (from: number, to: number) => void;
   onRemove: (id: number) => void;
+  /** Conflict partners of a chip's pair, for the ⚠ flag; absent = no data. */
+  conflictsFor?: (tag: AnnotationTag) => AbbreviationRef[];
 }) {
   const { t } = useTranslation();
   const [revealedId, setRevealedId] = useState<number | null>(null);
@@ -126,21 +140,34 @@ function AnnotationTagList({
 
   return (
     <ul className="mt-2 flex flex-wrap items-center gap-1.5">
-      {tags.map((tag) => (
+      {tags.map((tag) => {
+        const conflicts = conflictsFor?.(tag) ?? [];
+        return (
         <li
           key={tag.id}
           className={`group relative flex items-center rounded-full border bg-surface-muted/60 ${
             draggingId === tag.id ? "opacity-70 ring-2" : ""
-          }`}
+          } ${conflicts.length > 0 ? "border-red-400" : ""}`}
         >
-          <span
-            role="tooltip"
-            className={`pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 -translate-x-1/2 whitespace-nowrap rounded border bg-surface px-2 py-1 text-xs text-content shadow-sm ${
-              revealedId === tag.id ? "" : "hidden group-hover:block group-focus-within:block"
-            }`}
-          >
-            {tag.long}
-          </span>
+          {/* No tooltip without a short form — the chip already shows the
+              full form, so there is nothing to reveal. */}
+          {tag.short !== undefined && (
+            <span
+              role="tooltip"
+              className={`pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 -translate-x-1/2 whitespace-nowrap rounded border bg-surface px-2 py-1 text-xs text-content shadow-sm ${
+                revealedId === tag.id ? "" : "hidden group-hover:block group-focus-within:block"
+              }`}
+            >
+              {tag.long}
+              {conflicts.length > 0 && (
+                <span className="block text-red-600">
+                  {t("createEntry.conflictWarning", {
+                    pairs: conflicts.map(formatAbbreviationRef).join(", "),
+                  })}
+                </span>
+              )}
+            </span>
+          )}
           <button
             type="button"
             ref={(el) => {
@@ -150,11 +177,12 @@ function AnnotationTagList({
             onPointerDown={(e) => startDrag(e, tag.id)}
             onClick={() => onChipClick(tag.id)}
             onKeyDown={(e) => onChipKeyDown(e, tag.id)}
-            aria-label={`${tag.short} — ${tag.long}`}
+            aria-label={tag.short !== undefined ? `${tag.short} — ${tag.long}` : tag.long}
             title={t("createEntry.annotationChipHint")}
             className="cursor-grab touch-none select-none rounded-l-full py-1 pl-2.5 pr-1 font-mono text-xs text-content active:cursor-grabbing"
           >
-            {tag.short}
+            {conflicts.length > 0 && <span aria-hidden="true">⚠ </span>}
+            {tag.short ?? tag.long}
           </button>
           <button
             type="button"
@@ -166,40 +194,72 @@ function AnnotationTagList({
             ×
           </button>
         </li>
-      ))}
+        );
+      })}
     </ul>
   );
 }
 
 /**
- * Chips + short/long input pair for one annotation list. Used for the
+ * Chips + long/short input pair for one annotation list. Used for the
  * entry's grammatical categories and for each definition's notes; owns its
- * draft inputs, the parent only sees the committed, ordered list.
+ * draft inputs, the parent only sees the committed, ordered list. When the
+ * language's abbreviation list is provided, it powers the input
+ * suggestions, the cross-prefill (an exactly matching form fills in its
+ * counterpart) and the ⚠ conflict flag on chips.
  */
 function AnnotationEditor({
   idPrefix,
   tags,
   onChange,
   addLabel,
+  suggestions = [],
 }: {
   idPrefix: string;
   tags: AnnotationTag[];
   onChange: (tags: AnnotationTag[]) => void;
   addLabel: string;
+  /** The language's abbreviation pairs, most used first. */
+  suggestions?: AbbreviationView[];
 }) {
   const { t } = useTranslation();
   const [draftShort, setDraftShort] = useState("");
   const [draftLong, setDraftLong] = useState("");
-  const canAdd = draftShort.trim() !== "" && draftLong.trim() !== "";
+  // Only the full form is required: a lone form is always the long one, so
+  // nothing dangles on hover. The abbreviation is optional.
+  const canAdd = draftLong.trim() !== "";
 
   function add() {
     if (!canAdd) return;
-    onChange([
-      ...tags,
-      { id: nextAnnotationId++, short: draftShort.trim(), long: draftLong.trim() },
-    ]);
+    const long = draftLong.trim();
+    const short = draftShort.trim();
+    onChange([...tags, { id: nextAnnotationId++, ...(short !== "" ? { short } : {}), long }]);
     setDraftShort("");
     setDraftLong("");
+  }
+
+  // Cross-prefill: a value exactly matching a known form fills the other
+  // field, when it is still empty and the counterpart is unambiguous.
+  function onLongInput(value: string) {
+    setDraftLong(value);
+    if (draftShort.trim() !== "") return;
+    const shorts = [
+      ...new Set(
+        suggestions.flatMap((s) =>
+          s.long === value.trim() && s.short !== undefined ? [s.short] : [],
+        ),
+      ),
+    ];
+    if (shorts.length === 1) setDraftShort(shorts[0]!);
+  }
+
+  function onShortInput(value: string) {
+    setDraftShort(value);
+    if (draftLong.trim() !== "") return;
+    const longs = [
+      ...new Set(suggestions.flatMap((s) => (s.short === value.trim() ? [s.long] : []))),
+    ];
+    if (longs.length === 1) setDraftLong(longs[0]!);
   }
 
   function onInputKeyDown(event: KeyboardEvent<HTMLInputElement>) {
@@ -223,31 +283,48 @@ function AnnotationEditor({
           tags={tags}
           onReorder={reorder}
           onRemove={(id) => onChange(tags.filter((tag) => tag.id !== id))}
+          conflictsFor={(tag) => annotationConflicts(tag, suggestions)}
         />
       )}
+      {/* Full form first — it is the required half; the abbreviation besides
+          it is optional. */}
       <div className="mt-2 flex items-center gap-2">
-        <label className="sr-only" htmlFor={`${idPrefix}-short`}>
-          {t("createEntry.annotationShortLabel")}
-        </label>
-        <input
-          id={`${idPrefix}-short`}
-          value={draftShort}
-          onChange={(e) => setDraftShort(e.target.value)}
-          onKeyDown={onInputKeyDown}
-          placeholder={t("createEntry.annotationShortPlaceholder")}
-          className="w-20 min-w-0 shrink-0 rounded-lg border bg-surface px-2 py-2 font-mono text-sm text-content outline-none placeholder:text-content-subtle focus:ring-2 sm:w-24"
-        />
         <label className="sr-only" htmlFor={`${idPrefix}-long`}>
           {t("createEntry.annotationLongLabel")}
         </label>
         <input
           id={`${idPrefix}-long`}
           value={draftLong}
-          onChange={(e) => setDraftLong(e.target.value)}
+          onChange={(e) => onLongInput(e.target.value)}
           onKeyDown={onInputKeyDown}
           placeholder={t("createEntry.annotationLongPlaceholder")}
+          list={`${idPrefix}-long-options`}
           className="min-w-0 flex-1 rounded-lg border bg-surface px-3 py-2 text-sm text-content outline-none placeholder:text-content-subtle focus:ring-2"
         />
+        <datalist id={`${idPrefix}-long-options`}>
+          {[...new Set(suggestions.map((s) => s.long))].map((long) => (
+            <option key={long} value={long} />
+          ))}
+        </datalist>
+        <label className="sr-only" htmlFor={`${idPrefix}-short`}>
+          {t("createEntry.annotationShortLabel")}
+        </label>
+        <input
+          id={`${idPrefix}-short`}
+          value={draftShort}
+          onChange={(e) => onShortInput(e.target.value)}
+          onKeyDown={onInputKeyDown}
+          placeholder={t("createEntry.annotationShortPlaceholder")}
+          list={`${idPrefix}-short-options`}
+          className="w-20 min-w-0 shrink-0 rounded-lg border bg-surface px-2 py-2 font-mono text-sm text-content outline-none placeholder:text-content-subtle focus:ring-2 sm:w-24"
+        />
+        <datalist id={`${idPrefix}-short-options`}>
+          {[
+            ...new Set(suggestions.flatMap((s) => (s.short !== undefined ? [s.short] : []))),
+          ].map((short) => (
+            <option key={short} value={short} />
+          ))}
+        </datalist>
         <button
           type="button"
           onClick={add}
@@ -323,10 +400,30 @@ export function EntryEditorDialog({
         )
       : [{ kind: "leaf", id: mintNodeId(), payload: { notes: [], text: "" } }],
   );
+  const [todoItems, setTodoItems] = useState<string[]>(initial?.todo ?? []);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The target language's abbreviation pairs — suggestions + conflict flags. */
+  const [abbreviations, setAbbreviations] = useState<AbbreviationView[]>([]);
 
   const target = language ?? languages.find((l) => l.tag === pickedTag) ?? null;
+  const targetTag = target?.tag ?? null;
+
+  // The suggestions are an assist: failures stay silent and the editor
+  // simply offers none.
+  useEffect(() => {
+    setAbbreviations([]);
+    if (targetTag === null) return;
+    let cancelled = false;
+    fetchAbbreviations(targetTag)
+      .then((list) => {
+        if (!cancelled) setAbbreviations(list);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [targetTag]);
 
   function onPickLanguage(event: ChangeEvent<HTMLSelectElement>) {
     setPickedTag(event.target.value);
@@ -337,11 +434,12 @@ export function EntryEditorDialog({
   }
 
   const cleanSpellings = spellings.map((s) => s.trim()).filter((s) => s !== "");
+  const cleanTodo = todoItems.map((s) => s.trim()).filter((s) => s !== "");
   const cleanDefinitions = toRecordDefinitions(definitions, (payload) =>
     payload.text.trim() === ""
       ? null
       : {
-          notes: payload.notes.map(({ short, long }) => ({ short, long })),
+          notes: payload.notes.map(toRecordAnnotation),
           text: payload.text.trim(),
         },
   );
@@ -355,9 +453,13 @@ export function EntryEditorDialog({
       $type: LEKSIS_ENTRY_COLLECTION,
       languageID: target.tag,
       orthography: cleanSpellings,
-      categories: categories.map(({ short, long }) => ({ short, long })),
+      categories: categories.map(toRecordAnnotation),
       definitions: cleanDefinitions,
       ...(subject !== undefined ? { subject } : {}),
+      // An empty list clears the entry's needs-attention flag; `botSource`
+      // is preserved so the content keeps its source traceability.
+      ...(cleanTodo.length > 0 ? { todo: cleanTodo } : {}),
+      ...(initial?.botSource !== undefined ? { botSource: initial.botSource } : {}),
       createdAt: new Date().toISOString(),
     };
 
@@ -468,6 +570,7 @@ export function EntryEditorDialog({
                 setDefinitions((prev) => updateLeaf(prev, node.id, (p) => ({ ...p, notes })))
               }
               addLabel={t("createEntry.addNote")}
+              suggestions={abbreviations}
             />
           </div>
         </div>
@@ -587,6 +690,7 @@ export function EntryEditorDialog({
               tags={categories}
               onChange={setCategories}
               addLabel={t("createEntry.addCategory")}
+              suggestions={abbreviations}
             />
           </fieldset>
 
@@ -609,6 +713,45 @@ export function EntryEditorDialog({
               className="mt-2 text-sm text-primary hover:text-primary-hover"
             >
               {t("createEntry.addDefinition")}
+            </button>
+          </fieldset>
+
+          <fieldset className="mt-5">
+            <legend className="text-sm font-medium text-content">
+              {t("createEntry.todoLegend")}
+            </legend>
+            <p className="mt-1 text-xs text-content-subtle">{t("createEntry.todoHelp")}</p>
+            {todoItems.map((item, i) => (
+              <div key={i} className="mt-2 flex items-center gap-2">
+                <label className="sr-only" htmlFor={`entry-todo-${i}`}>
+                  {t("createEntry.todoItemLabel")}
+                </label>
+                <input
+                  id={`entry-todo-${i}`}
+                  value={item}
+                  onChange={(e) =>
+                    setTodoItems((prev) => prev.map((s, j) => (j === i ? e.target.value : s)))
+                  }
+                  placeholder={t("createEntry.todoItemPlaceholder")}
+                  className={inputClass}
+                />
+                <button
+                  type="button"
+                  onClick={() => setTodoItems((prev) => prev.filter((_, j) => j !== i))}
+                  aria-label={t("createEntry.removeTodoItem")}
+                  title={t("createEntry.removeTodoItem")}
+                  className="shrink-0 rounded-lg px-2 py-1 text-lg leading-none text-content-subtle hover:bg-surface-muted hover:text-content"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => setTodoItems((prev) => [...prev, ""])}
+              className="mt-2 text-sm text-primary hover:text-primary-hover"
+            >
+              {t("createEntry.addTodoItem")}
             </button>
           </fieldset>
 

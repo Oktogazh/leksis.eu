@@ -17,6 +17,11 @@ low-resource languages, built on AT Protocol and ArangoDB. Turborepo monorepo:
 
 The user works, sequentially, step by step and keeps control of what happens and when. Make all changes directly on the current branch without creating worktrees, needing PR etc...
 
+**Master is continuously released**: the user tags `v*` several times a day and every tag
+deploys to production. Treat everything committed on master as live or hours from it —
+there is no long-lived unreleased state, so every step must leave master deployable on
+its own.
+
 1. **Orient** — establish where the project stands (evolution skill step 1).
 2. **Propose** — before any non-trivial change, state what you intend to change, in
    which files, and why. Wait for confirmation on anything beyond the agreed step.

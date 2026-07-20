@@ -16,10 +16,16 @@ export const LEKSIS_ENTRY_COLLECTION = "eu.leksis.entry";
  * ("arch." / "archaic"). Freeform, not an enforced vocabulary.
  */
 export interface EntryAnnotation {
-  /** Abbreviated display form (e.g. "n.", "bot."). */
-  short: string;
-  /** Full form the abbreviation stands for (e.g. "noun", "botany"). */
+  /**
+   * Full form (e.g. "noun", "botany") — the only required half: a lone form
+   * is always the full one, displayed directly with nothing on hover.
+   */
   long: string;
+  /**
+   * Optional abbreviated display form (e.g. "n.", "bot."); when present it
+   * is shown instead of the full form, which appears on hover.
+   */
+  short?: string;
 }
 
 /**
@@ -107,11 +113,13 @@ export interface LeksisEntryRecord {
   /** AT URI of the record version this modifies; absent for a new entry. */
   subject?: string;
   /**
-   * Freeform note describing work this version still needs (e.g. an
-   * ingestion bot flagging an unverified conversion). Empty or absent means
-   * nothing is pending; the AppView indexes only its presence, as a boolean.
+   * Pending-work notes: each item is one task this version still needs
+   * (e.g. an ingestion bot flagging one unverified aspect), so several bots
+   * or editors can each track their own item. Empty or absent means nothing
+   * is pending; the AppView indexes only whether any item exists, as a
+   * boolean.
    */
-  todo?: string;
+  todo?: string[];
   /**
    * Identifier of the external source this record was derived from (a URL
    * or a source-internal ID), set by ingestion bots for maintenance

@@ -4,16 +4,19 @@ import {
   isValidLanguageTag,
   normalizeLanguageTag,
   LEKSIS_ENTRY_COLLECTION,
+  LEKSIS_LANGUAGE_COLLECTION,
   type EntryAnnotation,
   type EntryDefinition,
+  type LanguageTranslation,
   type LeksisEntryRecord,
+  type LeksisLanguageRecord,
 } from "@leksis/types";
 
-// Client-side resolution of an entry record from its at:// URI. The AppView
-// only indexes what search needs; the record on the author's PDS is the
-// source of truth for content, so the browser resolves it directly:
-// DID → DID document (plc.directory or .well-known) → PDS endpoint →
-// com.atproto.repo.getRecord (public, no auth).
+// Client-side resolution of eu.leksis.* records from their at:// URIs. The
+// AppView only indexes what its read surfaces need; the record on the
+// author's PDS is the source of truth for content, so the browser resolves
+// it directly: DID → DID document (plc.directory or .well-known) → PDS
+// endpoint → com.atproto.repo.getRecord (public, no auth).
 
 interface DidDocument {
   service?: { id: string; type: string; serviceEndpoint: string }[];
@@ -58,9 +61,9 @@ function parseAnnotations(value: unknown): EntryAnnotation[] {
   const annotations: EntryAnnotation[] = [];
   for (const item of value) {
     const a = item as Record<string, unknown> | null;
-    if (a && typeof a.short === "string" && typeof a.long === "string") {
-      annotations.push({ short: a.short, long: a.long });
-    }
+    if (!a || typeof a.long !== "string" || a.long.trim() === "") continue;
+    const short = typeof a.short === "string" && a.short.trim() !== "" ? a.short : undefined;
+    annotations.push(short === undefined ? { long: a.long } : { short, long: a.long });
   }
   return annotations;
 }
@@ -104,6 +107,13 @@ function parseEntryRecord(value: unknown): LeksisEntryRecord | null {
   const definitions = parseDefinitions(r.definitions);
   if (definitions.length === 0) return null;
 
+  // Pending-task notes; malformed items are dropped rather than failing the
+  // whole record. `botSource` is carried through so a proposed modification
+  // can preserve the content's source traceability.
+  const todo = Array.isArray(r.todo)
+    ? r.todo.filter((item): item is string => typeof item === "string" && item.trim() !== "")
+    : [];
+
   return {
     $type: LEKSIS_ENTRY_COLLECTION,
     languageID,
@@ -111,16 +121,19 @@ function parseEntryRecord(value: unknown): LeksisEntryRecord | null {
     categories: parseAnnotations(r.categories),
     definitions,
     ...(typeof r.subject === "string" ? { subject: r.subject } : {}),
+    ...(todo.length > 0 ? { todo } : {}),
+    ...(typeof r.botSource === "string" && r.botSource.trim() !== ""
+      ? { botSource: r.botSource }
+      : {}),
     createdAt: typeof r.createdAt === "string" ? r.createdAt : "",
   };
 }
 
 /**
- * Fetch and validate a eu.leksis.entry record from its author's PDS.
- * Throws on network/resolution failure; returns null when the record no
- * longer exists or does not parse as an entry.
+ * Fetch a record's raw value from its author's PDS. Throws on
+ * network/resolution failure; returns null when the record no longer exists.
  */
-export async function fetchEntryRecord(recordURI: string): Promise<LeksisEntryRecord | null> {
+async function fetchRecordValue(recordURI: string): Promise<unknown | null> {
   const parsed = parseAtUri(recordURI);
   if (!parsed) return null;
 
@@ -134,5 +147,51 @@ export async function fetchEntryRecord(recordURI: string): Promise<LeksisEntryRe
   if (res.status === 400 || res.status === 404) return null; // record gone
   if (!res.ok) throw new Error(`getRecord failed: ${res.status}`);
   const body = (await res.json()) as GetRecordResponse;
-  return parseEntryRecord(body.value);
+  return body.value;
+}
+
+/**
+ * Fetch and validate a eu.leksis.entry record from its author's PDS.
+ * Throws on network/resolution failure; returns null when the record no
+ * longer exists or does not parse as an entry.
+ */
+export async function fetchEntryRecord(recordURI: string): Promise<LeksisEntryRecord | null> {
+  const value = await fetchRecordValue(recordURI);
+  return value === null ? null : parseEntryRecord(value);
+}
+
+/**
+ * Fetch and validate a eu.leksis.language record from its author's PDS —
+ * the language dashboard resolves it to show and extend the language's
+ * names. Lenient: malformed translation items are dropped.
+ */
+export async function fetchLanguageRecord(
+  recordURI: string,
+): Promise<LeksisLanguageRecord | null> {
+  const value = await fetchRecordValue(recordURI);
+  if (value === null || typeof value !== "object") return null;
+  const r = value as Record<string, unknown>;
+
+  const tag = typeof r.tag === "string" ? normalizeLanguageTag(r.tag) : "";
+  if (!isValidLanguageTag(tag)) return null;
+
+  const translations: LanguageTranslation[] = [];
+  if (Array.isArray(r.translations)) {
+    for (const item of r.translations) {
+      const entry = item as Record<string, unknown> | null;
+      if (!entry || typeof entry.languageID !== "string" || typeof entry.translation !== "string") {
+        continue;
+      }
+      const languageID = normalizeLanguageTag(entry.languageID);
+      if (!isValidLanguageTag(languageID) || entry.translation.trim() === "") continue;
+      translations.push({ languageID, translation: entry.translation });
+    }
+  }
+
+  return {
+    $type: LEKSIS_LANGUAGE_COLLECTION,
+    tag,
+    translations,
+    createdAt: typeof r.createdAt === "string" ? r.createdAt : "",
+  };
 }

@@ -48,8 +48,11 @@ compass, not a spec. Flag the divergence; don't silently follow the stale layer.
 
 Before proposing any next step, establish where the project actually is:
 
-1. **Read `CHANGELOG.md`** — the top `[Unreleased]` / latest section is the current milestone.
-2. **Check git tags** (`git tag`) — last `vX.Y.Z` = last deployed release. No tags yet = pre-first-release.
+1. **Read `CHANGELOG.md`** — the top section is the current milestone.
+2. **Check git tags** (`git tag`) — last `vX.Y.Z` = last deployed release. **Releases are
+   continuous**: the developer tags several times a day, so master == production or hours
+   from it. Treat everything committed as released (or about to be); never assume a
+   long-lived "implemented but unreleased" state.
 3. **Skim the timeline table** (below) to map the current milestone to a week/loop and see what's next.
 4. **Check open ADR action items** (`docs/adr/*.md`) for unfinished infra obligations (e.g. backups before week 3).
 
