@@ -1,89 +1,18 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   annotationConflicts,
   formatAbbreviationRef,
   type AbbreviationView,
-  type EntryAnnotation,
-  type EntryDefinition,
   type EntryView,
   type LanguageView,
   type LeksisEntryRecord,
 } from "@leksis/types";
 import { EntryEditorDialog } from "../components/CreateEntryPanel";
+import { DefinitionList } from "../components/EntryPreview";
 import { endonym } from "../components/LanguageSelector";
 import { fetchAbbreviations, fetchEntry, searchEntries } from "../lib/api";
 import { fetchEntryRecord } from "../lib/atproto-record";
-import { definitionsDepth, placeLabel } from "../lib/definition-tree";
-
-/** Indentation per definition depth (its place's length, 1–3). */
-const DEPTH_INDENT = ["", "pl-5 sm:pl-6", "pl-10 sm:pl-12"];
-
-/**
- * The flat definitions list, in the record's reading order. Each row shows
- * its full place label — arabic only (1), roman → arabic (2), letters →
- * roman → arabic (3) — and indents by its own depth. Notes matching a
- * conflicted abbreviation pair carry the ⚠ flag.
- */
-function DefinitionList({
-  definitions,
-  abbreviations,
-}: {
-  definitions: EntryDefinition[];
-  abbreviations: AbbreviationView[];
-}): ReactNode {
-  const { t } = useTranslation();
-  const depth = definitionsDepth(definitions);
-
-  function noteTitle(note: EntryAnnotation): string {
-    const conflicts = annotationConflicts(note, abbreviations);
-    if (conflicts.length === 0) return note.long;
-    return `${note.long} — ${t("entry.conflictWarning", {
-      pairs: conflicts.map(formatAbbreviationRef).join(", "),
-    })}`;
-  }
-
-  return (
-    <ol className="space-y-4">
-      {definitions.map((def, i) => (
-        <li
-          key={i}
-          className={`flex gap-3 ${DEPTH_INDENT[Math.min(def.place.length, 3) - 1]}`}
-        >
-          <span className="mt-0.5 shrink-0 font-mono text-sm text-content-subtle">
-            {placeLabel(depth, def.place)}
-          </span>
-          <div className="min-w-0">
-            {def.notes.length > 0 && (
-              <span className="mr-2">
-                {def.notes.map((note, j) => {
-                  const conflicted = annotationConflicts(note, abbreviations).length > 0;
-                  const chipClass = `mr-1 rounded border bg-surface-muted/60 px-1.5 py-0.5 font-mono text-xs text-content-muted ${
-                    conflicted ? "border-red-400" : ""
-                  }`;
-                  return note.short !== undefined ? (
-                    <abbr key={j} title={noteTitle(note)} className={`${chipClass} no-underline`}>
-                      {conflicted && <span aria-hidden="true">⚠ </span>}
-                      {note.short}
-                    </abbr>
-                  ) : (
-                    // No abbreviation: the full form is shown directly, so
-                    // there is nothing to reveal on hover (and no conflict —
-                    // a pair without a short form never conflicts).
-                    <span key={j} className={chipClass}>
-                      {note.long}
-                    </span>
-                  );
-                })}
-              </span>
-            )}
-            <span className="text-sm text-content">{def.text}</span>
-          </div>
-        </li>
-      ))}
-    </ol>
-  );
-}
 
 const SYNC_POLL_MS = 3_000;
 const SYNC_POLL_MAX_TRIES = 20; // ~60s of PDS → Jetstream → ArangoDB latency
@@ -120,7 +49,7 @@ interface EntryPageProps {
   onOpenLanguage: (tag: string) => void;
 }
 
-type LoadState = "loading" | "ready" | "not-found" | "record-gone" | "failed";
+type LoadState = "loading" | "ready" | "deleted" | "not-found" | "record-gone" | "failed";
 
 /**
  * One entry's page (/entry/<key>), rendered under the persistent search bar.
@@ -146,6 +75,8 @@ export function EntryPage({
   const [abbreviations, setAbbreviations] = useState<AbbreviationView[]>([]);
   const [state, setState] = useState<LoadState>("loading");
   const [proposing, setProposing] = useState(false);
+  /** The redirect target's own view, resolved for display when this entry was deleted as a duplicate. */
+  const [redirectTarget, setRedirectTarget] = useState<EntryView | null>(null);
   /** Record URI written to the PDS but not yet seen back from the AppView. */
   const [syncingURI, setSyncingURI] = useState<string | null>(null);
 
@@ -156,6 +87,7 @@ export function EntryPage({
     setRecord(null);
     setHomonyms([]);
     setAbbreviations([]);
+    setRedirectTarget(null);
 
     (async () => {
       try {
@@ -163,6 +95,16 @@ export function EntryPage({
         if (cancelled) return;
         if (found === null) return setState("not-found");
         setView(found);
+        if (found.deleted === true) {
+          if (found.redirectTo !== undefined && found.redirectTo !== "") {
+            fetchEntry(found.redirectTo)
+              .then((target) => {
+                if (!cancelled) setRedirectTarget(target);
+              })
+              .catch(() => {});
+          }
+          return setState("deleted");
+        }
         // Best-effort side data — a failure never blocks the entry itself.
         fetchHomonyms(found)
           .then((others) => {
@@ -202,6 +144,15 @@ export function EntryPage({
           if (found !== null && found.recordURI === syncingURI) {
             setSyncingURI(null);
             setView(found);
+            if (found.deleted === true) {
+              setState("deleted");
+              if (found.redirectTo !== undefined && found.redirectTo !== "") {
+                fetchEntry(found.redirectTo)
+                  .then(setRedirectTarget)
+                  .catch(() => {});
+              }
+              return;
+            }
             const content = await fetchEntryRecord(found.recordURI);
             if (content !== null) setRecord(content);
           } else if (tries >= SYNC_POLL_MAX_TRIES) {
@@ -240,6 +191,31 @@ export function EntryPage({
       )}
       {state === "failed" && (
         <p className="mt-6 text-sm text-red-600">{t("entry.loadFailed")}</p>
+      )}
+
+      {state === "deleted" && view !== null && (
+        <section className="mt-6 rounded-lg border border-amber-400 bg-amber-400/10 p-4">
+          <h1 className="text-lg font-semibold text-content">{t("entry.deletedTitle")}</h1>
+          {view.deletionReason !== undefined && view.deletionReason !== "" && (
+            <p className="mt-2 text-sm text-content">
+              <span className="font-medium">{t("entry.deletedReasonLabel")}</span>{" "}
+              {view.deletionReason}
+            </p>
+          )}
+          {redirectTarget !== null && (
+            <p className="mt-3 text-sm">
+              {t("entry.deletedRedirectLabel")}{" "}
+              <button
+                type="button"
+                onClick={() => onOpenEntry(redirectTarget.key)}
+                className="text-primary hover:text-primary-hover"
+              >
+                {redirectTarget.orthography[0]}{" "}
+                <span className="font-mono text-content-subtle">{redirectTarget.key}</span>
+              </button>
+            </p>
+          )}
+        </section>
       )}
 
       {state === "ready" && view !== null && record !== null && (
@@ -378,8 +354,13 @@ export function EntryPage({
           language={language}
           initial={record}
           subject={view.recordURI}
+          entryView={view}
           onClose={() => setProposing(false)}
           onCreated={(uri) => {
+            setProposing(false);
+            setSyncingURI(uri);
+          }}
+          onDeleted={(uri) => {
             setProposing(false);
             setSyncingURI(uri);
           }}

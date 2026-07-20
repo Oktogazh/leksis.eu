@@ -126,6 +126,22 @@ export interface LeksisEntryRecord {
    * traceability. Lives on the record only — never indexed.
    */
   botSource?: string;
+  /**
+   * Marks this version as a deletion: the entry is withdrawn from search
+   * under this record, but stays reachable at its entryKey for legacy links
+   * and to contest the deletion later. Requires `deletionReason`.
+   * `orthography`/`categories`/`definitions` still carry content (the
+   * lexicon requires them), but the AppView excludes the version's
+   * orthography from the search index when this is true.
+   */
+  deleted?: boolean;
+  /** Required when `deleted` is true: why this entry was withdrawn. */
+  deletionReason?: string;
+  /**
+   * When `deleted` is true and the reason is a duplicate, the entryKey of
+   * the correct entry to redirect readers to.
+   */
+  redirectTo?: string;
   createdAt: string;
 }
 
@@ -143,6 +159,12 @@ export interface EntryView {
   recordURI: string;
   /** DID of the current version's author. */
   authorDID: string;
+  /** True when the current version is a deletion (see LeksisEntryRecord.deleted). */
+  deleted?: boolean;
+  /** Present when `deleted` is true: why this entry was withdrawn. */
+  deletionReason?: string;
+  /** Present when `deleted` is true and the reason is a duplicate: the correct entry's key. */
+  redirectTo?: string;
 }
 
 /** Response shape of GET /entries?q=X&l=Y (orthography search). */

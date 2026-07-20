@@ -48,6 +48,21 @@
             "maxLength": 2048,
             "description": "Identifier of the external source this record was derived from (a URL or a source-internal ID), set by ingestion bots so a record can be traced back to its origin for maintenance. Not indexed by the AppView — it lives on the record only."
           },
+          "deleted": {
+            "type": "boolean",
+            "description": "Marks this version as a deletion: the entry is withdrawn from search under this record, but stays reachable at its entryKey for legacy links and to contest the deletion. Requires `deletionReason`. `orthography`/`categories`/`definitions` still carry the version's last known content (or may repeat the prior version's), since the lexicon requires them, but the AppView excludes a deleted version's orthography from the search index."
+          },
+          "deletionReason": {
+            "type": "string",
+            "maxLength": 2048,
+            "maxGraphemes": 1024,
+            "description": "Required when `deleted` is true: why this entry was withdrawn (e.g. \"duplicate of br-gwerzenn-1b76\", \"not an attested word\")."
+          },
+          "redirectTo": {
+            "type": "string",
+            "maxLength": 254,
+            "description": "When `deleted` is true and the reason is a duplicate, the entryKey of the correct entry to redirect readers to."
+          },
           "createdAt": {
             "type": "string",
             "format": "datetime",

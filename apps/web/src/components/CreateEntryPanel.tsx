@@ -15,11 +15,14 @@ import {
   type AbbreviationRef,
   type AbbreviationView,
   type EntryAnnotation,
+  type EntryView,
   type LanguageView,
   type LeksisEntryRecord,
 } from "@leksis/types";
 import { useSession } from "../auth/SessionProvider";
-import { fetchAbbreviations } from "../lib/api";
+import { fetchAbbreviations, searchEntries } from "../lib/api";
+import { DeleteEntryDialog } from "./DeleteEntryDialog";
+import { EntryPreview } from "./EntryPreview";
 import {
   editTreeLabels,
   fromRecordDefinitions,
@@ -340,6 +343,50 @@ function AnnotationEditor({
   );
 }
 
+/**
+ * Non-blocking heads-up shown while creating a brand-new entry: existing
+ * current entries in the target language that already use one of the
+ * spellings being typed. Each can be expanded into a full inline preview
+ * (via the shared EntryPreview) so an editor can tell a homonym from an
+ * accidental duplicate without leaving the dialog.
+ */
+function DuplicateWarning({ duplicates }: { duplicates: EntryView[] }) {
+  const { t } = useTranslation();
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+
+  return (
+    <div className="mt-3 rounded-lg border border-amber-400 bg-amber-400/10 p-3">
+      <p className="text-sm text-content">
+        {t("createEntry.duplicateWarning", { count: duplicates.length })}
+      </p>
+      <ul className="mt-2 space-y-2">
+        {duplicates.map((duplicate) => (
+          <li key={duplicate.key}>
+            <button
+              type="button"
+              onClick={() =>
+                setExpandedKey((prev) => (prev === duplicate.key ? null : duplicate.key))
+              }
+              className="rounded-full border bg-surface px-2.5 py-1 text-xs text-content hover:border-primary hover:text-primary"
+            >
+              {duplicate.orthography[0]}{" "}
+              <span className="font-mono text-content-subtle">{duplicate.key}</span>{" "}
+              {expandedKey === duplicate.key
+                ? t("createEntry.hidePreview")
+                : t("createEntry.showPreview")}
+            </button>
+            {expandedKey === duplicate.key && (
+              <div className="mt-2">
+                <EntryPreview entry={duplicate} />
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /** Editor leaf payload: one definition's note chips and text. */
 interface DefinitionDraft {
   notes: AnnotationTag[];
@@ -360,9 +407,18 @@ export interface EntryEditorDialogProps {
   initial?: LeksisEntryRecord;
   /** AT URI of the record version being modified; absent = brand-new entry. */
   subject?: string;
+  /**
+   * The version being modified, as indexed — required to offer the "delete
+   * this entry" action (it needs the entry's key and language, not just its
+   * record URI). Absent when creating a brand-new entry, where deletion
+   * makes no sense yet.
+   */
+  entryView?: EntryView;
   onClose: () => void;
   /** Called with the new record's AT URI after it was written to the PDS. */
   onCreated: (recordURI: string) => void;
+  /** Called with the deletion record's AT URI after it was written to the PDS. */
+  onDeleted?: (recordURI: string) => void;
 }
 
 /**
@@ -380,11 +436,14 @@ export function EntryEditorDialog({
   word = "",
   initial,
   subject,
+  entryView,
   onClose,
   onCreated,
+  onDeleted,
 }: EntryEditorDialogProps) {
   const { t } = useTranslation();
   const { agent, did } = useSession();
+  const [deleting, setDeleting] = useState(false);
 
   const [pickedTag, setPickedTag] = useState(language?.tag ?? initial?.languageID ?? "");
   const [spellings, setSpellings] = useState<string[]>(initial?.orthography ?? [word]);
@@ -405,6 +464,8 @@ export function EntryEditorDialog({
   const [error, setError] = useState<string | null>(null);
   /** The target language's abbreviation pairs — suggestions + conflict flags. */
   const [abbreviations, setAbbreviations] = useState<AbbreviationView[]>([]);
+  /** Current entries in the target language sharing a spelling with a fresh entry, for the duplicate warning. */
+  const [duplicates, setDuplicates] = useState<EntryView[]>([]);
 
   const target = language ?? languages.find((l) => l.tag === pickedTag) ?? null;
   const targetTag = target?.tag ?? null;
@@ -434,6 +495,35 @@ export function EntryEditorDialog({
   }
 
   const cleanSpellings = spellings.map((s) => s.trim()).filter((s) => s !== "");
+  // Only meaningful when creating a brand-new entry: a modification's
+  // spellings naturally match its own current version.
+  const spellingsKey = cleanSpellings.map((s) => s.toLowerCase()).join("\n");
+
+  // Warn about existing entries sharing a spelling in the target language —
+  // never blocking, just a heads-up so editors can spot accidental
+  // duplicates before publishing a new homonym.
+  useEffect(() => {
+    setDuplicates([]);
+    if (subject !== undefined || targetTag === null || spellingsKey === "") return;
+    let cancelled = false;
+    const forms = [...new Set(spellingsKey.split("\n"))];
+    Promise.all(forms.map((form) => searchEntries(form, targetTag)))
+      .then((results) => {
+        if (cancelled) return;
+        const found = new Map<string, EntryView>();
+        for (const candidate of results.flat()) {
+          if (candidate.orthography.some((o) => forms.includes(o.toLowerCase()))) {
+            found.set(candidate.key, candidate);
+          }
+        }
+        setDuplicates([...found.values()]);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [subject, targetTag, spellingsKey]);
+
   const cleanTodo = todoItems.map((s) => s.trim()).filter((s) => s !== "");
   const cleanDefinitions = toRecordDefinitions(definitions, (payload) =>
     payload.text.trim() === ""
@@ -678,6 +768,8 @@ export function EntryEditorDialog({
             </button>
           </fieldset>
 
+          {duplicates.length > 0 && <DuplicateWarning duplicates={duplicates} />}
+
           <fieldset className="mt-5">
             <legend className="text-sm font-medium text-content">
               {t("createEntry.categoriesLabel")}
@@ -759,6 +851,17 @@ export function EntryEditorDialog({
 
           <div className="mt-4 flex flex-col gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
             {error !== null && <p className="text-sm text-red-600">{error}</p>}
+            <div className="flex items-center gap-3 sm:mr-auto">
+              {entryView && onDeleted && (
+                <button
+                  type="button"
+                  onClick={() => setDeleting(true)}
+                  className="text-sm text-red-600 hover:text-red-700"
+                >
+                  {t("entry.deleteAction")}
+                </button>
+              )}
+            </div>
             <div className="ml-auto flex shrink-0 items-center justify-end gap-3">
               <button
                 type="button"
@@ -783,6 +886,15 @@ export function EntryEditorDialog({
           </div>
         </div>
       </section>
+
+      {deleting && entryView && onDeleted && initial && (
+        <DeleteEntryDialog
+          view={entryView}
+          record={initial}
+          onClose={() => setDeleting(false)}
+          onDeleted={onDeleted}
+        />
+      )}
     </div>
   );
 }

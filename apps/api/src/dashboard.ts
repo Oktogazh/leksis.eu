@@ -40,14 +40,19 @@ export async function getLanguageDashboard(
   const language = await languageCursor.next();
   if (!language) return null;
 
+  // Withdrawn (deleted) entries don't count toward totals or the todo
+  // queue — a deletion-marker version can still carry `todo == true` from
+  // before withdrawal.
   const countsCursor = await db.query<{ entriesCount: number; todoCount: number }>(aql`
     RETURN {
       entriesCount: LENGTH(
-        FOR e IN entries FILTER e.languageID == ${tag} AND e.current == true RETURN 1
+        FOR e IN entries
+          FILTER e.languageID == ${tag} AND e.current == true AND e.deleted != true
+          RETURN 1
       ),
       todoCount: LENGTH(
         FOR e IN entries
-          FILTER e.languageID == ${tag} AND e.current == true AND e.todo == true
+          FILTER e.languageID == ${tag} AND e.current == true AND e.todo == true AND e.deleted != true
           RETURN 1
       )
     }
@@ -56,7 +61,7 @@ export async function getLanguageDashboard(
 
   const todoCursor = await db.query<DashboardTodoEntry>(aql`
     FOR e IN entries
-      FILTER e.languageID == ${tag} AND e.current == true AND e.todo == true
+      FILTER e.languageID == ${tag} AND e.current == true AND e.todo == true AND e.deleted != true
       SORT e.indexedAt DESC
       LIMIT ${TODO_LIMIT}
       RETURN { key: e.entryKey, orthography: e.orthography, indexedAt: e.indexedAt }

@@ -35,7 +35,12 @@ export async function searchEntries(query: string, languageID: string): Promise<
   return cursor.all();
 }
 
-/** The current version of one entry by its stable entry key, or null. */
+/**
+ * The current version of one entry by its stable entry key, or null. Served
+ * even when that version is a deletion (`deleted: true`) — legacy links must
+ * still resolve, to show the deletion reason and, when set, the redirect to
+ * the correct entry.
+ */
 export async function getEntry(key: string): Promise<EntryView | null> {
   const cursor = await db.query<EntryView>(aql`
     FOR e IN entries
@@ -46,7 +51,10 @@ export async function getEntry(key: string): Promise<EntryView | null> {
         languageID: e.languageID,
         orthography: e.orthography,
         recordURI: e.recordURI,
-        authorDID: e.authorDID
+        authorDID: e.authorDID,
+        deleted: e.deleted,
+        deletionReason: e.deletionReason,
+        redirectTo: e.redirectTo
       }
   `);
   return (await cursor.next()) ?? null;

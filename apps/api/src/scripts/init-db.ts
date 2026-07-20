@@ -164,7 +164,7 @@ async function main() {
     abbreviations: AbbreviationPair[];
   }>(aql`
     FOR e IN entries
-      FILTER e.current == true AND e.abbreviations != null
+      FILTER e.current == true AND e.abbreviations != null AND e.deleted != true
       RETURN { entryKey: e.entryKey, languageID: e.languageID, abbreviations: e.abbreviations }
   `);
   const pairRows = await pairRowsCursor.all();

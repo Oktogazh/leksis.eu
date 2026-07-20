@@ -97,6 +97,10 @@
     "spellingLabel": "Spelling",
     "addSpelling": "＋ Add a spelling",
     "removeSpelling": "Remove",
+    "duplicateWarning_one": "{{count}} existing entry already uses this spelling in this language — check it isn't the same word before publishing.",
+    "duplicateWarning_other": "{{count}} existing entries already use this spelling in this language — check they aren't the same word before publishing.",
+    "showPreview": "▾ preview",
+    "hidePreview": "▴ hide",
     "categoriesLabel": "Grammatical categories",
     "categoriesHelp": "Each category has a full form and, optionally, an abbreviation. Drag the labels to reorder them — the community's most-used tags will be suggested over time.",
     "addCategory": "Add this category",
@@ -191,6 +195,29 @@
     "todoLabel": "Pending work",
     "todoHint": "This version asks for review — propose changes to complete these tasks, and clear the ones you finish.",
     "propose": "Propose changes",
-    "syncing": "Publishing your proposal — the entry updates once the network has indexed it (usually under a minute)."
+    "syncing": "Publishing your proposal — the entry updates once the network has indexed it (usually under a minute).",
+    "viewFull": "Open ↗",
+    "deletedTitle": "This entry was deleted",
+    "deletedReasonLabel": "Reason",
+    "deletedRedirectLabel": "The correct entry is:",
+    "deleteAction": "Delete this entry"
+  },
+  "deleteEntry": {
+    "title": "Delete “{{word}}”",
+    "intro": "This publishes a new version marking the entry as withdrawn — the previous content is archived, never lost, and the entry stays reachable at its current address to contest the deletion later.",
+    "duplicateLabel": "This is a duplicate of another entry",
+    "correctEntryLabel": "Correct entry",
+    "correctEntryPlaceholder": "Search for the correct entry…",
+    "changeCorrectEntry": "Change",
+    "reasonLabel": "Reason",
+    "reasonHelp": "Required — explain why this entry is being withdrawn.",
+    "reasonPlaceholder": "e.g. duplicate, not an attested word…",
+    "legacyNote": "Anyone who already links to this entry will still be able to open it and see this reason.",
+    "cancel": "Cancel",
+    "submitting": "Publishing…",
+    "submit": "Delete",
+    "errors": {
+      "writeFailed": "The deletion could not be written to your PDS. Try again."
+    }
   }
 }

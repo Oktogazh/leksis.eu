@@ -33,6 +33,10 @@ interface EntryDoc {
   authorDID: string;
   /** Whether this version carries a non-empty `todo` note (needs attention). */
   todo: boolean;
+  /** True when this version withdraws the entry (see LeksisEntryRecord.deleted). */
+  deleted: boolean;
+  deletionReason: string | null;
+  redirectTo: string | null;
   /**
    * Distinct annotation pairs (categories + definition notes) of this
    * version, kept so the abbreviations read model can be maintained across
@@ -49,6 +53,9 @@ interface ParsedEntry {
   orthography: string[];
   subject: string | null;
   todo: boolean;
+  deleted: boolean;
+  deletionReason: string | null;
+  redirectTo: string | null;
   abbreviations: AbbreviationPair[];
   createdAt: string;
 }
@@ -155,6 +162,25 @@ function parseRecord(record: unknown): ParsedEntry | null {
   // `botSource` (bot → source traceability) lives on the record only.
   if (r.botSource !== undefined && typeof r.botSource !== "string") return null;
 
+  // A deletion is a full version like any other, marked withdrawn: it must
+  // carry a reason (a bare `deleted: true` is rejected), and an optional
+  // pointer to the correct entry when the reason is a duplicate.
+  const deleted = r.deleted === true;
+  if (r.deleted !== undefined && typeof r.deleted !== "boolean") return null;
+  let deletionReason: string | null = null;
+  if (r.deletionReason !== undefined) {
+    if (typeof r.deletionReason !== "string") return null;
+    const trimmed = r.deletionReason.trim();
+    if (trimmed !== "") deletionReason = trimmed;
+  }
+  if (deleted && deletionReason === null) return null;
+  let redirectTo: string | null = null;
+  if (r.redirectTo !== undefined) {
+    if (typeof r.redirectTo !== "string") return null;
+    const trimmed = r.redirectTo.trim();
+    if (trimmed !== "") redirectTo = trimmed;
+  }
+
   const createdAt =
     typeof r.createdAt === "string" ? r.createdAt : new Date().toISOString();
   return {
@@ -162,6 +188,9 @@ function parseRecord(record: unknown): ParsedEntry | null {
     orthography,
     subject,
     todo,
+    deleted,
+    deletionReason,
+    redirectTo,
     abbreviations: [...pairs.values()],
     createdAt,
   };
@@ -247,11 +276,16 @@ export async function ingestEntry(
     entryKey,
     languageID: parsed.languageID,
     orthography: parsed.orthography,
-    search: parsed.orthography.map((o) => o.toLowerCase()),
+    // A deleted version is withdrawn from search — its entry stays
+    // addressable by entryKey, but never surfaces as a search result.
+    search: parsed.deleted ? [] : parsed.orthography.map((o) => o.toLowerCase()),
     recordURI,
     cid,
     authorDID,
     todo: parsed.todo,
+    deleted: parsed.deleted,
+    deletionReason: parsed.deletionReason,
+    redirectTo: parsed.redirectTo,
     abbreviations: parsed.abbreviations,
     createdAt: parsed.createdAt,
     indexedAt: new Date().toISOString(),
@@ -264,9 +298,16 @@ export async function ingestEntry(
     `);
   }
   await db.query(aql`INSERT ${doc} INTO entries`);
-  // The read model tracks current versions only: declaring the new
-  // version's pairs also retires the archived version's contribution.
-  await syncEntryAbbreviations(db, entryKey, doc.languageID, doc.abbreviations);
+  // The read model tracks current, non-withdrawn versions only: declaring
+  // the new version's pairs also retires the archived version's
+  // contribution. A deleted version contributes none, even though its own
+  // `abbreviations` stays stored on the doc in case the entry is restored.
+  await syncEntryAbbreviations(
+    db,
+    entryKey,
+    doc.languageID,
+    parsed.deleted ? [] : doc.abbreviations,
+  );
   console.log(
     `firehose: indexed entry "${doc.orthography[0]}" [${doc.entryKey}] (${current ? "new version" : "new entry"}) from ${authorDID}`,
   );
