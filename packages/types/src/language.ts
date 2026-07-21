@@ -46,3 +46,16 @@ export interface LanguagesResponse {
   locale: string;
   languages: LanguageView[];
 }
+
+/**
+ * Response shape of GET /languages/:tag/currentRecord — the reference to a
+ * language's current eu.leksis.language record, so the browser can resolve and
+ * rewrite it (e.g. to edit its name in another language) without pulling the
+ * whole dashboard. Null on the wire is served as 404.
+ */
+export interface CurrentLanguageRecordResponse {
+  tag: string;
+  /** at:// URI of the current language record (resolved client-side). */
+  recordURI: string;
+  authorDID: string;
+}

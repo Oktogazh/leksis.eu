@@ -2,17 +2,17 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
   formatAbbreviationRef,
-  LEKSIS_LANGUAGE_COLLECTION,
   type AbbreviationView,
   type DashboardActivityDay,
   type DashboardFeedItem,
   type LanguageDashboardResponse,
-  type LanguageTranslation,
   type LanguageView,
   type LeksisLanguageRecord,
 } from "@leksis/types";
 import { useSession } from "../auth/SessionProvider";
 import { endonym } from "../components/LanguageSelector";
+import { LanguageRecordDialog, type LanguageRecordMode } from "../components/LanguageRecordDialog";
+import { LanguageSearchBar } from "../components/LanguageSearchBar";
 import { fetchAbbreviations, fetchLanguageDashboard, fetchLanguages } from "../lib/api";
 import { fetchLanguageRecord } from "../lib/atproto-record";
 
@@ -108,44 +108,41 @@ function ActivityGrid({ activity }: { activity: DashboardActivityDay[] }): React
   );
 }
 
-interface NameRow {
-  languageID: string;
-  translation: string;
-}
-
 interface LanguagePageProps {
   /** The language's tag, from the /language/<tag> path. */
   tag: string;
-  /** All known languages, for display names and the name-translation picker. */
+  /** All known languages, for display names and the record-editing search bars. */
   languages: LanguageView[];
   /** Navigate to an entry's page (todo queue, activity feed). */
   onOpenEntry: (key: string) => void;
-  /** Navigate to another language's page (named-in review list). */
-  onOpenLanguage: (tag: string) => void;
 }
 
 type LoadState = "loading" | "ready" | "not-found" | "failed";
 
 /**
  * One language's dashboard (/language/<tag>), rendered under the persistent
- * search bar: entry counters, the to-be-completed review queue, the
- * harvested abbreviations with their conflicts, the activity feed and grid,
- * and the language's names — resolvable and extensible by publishing a new
- * version of the eu.leksis.language record from the editor's own PDS.
+ * search bar. Top to bottom: entry counters with actions to edit the language
+ * record and to name languages in this language (both via
+ * LanguageRecordDialog, which rewrites eu.leksis.language records on the
+ * editor's own PDS), the activity grid + recent-changes feed, the harvested
+ * abbreviations with their conflicts, and the to-be-completed review queue.
  * Entries themselves stay reachable through search only.
  */
-export function LanguagePage({ tag, languages, onOpenEntry, onOpenLanguage }: LanguagePageProps) {
+export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps) {
   const { t, i18n } = useTranslation();
-  const { agent, did } = useSession();
+  const { profile } = useSession();
   const [dashboard, setDashboard] = useState<LanguageDashboardResponse | null>(null);
   const [abbreviations, setAbbreviations] = useState<AbbreviationView[]>([]);
   const [namedIn, setNamedIn] = useState<LanguageView[]>([]);
   const [record, setRecord] = useState<LeksisLanguageRecord | null>(null);
   const [state, setState] = useState<LoadState>("loading");
 
-  const [nameRows, setNameRows] = useState<NameRow[]>([]);
-  const [publishing, setPublishing] = useState(false);
-  const [publishError, setPublishError] = useState<string | null>(null);
+  /** Which record-editing dialog is open, if any. */
+  const [dialog, setDialog] = useState<LanguageRecordMode | null>(null);
+  /** True while the mode-B target picker (name a language in this one) is open. */
+  const [codesOpen, setCodesOpen] = useState(false);
+  /** True while the full flagged-for-review list dialog is open. */
+  const [todoOpen, setTodoOpen] = useState(false);
   /** Record URI written to the PDS but not yet seen back from the AppView. */
   const [syncingURI, setSyncingURI] = useState<string | null>(null);
 
@@ -156,7 +153,9 @@ export function LanguagePage({ tag, languages, onOpenEntry, onOpenLanguage }: La
     setAbbreviations([]);
     setNamedIn([]);
     setRecord(null);
-    setNameRows([]);
+    setDialog(null);
+    setCodesOpen(false);
+    setTodoOpen(false);
 
     (async () => {
       try {
@@ -194,28 +193,25 @@ export function LanguagePage({ tag, languages, onOpenEntry, onOpenLanguage }: La
     };
   }, [tag]);
 
-  // After publishing names: poll until the AppView serves the new record
-  // version, then reload the names and the review list from it.
+  // After publishing (either dialog): poll until the AppView serves the new
+  // version of *this* language's record, then reload the names and the
+  // named-in review list. A mode-B edit rewrites another language's record, so
+  // it may not change this dashboard's recordURI — the poll then times out
+  // harmlessly and the named-in list is refreshed below regardless.
   useEffect(() => {
     if (syncingURI === null) return;
     let tries = 0;
     const timer = setInterval(() => {
       tries += 1;
-      fetchLanguageDashboard(tag)
-        .then(async (found) => {
+      Promise.all([fetchLanguageDashboard(tag), fetchLanguages(tag)])
+        .then(async ([found, list]) => {
+          setNamedIn(list.filter((l) => l.tag !== tag && l.name !== undefined));
           if (found !== null && found.language.recordURI === syncingURI) {
             setSyncingURI(null);
             setDashboard(found);
-            setNameRows([]);
             const value = await fetchLanguageRecord(found.language.recordURI);
             if (value !== null) setRecord(value);
-            fetchLanguages(tag)
-              .then((list) =>
-                setNamedIn(list.filter((l) => l.tag !== tag && l.name !== undefined)),
-              )
-              .catch(() => {});
           } else if (tries >= SYNC_POLL_MAX_TRIES) {
-            console.warn(`language update ${syncingURI} not indexed after polling; giving up`);
             setSyncingURI(null);
           }
         })
@@ -227,48 +223,27 @@ export function LanguagePage({ tag, languages, onOpenEntry, onOpenLanguage }: La
   }, [syncingURI, tag]);
 
   const language = languages.find((l) => l.tag === tag) ?? null;
-  const translatedTags = new Set((record?.translations ?? []).map((tr) => tr.languageID));
-  const targetOptions = languages.filter((l) => !translatedTags.has(l.tag));
 
-  function setNameRow(index: number, patch: Partial<NameRow>) {
-    setNameRows((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+  // Editable names in the record editor: the user's languages of interest,
+  // their interface language, plus this language's own name (the endonym is
+  // always shown). Any other locale is revealed on demand via the search bar.
+  function openEditRecord() {
+    if (record === null) return;
+    const editableIDs = Array.from(
+      new Set([tag, i18n.language, ...(profile?.languages ?? [])]),
+    );
+    setDialog({ kind: "self", record, editableIDs });
   }
 
-  const additions: LanguageTranslation[] = nameRows
-    .filter((row) => row.languageID !== "" && row.translation.trim() !== "")
-    .map((row) => ({ languageID: row.languageID, translation: row.translation.trim() }));
-  const canPublish =
-    !publishing && syncingURI === null && record !== null && additions.length > 0 && !!agent && !!did;
+  function openNameTarget(targetTag: string) {
+    setCodesOpen(false);
+    setDialog({ kind: "other", targetTag, dashboardTag: tag });
+  }
 
-  // Publishing = a full rewrite of the eu.leksis.language record (rkey =
-  // tag) on the editor's own PDS: existing names (endonym included) plus the
-  // additions. Last write wins across authors; the AppView re-indexes it
-  // from the firehose (ADR-0002).
-  async function publishNames() {
-    if (!canPublish || !agent || !did || record === null) return;
-    const updated: LeksisLanguageRecord = {
-      $type: LEKSIS_LANGUAGE_COLLECTION,
-      tag,
-      translations: [...record.translations, ...additions],
-      createdAt: new Date().toISOString(),
-    };
-    setPublishing(true);
-    setPublishError(null);
-    try {
-      const res = await agent.com.atproto.repo.putRecord({
-        repo: did,
-        collection: LEKSIS_LANGUAGE_COLLECTION,
-        rkey: tag,
-        // putRecord wants an index signature our interface doesn't declare.
-        record: { ...updated },
-      });
-      setSyncingURI(res.data.uri);
-    } catch (err) {
-      console.error("putRecord failed:", err);
-      setPublishError(t("languagePage.namesError"));
-    } finally {
-      setPublishing(false);
-    }
+  function onPublished(uri: string) {
+    setDialog(null);
+    setCodesOpen(false);
+    setSyncingURI(uri);
   }
 
   function feedItemText(item: DashboardFeedItem): string {
@@ -284,6 +259,8 @@ export function LanguagePage({ tag, languages, onOpenEntry, onOpenLanguage }: La
       { label: item.label },
     );
   }
+
+  const languageName = language !== null ? endonym(language) : tag;
 
   return (
     <div className="mt-6 flex flex-col">
@@ -301,55 +278,57 @@ export function LanguagePage({ tag, languages, onOpenEntry, onOpenLanguage }: La
         <article>
           <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <h1 className="text-2xl font-semibold tracking-tight text-content sm:text-3xl">
-              {language !== null ? endonym(language) : tag}
+              {languageName}
             </h1>
             <span className="rounded border bg-surface px-1.5 py-0.5 font-mono text-xs text-content-muted">
               {tag}
             </span>
           </header>
 
-          <div className="mt-5 grid grid-cols-2 gap-3 sm:max-w-sm">
+          {/* Counters + record-editing actions. */}
+          <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div className="rounded-lg border bg-surface p-4">
               <p className="text-2xl font-semibold text-content">{dashboard.entriesCount}</p>
               <p className="mt-1 text-xs text-content-muted">{t("languagePage.statsEntries")}</p>
             </div>
-            <div className="rounded-lg border bg-surface p-4">
+            <button
+              type="button"
+              onClick={() => setTodoOpen(true)}
+              disabled={dashboard.todoCount === 0}
+              className="rounded-lg border bg-surface p-4 text-left hover:border-primary disabled:cursor-not-allowed disabled:hover:border-[color:inherit]"
+            >
               <p className="text-2xl font-semibold text-content">{dashboard.todoCount}</p>
               <p className="mt-1 text-xs text-content-muted">{t("languagePage.statsTodo")}</p>
-            </div>
+            </button>
+            <button
+              type="button"
+              onClick={openEditRecord}
+              disabled={record === null}
+              className="rounded-lg border bg-surface p-4 text-left hover:border-primary disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <p className="text-sm font-medium text-content">{t("languagePage.editRecord")}</p>
+              <p className="mt-1 text-xs text-content-muted">{t("languagePage.editRecordHint")}</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => setCodesOpen(true)}
+              className="rounded-lg border bg-surface p-4 text-left hover:border-primary"
+            >
+              <p className="text-sm font-medium text-content">
+                {t("languagePage.codesCardTitle", { language: languageName })}
+              </p>
+              <p className="mt-1 text-xs text-content-muted">
+                {t("languagePage.codesCardHint", { language: languageName })}
+              </p>
+            </button>
           </div>
 
+          {/* Activity grid + recent-changes feed, directly under the cards. */}
           <section className="mt-8">
-            <h2 className="text-sm font-semibold text-content">{t("languagePage.todoTitle")}</h2>
-            <p className="mt-1 text-xs text-content-subtle">{t("languagePage.todoHint")}</p>
-            {dashboard.todoEntries.length === 0 ? (
-              <p className="mt-2 text-sm text-content-muted">{t("languagePage.todoEmpty")}</p>
-            ) : (
-              <>
-                <ul className="mt-2 flex flex-wrap gap-1.5">
-                  {dashboard.todoEntries.map((entry) => (
-                    <li key={entry.key}>
-                      <button
-                        type="button"
-                        onClick={() => onOpenEntry(entry.key)}
-                        className="rounded-full border bg-surface-muted/60 px-2.5 py-1 text-xs text-content hover:border-primary hover:text-primary"
-                      >
-                        <span aria-hidden="true">⚠ </span>
-                        {entry.orthography[0]}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-                {dashboard.todoCount > dashboard.todoEntries.length && (
-                  <p className="mt-2 text-xs text-content-subtle">
-                    {t("languagePage.todoMore", {
-                      count: dashboard.todoCount - dashboard.todoEntries.length,
-                      shown: dashboard.todoEntries.length,
-                    })}
-                  </p>
-                )}
-              </>
-            )}
+            <h2 className="text-sm font-semibold text-content">
+              {t("languagePage.activityTitle")}
+            </h2>
+            <ActivityGrid activity={dashboard.activity} />
           </section>
 
           <section className="mt-8">
@@ -370,9 +349,8 @@ export function LanguagePage({ tag, languages, onOpenEntry, onOpenLanguage }: La
                   return (
                     <li key={i} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                       <span
-                        className={`rounded-full border bg-surface-muted/60 px-2.5 py-0.5 font-mono text-xs text-content ${
-                          conflicted ? "border-red-400" : ""
-                        }`}
+                        className={`rounded-full border bg-surface-muted/60 px-2.5 py-0.5 font-mono text-xs text-content ${conflicted ? "border-red-400" : ""
+                          }`}
                       >
                         {conflicted && <span aria-hidden="true">⚠ </span>}
                         {abbreviation.short ?? abbreviation.long}
@@ -396,12 +374,8 @@ export function LanguagePage({ tag, languages, onOpenEntry, onOpenLanguage }: La
               </ul>
             )}
           </section>
-
+          
           <section className="mt-8">
-            <h2 className="text-sm font-semibold text-content">
-              {t("languagePage.activityTitle")}
-            </h2>
-            <ActivityGrid activity={dashboard.activity} />
             <h3 className="mt-4 text-sm font-semibold text-content">
               {t("languagePage.feedTitle")}
             </h3>
@@ -431,122 +405,140 @@ export function LanguagePage({ tag, languages, onOpenEntry, onOpenLanguage }: La
             )}
           </section>
 
-          <section className="mt-8">
-            <h2 className="text-sm font-semibold text-content">{t("languagePage.namesTitle")}</h2>
-            <p className="mt-1 text-xs text-content-subtle">{t("languagePage.namesHint")}</p>
+          {syncingURI !== null && (
+            <p className="mt-6 text-sm text-content-subtle">{t("languagePage.namesSyncing")}</p>
+          )}
+        </article>
+      )}
 
-            {record === null ? (
-              <p className="mt-2 text-sm text-content-muted">
-                {t("languagePage.namesRecordUnavailable")}
-              </p>
+      {/* Full flagged-for-review list — the whole todo queue the endpoint
+          returns (capped server-side at 100), opened from the counter card. */}
+      {todoOpen && dashboard !== null && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="todo-dialog-title"
+        >
+          <div className="max-h-[calc(100dvh-2rem)] w-full overflow-y-auto rounded-t-xl border bg-surface p-4 shadow-lg sm:max-w-lg sm:rounded-xl sm:p-6">
+            <h2 id="todo-dialog-title" className="text-lg font-semibold text-content">
+              {t("languagePage.todoTitle")}
+            </h2>
+            <p className="mt-1 text-sm text-content-subtle">{t("languagePage.todoHint")}</p>
+
+            {dashboard.todoEntries.length === 0 ? (
+              <p className="mt-4 text-sm text-content-muted">{t("languagePage.todoEmpty")}</p>
             ) : (
               <>
-                <ul className="mt-2 space-y-1">
-                  {record.translations.map((translation, i) => (
-                    <li key={i} className="flex items-baseline gap-2 text-sm">
-                      <span className="rounded border bg-surface px-1.5 py-0.5 font-mono text-xs text-content-muted">
-                        {translation.languageID}
-                      </span>
-                      <span className="text-content">{translation.translation}</span>
-                    </li>
-                  ))}
-                </ul>
-
-                {nameRows.map((row, i) => (
-                  <div key={i} className="mt-2 flex items-center gap-2">
-                    <label className="sr-only" htmlFor={`language-name-lang-${i}`}>
-                      {t("languagePage.namesInLabel")}
-                    </label>
-                    <select
-                      id={`language-name-lang-${i}`}
-                      value={row.languageID}
-                      onChange={(e) => setNameRow(i, { languageID: e.target.value })}
-                      className="w-28 min-w-0 shrink-0 rounded-lg border bg-surface px-2 py-2 text-sm text-content outline-none focus:ring-2 sm:w-36"
-                    >
-                      <option value="" />
-                      {targetOptions.map((l) => (
-                        <option key={l.tag} value={l.tag}>
-                          {endonym(l)}
-                        </option>
-                      ))}
-                    </select>
-                    <label className="sr-only" htmlFor={`language-name-value-${i}`}>
-                      {t("languagePage.namesNameLabel")}
-                    </label>
-                    <input
-                      id={`language-name-value-${i}`}
-                      value={row.translation}
-                      onChange={(e) => setNameRow(i, { translation: e.target.value })}
-                      className="min-w-0 flex-1 rounded-lg border bg-surface px-3 py-2 text-sm text-content outline-none focus:ring-2"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setNameRows((prev) => prev.filter((_, j) => j !== i))}
-                      aria-label={t("languagePage.namesRemoveRow")}
-                      title={t("languagePage.namesRemoveRow")}
-                      className="shrink-0 rounded-lg px-2 py-1 text-lg leading-none text-content-subtle hover:bg-surface-muted hover:text-content"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-
-                <div className="mt-2 flex flex-wrap items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setNameRows((prev) => [...prev, { languageID: "", translation: "" }])}
-                    className="text-sm text-primary hover:text-primary-hover"
-                  >
-                    {t("languagePage.namesAddRow")}
-                  </button>
-                  {additions.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => void publishNames()}
-                      disabled={!canPublish}
-                      className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-fg hover:bg-primary-hover disabled:opacity-50"
-                    >
-                      {publishing
-                        ? t("languagePage.namesPublishing")
-                        : t("languagePage.namesPublish")}
-                    </button>
-                  )}
-                </div>
-                {syncingURI !== null && (
-                  <p className="mt-2 text-sm text-content-subtle">
-                    {t("languagePage.namesSyncing")}
-                  </p>
-                )}
-                {publishError !== null && (
-                  <p className="mt-2 text-sm text-red-600">{publishError}</p>
-                )}
-              </>
-            )}
-
-            {namedIn.length > 0 && (
-              <>
-                <h3 className="mt-5 text-sm font-semibold text-content">
-                  {t("languagePage.namedInTitle")}
-                </h3>
-                <p className="mt-1 text-xs text-content-subtle">{t("languagePage.namedInHint")}</p>
-                <ul className="mt-2 flex flex-wrap gap-1.5">
-                  {namedIn.map((l) => (
-                    <li key={l.tag}>
+                <ul className="mt-4 flex flex-wrap gap-1.5">
+                  {dashboard.todoEntries.map((entry) => (
+                    <li key={entry.key}>
                       <button
                         type="button"
-                        onClick={() => onOpenLanguage(l.tag)}
+                        onClick={() => {
+                          setTodoOpen(false);
+                          onOpenEntry(entry.key);
+                        }}
                         className="rounded-full border bg-surface-muted/60 px-2.5 py-1 text-xs text-content hover:border-primary hover:text-primary"
                       >
-                        {l.name}{" "}
-                        <span className="font-mono text-content-subtle">{l.tag}</span>
+                        <span aria-hidden="true">⚠ </span>
+                        {entry.orthography[0]}
                       </button>
                     </li>
                   ))}
                 </ul>
+                {dashboard.todoCount > dashboard.todoEntries.length && (
+                  <p className="mt-3 text-xs text-content-subtle">
+                    {t("languagePage.todoMore", {
+                      count: dashboard.todoCount - dashboard.todoEntries.length,
+                      shown: dashboard.todoEntries.length,
+                    })}
+                  </p>
+                )}
               </>
             )}
-          </section>
-        </article>
+
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setTodoOpen(false)}
+                className="rounded-lg border px-4 py-2 text-sm text-content hover:bg-black/5"
+              >
+                {t("languageRecord.cancel")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mode-B target picker: choose (or correct) a language named in this one. */}
+      {codesOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="codes-dialog-title"
+        >
+          <div className="max-h-[calc(100dvh-2rem)] w-full overflow-y-auto rounded-t-xl border bg-surface p-4 shadow-lg sm:max-w-lg sm:rounded-xl sm:p-6">
+            <h2 id="codes-dialog-title" className="text-lg font-semibold text-content">
+              {t("languagePage.codesCardTitle", { language: languageName })}
+            </h2>
+            <p className="mt-1 text-sm text-content-subtle">
+              {t("languageRecord.codesIntro", { language: languageName })}
+            </p>
+
+            {namedIn.length === 0 ? (
+              <p className="mt-4 text-sm text-content-muted">{t("languagePage.namedInEmpty")}</p>
+            ) : (
+              <ul className="mt-4 flex flex-wrap gap-1.5">
+                {namedIn.map((l) => (
+                  <li key={l.tag}>
+                    <button
+                      type="button"
+                      onClick={() => openNameTarget(l.tag)}
+                      className="rounded-full border bg-surface-muted/60 px-2.5 py-1 text-xs text-content hover:border-primary hover:text-primary"
+                    >
+                      {l.name} <span className="font-mono text-content-subtle">{l.tag}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <div className="mt-4">
+              <p className="text-sm font-medium text-content">
+                {t("languageRecord.targetLabel")}
+              </p>
+              <div className="mt-2">
+                <LanguageSearchBar
+                  languages={languages}
+                  onSelect={openNameTarget}
+                  exclude={[tag, ...namedIn.map((l) => l.tag)]}
+                  placeholder={t("languageRecord.targetPick", { language: languageName })}
+                />
+              </div>
+            </div>
+
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setCodesOpen(false)}
+                className="rounded-lg border px-4 py-2 text-sm text-content hover:bg-black/5"
+              >
+                {t("languageRecord.cancel")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {dialog !== null && (
+        <LanguageRecordDialog
+          mode={dialog}
+          languages={languages}
+          onClose={() => setDialog(null)}
+          onPublished={onPublished}
+        />
       )}
     </div>
   );

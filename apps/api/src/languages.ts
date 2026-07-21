@@ -1,5 +1,5 @@
 import { aql } from "arangojs";
-import type { LanguageView } from "@leksis/types";
+import type { CurrentLanguageRecordResponse, LanguageView } from "@leksis/types";
 import { db } from "./db";
 
 /**
@@ -27,4 +27,22 @@ export async function listLanguages(locale: string): Promise<LanguageView[]> {
         RETURN { tag: e.tag, endonym: e.endonym }
   `);
   return fallback.all();
+}
+
+/**
+ * The reference to a language's current eu.leksis.language record, or null
+ * when no current record exists for the tag. Lets the browser resolve and
+ * rewrite the record (e.g. to correct its name in another language) without
+ * fetching the whole dashboard.
+ */
+export async function getCurrentLanguageRecord(
+  tag: string,
+): Promise<CurrentLanguageRecordResponse | null> {
+  const cursor = await db.query<CurrentLanguageRecordResponse>(aql`
+    FOR l IN languages
+      FILTER l.tag == ${tag} AND l.current == true
+      LIMIT 1
+      RETURN { tag: l.tag, recordURI: l.recordURI, authorDID: l.authorDID }
+  `);
+  return (await cursor.next()) ?? null;
 }

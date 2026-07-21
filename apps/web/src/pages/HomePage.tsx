@@ -231,12 +231,7 @@ export function HomePage() {
           onOpenLanguage={openLanguage}
         />
       ) : route.kind === "language" ? (
-        <LanguagePage
-          tag={route.tag}
-          languages={languages}
-          onOpenEntry={openEntry}
-          onOpenLanguage={openLanguage}
-        />
+        <LanguagePage tag={route.tag} languages={languages} onOpenEntry={openEntry} />
       ) : (
         submitted !== null && (
           <SearchResults

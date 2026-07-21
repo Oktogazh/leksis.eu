@@ -3,6 +3,45 @@
 All notable changes to Leksis. This project follows the 8-week development
 timeline; each entry maps to a weekly milestone.
 
+## Language dashboard reorg — record editing as a first-class action
+
+The per-language dashboard is re-sequenced and its name editing is promoted
+from an inline add-only widget into reusable dialogs. New order: counters and
+record-editing cards, then the GitHub-style activity (grid + recent changes),
+then abbreviations, then the flagged-for-review queue.
+
+### Types & API (`packages/types`, `apps/api`)
+
+- New `CurrentLanguageRecordResponse` and endpoint
+  **`GET /languages/:tag/currentRecord`** (`getCurrentLanguageRecord`) — the
+  reference to a language's current `eu.leksis.language` record, so the browser
+  can resolve and rewrite another language's record (to name it in this
+  language) without pulling the whole dashboard. Read-only; reuses the same AQL
+  the dashboard already runs for its language ref.
+
+### Web (`apps/web`)
+
+- **New `components/LanguageSearchBar.tsx`** — a reusable search over the known
+  languages, matching by UI-locale name, endonym or BCP 47 code (the chip shown
+  beside the name). Purely presentational; reused in the record dialogs and
+  reserved for future call sites (e.g. the entry editor).
+- **New `components/LanguageRecordDialog.tsx`** — edits a `eu.leksis.language`
+  record and republishes it (full rewrite, rkey = tag) to the editor's own PDS,
+  preserving untouched translations. Two modes: *self* (edit this language's own
+  names — endonym plus the user's languages of interest and interface language,
+  with the search bar revealing any other locale on demand) and *other* (name a
+  language in this language, one translation at a time).
+- **`pages/LanguagePage.tsx` reorganized**: the counters row gains an *Edit
+  language record* card and a *Names in <language>* card (mode-B target picker);
+  the activity grid + feed move directly under the cards; the old inline "The
+  language's name" section is removed (the dialogs replace it). The
+  to-be-completed counter/queue is renamed **Flagged for review**; its counter
+  card is now clickable, opening a dialog with the full flagged list (all the
+  entries the endpoint returns — capped server-side at 100, with the existing
+  "…and N more" note when `todoCount` exceeds them), replacing the old inline
+  list section. `onOpenLanguage` is dropped from `LanguagePage`'s props (the
+  named-in list now edits records rather than navigating).
+
 ## Profiles & onboarding — interface language + languages of interest
 
 A connected user now has a profile: their UI interface language and the

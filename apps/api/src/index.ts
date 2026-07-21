@@ -12,7 +12,7 @@ import { listAbbreviations } from "./abbreviations";
 import { getLanguageDashboard } from "./dashboard";
 import { pingDb } from "./db";
 import { getEntry, searchEntries } from "./entries";
-import { listLanguages } from "./languages";
+import { getCurrentLanguageRecord, listLanguages } from "./languages";
 import { startJetstream } from "./firehose/jetstream";
 
 const app = new Hono();
@@ -60,6 +60,21 @@ app.get("/languages/:tag/dashboard", async (c) => {
     return c.json(dashboard);
   } catch (err) {
     console.error("GET /languages/:tag/dashboard failed:", err);
+    return c.json({ error: "database unavailable" }, 503);
+  }
+});
+
+app.get("/languages/:tag/currentRecord", async (c) => {
+  const requested = normalizeLanguageTag(c.req.param("tag"));
+  if (!isValidLanguageTag(requested)) {
+    return c.json({ error: "invalid language tag" }, 400);
+  }
+  try {
+    const record = await getCurrentLanguageRecord(requested);
+    if (!record) return c.json({ error: "language not found" }, 404);
+    return c.json(record);
+  } catch (err) {
+    console.error("GET /languages/:tag/currentRecord failed:", err);
     return c.json({ error: "database unavailable" }, 503);
   }
 });

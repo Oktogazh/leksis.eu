@@ -1,6 +1,7 @@
 import type {
   AbbreviationsResponse,
   AbbreviationView,
+  CurrentLanguageRecordResponse,
   EntriesResponse,
   EntryView,
   LanguageDashboardResponse,
@@ -67,6 +68,25 @@ export async function fetchLanguageDashboard(
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`GET /languages/${languageTag}/dashboard failed: ${res.status}`);
   return (await res.json()) as LanguageDashboardResponse;
+}
+
+/**
+ * The reference to a language's current eu.leksis.language record (tag,
+ * recordURI, authorDID), or null when the language is unknown. Lets the
+ * browser resolve and rewrite another language's record — e.g. to correct its
+ * name in this language — without pulling the whole dashboard.
+ */
+export async function fetchCurrentLanguageRecord(
+  languageTag: string,
+): Promise<CurrentLanguageRecordResponse | null> {
+  const res = await fetch(
+    `${API_BASE}/languages/${encodeURIComponent(languageTag)}/currentRecord`,
+  );
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`GET /languages/${languageTag}/currentRecord failed: ${res.status}`);
+  }
+  return (await res.json()) as CurrentLanguageRecordResponse;
 }
 
 /** The current version of one entry by its stable key, or null when unknown. */
