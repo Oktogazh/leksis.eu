@@ -3,12 +3,13 @@ import { useTranslation } from "react-i18next";
 import type { LanguageView } from "@leksis/types";
 import { AddLanguageModal } from "../components/AddLanguageModal";
 import { LanguageSelector } from "../components/LanguageSelector";
+import { OnboardingFlow } from "../components/OnboardingFlow";
 import { SearchResults } from "../components/SearchResults";
+import { useSession } from "../auth/SessionProvider";
 import { EntryPage } from "./EntryPage";
 import { LanguagePage } from "./LanguagePage";
 import { fetchLanguages } from "../lib/api";
 import { entryPath, languagePath, routeFromLocation, type Route } from "../lib/routes";
-import { getShortlist, promoteInShortlist } from "../lib/shortlist";
 
 const SYNC_POLL_MS = 3_000;
 const SYNC_POLL_MAX_TRIES = 20; // ~60s of PDS → Jetstream → ArangoDB latency
@@ -34,11 +35,15 @@ function searchFromLocation(): SubmittedSearch | null {
 // query string.
 export function HomePage() {
   const { t, i18n } = useTranslation();
+  const { profile } = useSession();
   // Locale for language-name localization; the API falls back to endonyms
   // when no names exist for it.
   const locale = i18n.language;
   const [languages, setLanguages] = useState<LanguageView[]>([]);
-  const [shortlist, setShortlist] = useState<string[]>(() => getShortlist());
+  // The search-bar shortlist is the profile's languages of interest (most
+  // relevant first); the profile record is the single source of truth now that
+  // onboarding gathers it. Empty until the profile loads / for a fresh profile.
+  const shortlist = profile?.languages ?? [];
   const initialSearch = () => searchFromLocation();
   const [language, setLanguage] = useState(() => initialSearch()?.languageTag ?? "");
   const [term, setTerm] = useState(() => initialSearch()?.query ?? "");
@@ -95,7 +100,6 @@ export function HomePage() {
 
   function onLanguageChange(tag: string) {
     setLanguage(tag);
-    if (tag !== "") setShortlist(promoteInShortlist(tag));
   }
 
   function onLanguageCreated(created: LanguageView) {
@@ -104,7 +108,6 @@ export function HomePage() {
         a.tag.localeCompare(b.tag),
       ),
     );
-    setShortlist(promoteInShortlist(created.tag));
     setLanguage(created.tag);
     setAdding(false);
     setSyncingTag(created.tag);
@@ -152,6 +155,24 @@ export function HomePage() {
     submitted !== null && submitted.languageTag !== ""
       ? (languages.find((l) => l.tag === submitted.languageTag) ?? null)
       : null;
+
+  // A connected user with no profile record yet is onboarded here, inside the
+  // homepage: the search surface is replaced by the onboarding flow until the
+  // profile is written. `undefined` = still loading, so nothing flashes.
+  if (profile === null) {
+    return (
+      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 py-10 sm:px-6 sm:py-16">
+        <OnboardingFlow languages={languages} onLanguageCreated={onLanguageCreated} />
+        {adding && (
+          <AddLanguageModal
+            languages={languages}
+            onClose={() => setAdding(false)}
+            onCreated={onLanguageCreated}
+          />
+        )}
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 py-10 sm:px-6 sm:py-16">

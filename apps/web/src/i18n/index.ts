@@ -50,4 +50,22 @@ export function setLanguage(code: LanguageCode): void {
   document.documentElement.lang = code;
 }
 
+/** The supported code for a BCP 47 tag, or the default when unsupported. */
+export function resolveLanguageCode(tag: string): LanguageCode {
+  const primary = tag.toLowerCase().split("-")[0] ?? "";
+  return isLanguageCode(primary) ? primary : DEFAULT_LANGUAGE;
+}
+
+/**
+ * Apply the interface language from the user's profile (the source of truth
+ * for connected users), without writing localStorage — the profile record, not
+ * the browser store, owns the choice once a user is connected. Unsupported
+ * tags fall back to the default.
+ */
+export function applyInterfaceLanguage(tag: string): void {
+  const code = resolveLanguageCode(tag);
+  void i18n.changeLanguage(code);
+  document.documentElement.lang = code;
+}
+
 export default i18n;

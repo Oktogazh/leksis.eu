@@ -3,6 +3,48 @@
 All notable changes to Leksis. This project follows the 8-week development
 timeline; each entry maps to a weekly milestone.
 
+## Profiles & onboarding — interface language + languages of interest
+
+A connected user now has a profile: their UI interface language and the
+languages of interest shown first in the search bar. Both are gathered by a
+first-run onboarding flow and editable later from the navbar. This graduates
+two pieces of `localStorage` state (the UI language and the search shortlist)
+onto the user's own PDS.
+
+### Lexicon & types (`lexicons/`, `packages/types`)
+
+- **New `eu.leksis.profile` lexicon** — singleton record (`key: "self"`)
+  holding `{ interfaceLanguage, languages[], createdAt }`. Unlike
+  language/entry, this is per-user configuration, **not dictionary content**:
+  the AppView does not index it (no Jetstream collection, no ArangoDB doc, no
+  endpoint). The browser reads/writes it directly on the user's own PDS. See
+  ADR-0005.
+- New contract `profile.ts` (`LeksisProfileRecord`, `LEKSIS_PROFILE_COLLECTION`,
+  `LEKSIS_PROFILE_RKEY`).
+
+### Web (`apps/web`)
+
+- **Onboarding flow** (`components/OnboardingFlow.tsx`), rendered inside
+  HomePage when a connected user has no profile yet: step 1 picks the interface
+  language (pre-selected from `navigator.languages` where supported — English
+  only today), step 2 picks languages of interest (multi-select over known
+  languages + reachable "add a language" registering a new `eu.leksis.language`).
+  Finishing writes the profile to the user's PDS.
+- **Profile preferences dialog** (`components/ProfileDialog.tsx`), opened from
+  the handle in the navbar: edits the same two settings and republishes the
+  profile record. Each language row also links to that language's dashboard
+  (`routes.navigateTo` — pushState + synthetic popstate so HomePage re-routes
+  without a router), so the preferences list doubles as a way in.
+- `SessionProvider` loads the profile after a session restores, applies the
+  interface language from it, and exposes `profile` + `saveProfile`;
+  `lib/profile.ts` does the PDS `getRecord`/`putRecord` (a `RecordNotFound`
+  read is the onboarding signal).
+- The search-bar shortlist now reads from `profile.languages` (single source
+  of truth); the old `lib/shortlist.ts` localStorage helper is removed.
+  `applyInterfaceLanguage`/`resolveLanguageCode` added to the i18n module.
+- Shared `components/LanguageInterestPicker.tsx` powers the languages-of-interest
+  multi-select in both onboarding and the profile dialog.
+
 ## Post-Loop 2 — Language dashboards, abbreviations & todo lists (released `v0.6.x`)
 
 Every language gets its front matter: a dashboard page with counters, its

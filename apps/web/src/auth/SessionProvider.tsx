@@ -10,8 +10,10 @@ import {
 } from "react";
 import { Agent } from "@atproto/api";
 import type { BrowserOAuthClient } from "@atproto/oauth-client-browser";
-import i18n from "../i18n";
+import type { LeksisProfileRecord } from "@leksis/types";
+import i18n, { applyInterfaceLanguage } from "../i18n";
 import { getOAuthClient } from "./client";
+import { fetchProfile, putProfile } from "../lib/profile";
 
 // The live OAuth session type, derived from the client API so we don't depend
 // on the name being re-exported.
@@ -26,6 +28,13 @@ interface SessionContextValue {
   handle: string | null;
   /** Authenticated AT Proto agent for XRPC calls; null while disconnected. */
   agent: Agent | null;
+  /**
+   * The connected user's profile record, or null when none exists yet (→
+   * onboarding). Undefined while it is still loading after a session restores.
+   */
+  profile: LeksisProfileRecord | null | undefined;
+  /** Persist the profile to the user's PDS and update local state + UI language. */
+  saveProfile: (record: LeksisProfileRecord) => Promise<void>;
   /** Begin login: resolves the handle and redirects to the user's PDS. */
   signIn: (handle: string) => Promise<void>;
   /** Revoke the session and return to the disconnected state. */
@@ -53,6 +62,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [did, setDid] = useState<string | null>(null);
   const [handle, setHandle] = useState<string | null>(null);
   const [agent, setAgent] = useState<Agent | null>(null);
+  // undefined = not loaded yet; null = loaded, no profile (→ onboarding).
+  const [profile, setProfile] = useState<LeksisProfileRecord | null | undefined>(undefined);
   const sessionRef = useRef<OAuthSession | null>(null);
   const didInit = useRef<boolean>(false);
 
@@ -76,6 +87,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           setDid(session.did);
           setStatus("connected");
           setHandle(await resolveHandle(authed, session.did));
+          // Load the profile after connecting. A missing record leaves
+          // `profile` null (onboarding); a real fetch failure also leaves it
+          // null so the user isn't wedged on a blank screen.
+          try {
+            const loaded = await fetchProfile(authed, session.did);
+            if (loaded) applyInterfaceLanguage(loaded.interfaceLanguage);
+            setProfile(loaded);
+          } catch (err) {
+            console.error("could not load profile:", err);
+            setProfile(null);
+          }
         } else {
           setStatus("disconnected");
         }
@@ -94,6 +116,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await client.signIn(cleaned, { ui_locales: i18n.language });
   }, []);
 
+  const saveProfile = useCallback(
+    async (record: LeksisProfileRecord) => {
+      if (!agent || !did) throw new Error("cannot save profile while disconnected");
+      await putProfile(agent, did, record);
+      applyInterfaceLanguage(record.interfaceLanguage);
+      setProfile(record);
+    },
+    [agent, did],
+  );
+
   const signOut = useCallback(async () => {
     try {
       await sessionRef.current?.signOut();
@@ -104,12 +136,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setAgent(null);
     setDid(null);
     setHandle(null);
+    setProfile(undefined);
     setStatus("disconnected");
   }, []);
 
   const value = useMemo<SessionContextValue>(
-    () => ({ status, did, handle, agent, signIn, signOut }),
-    [status, did, handle, agent, signIn, signOut],
+    () => ({ status, did, handle, agent, profile, saveProfile, signIn, signOut }),
+    [status, did, handle, agent, profile, saveProfile, signIn, signOut],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

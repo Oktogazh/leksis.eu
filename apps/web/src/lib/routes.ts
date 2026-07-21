@@ -26,6 +26,18 @@ export const entryPath = (entryKey: string): string => `/entry/${encodeURICompon
 export const languagePath = (tag: string): string => `/language/${encodeURIComponent(tag)}`;
 
 /**
+ * Navigate to a resource path from outside the routed surface (e.g. a dialog in
+ * the header). pushState alone doesn't fire popstate, so HomePage — which
+ * re-reads the route on popstate — wouldn't notice; dispatching a synthetic
+ * popstate makes it re-route without a router library or shared route state.
+ */
+export function navigateTo(path: string): void {
+  if (window.location.pathname + window.location.search === path) return;
+  window.history.pushState(null, "", path);
+  window.dispatchEvent(new PopStateEvent("popstate"));
+}
+
+/**
  * Rewrite the legacy query-param entry route (?e=<entryKey>) to its path
  * URL, in place, so links shared before pages moved to paths keep working.
  * Runs once before the app renders.

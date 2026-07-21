@@ -1,0 +1,33 @@
+{
+  "lexicon": 1,
+  "id": "eu.leksis.profile",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "Per-user Leksis preferences: the UI interface language and the languages of interest surfaced in the search bar. This is client-side configuration, not dictionary content — the AppView does not index it. The browser reads and writes it directly on the user's own PDS. One profile per repo, so the record key is the literal \"self\".",
+      "key": "literal:self",
+      "record": {
+        "type": "object",
+        "required": ["interfaceLanguage", "languages", "createdAt"],
+        "properties": {
+          "interfaceLanguage": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "Well-formed IETF BCP 47 tag of the UI language, normalized to lowercase (e.g. \"en\")."
+          },
+          "languages": {
+            "type": "array",
+            "maxLength": 256,
+            "items": { "type": "string", "maxLength": 64 },
+            "description": "Languages of interest, as normalized lowercase BCP 47 tags, most relevant first. These populate the search bar's language shortlist. May be empty."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "Client-declared creation time of this record version."
+          }
+        }
+      }
+    }
+  }
+}

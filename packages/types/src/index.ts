@@ -7,6 +7,7 @@ export * from "./language.js";
 export * from "./entry.js";
 export * from "./abbreviation.js";
 export * from "./dashboard.js";
+export * from "./profile.js";
 export * from "./bcp47.js";
 
 /** Response shape for the API health-check endpoint. */

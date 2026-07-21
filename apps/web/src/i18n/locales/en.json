@@ -25,6 +25,40 @@
       "signInFailed": "We couldn't reach that handle's server. Check the handle and try again."
     }
   },
+  "onboarding": {
+    "title": "Welcome to Leksis",
+    "intro": "Two quick choices and you're set — both are saved to your own PDS and can be changed any time from your profile.",
+    "step": "Step {{current}} of {{total}}",
+    "interfaceTitle": "Choose your interface language",
+    "interfaceHint": "The language Leksis speaks to you in. More languages are coming.",
+    "languagesTitle": "Pick your languages of interest",
+    "languagesHint": "These appear first in the search bar. Choose the ones you'll look words up in — you can add or change them later.",
+    "languagesEmpty": "No language is registered in Leksis yet. Add one to get started.",
+    "selectedCount": "{{count}} selected",
+    "selectedCount_one": "{{count}} selected",
+    "addLanguage": "＋ Add a language…",
+    "back": "Back",
+    "next": "Next",
+    "finish": "Finish",
+    "saving": "Saving to your PDS…",
+    "error": "Your profile could not be saved to your PDS. Try again."
+  },
+  "profile": {
+    "open": "Preferences",
+    "title": "Your preferences",
+    "intro": "Change your interface language and the languages shown in your search bar. Saved to your own PDS.",
+    "interfaceLabel": "Interface language",
+    "languagesLabel": "Languages of interest",
+    "languagesHint": "Shown first in the search bar. Tick the ones you want, or add a new language to Leksis. Open a language's dashboard from the button beside it.",
+    "languagesEmpty": "No language is registered in Leksis yet. Add one below.",
+    "addLanguage": "＋ Add a language…",
+    "openDashboard": "Open the {{language}} dashboard",
+    "openDashboardShort": "Dashboard →",
+    "cancel": "Cancel",
+    "save": "Save",
+    "saving": "Saving to your PDS…",
+    "error": "Your profile could not be saved to your PDS. Try again."
+  },
   "landing": {
     "hero": {
       "title": "The omnilingual dictionary",
