@@ -668,6 +668,7 @@ export function EntryEditorDialog({
 
   const [pickedTag, setPickedTag] = useState(language?.tag ?? initial?.languageID ?? "");
   const [spellings, setSpellings] = useState<string[]>(initial?.orthography ?? [word]);
+  const [transcription, setTranscription] = useState(initial?.transcription ?? "");
   const [categories, setCategories] = useState<AnnotationTag[]>(() =>
     toAnnotationTags(initial?.categories ?? []),
   );
@@ -804,16 +805,15 @@ export function EntryEditorDialog({
       $type: LEKSIS_ENTRY_COLLECTION,
       languageID: target.tag,
       orthography: cleanSpellings,
+      ...(transcription.trim() !== "" ? { transcription: transcription.trim() } : {}),
       categories: categories.map(toRecordAnnotation),
       ...(cleanOtherForms.length > 0 ? { otherForms: cleanOtherForms } : {}),
       definitions: cleanDefinitions,
       ...(cleanNotes.length > 0 ? { notes: cleanNotes } : {}),
       ...(cleanReferences.length > 0 ? { references: cleanReferences } : {}),
       ...(subject !== undefined ? { subject } : {}),
-      // An empty list clears the entry's needs-attention flag; `botSource`
-      // is preserved so the content keeps its source traceability.
+      // An empty list clears the entry's needs-attention flag.
       ...(cleanTodo.length > 0 ? { todo: cleanTodo } : {}),
-      ...(initial?.botSource !== undefined ? { botSource: initial.botSource } : {}),
       createdAt: new Date().toISOString(),
     };
 
@@ -1116,6 +1116,25 @@ export function EntryEditorDialog({
           </fieldset>
 
           {duplicates.length > 0 && <DuplicateWarning duplicates={duplicates} />}
+
+          <fieldset className="mt-5">
+            <legend className="text-sm font-medium text-content">
+              {t("createEntry.transcriptionLegend")}
+            </legend>
+            <p className="mt-1 text-xs text-content-subtle">
+              {t("createEntry.transcriptionHelp")}
+            </p>
+            <label className="sr-only" htmlFor="entry-transcription">
+              {t("createEntry.transcriptionLegend")}
+            </label>
+            <input
+              id="entry-transcription"
+              value={transcription}
+              onChange={(e) => setTranscription(e.target.value)}
+              placeholder={t("createEntry.transcriptionPlaceholder")}
+              className={`mt-2 ${inputClass}`}
+            />
+          </fieldset>
 
           <fieldset className="mt-5">
             <legend className="text-sm font-medium text-content">

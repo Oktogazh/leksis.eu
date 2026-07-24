@@ -108,8 +108,7 @@ function parseEntryRecord(value: unknown): LeksisEntryRecord | null {
   if (definitions.length === 0) return null;
 
   // Pending-task notes; malformed items are dropped rather than failing the
-  // whole record. `botSource` is carried through so a proposed modification
-  // can preserve the content's source traceability.
+  // whole record.
   const todo = Array.isArray(r.todo)
     ? r.todo.filter((item): item is string => typeof item === "string" && item.trim() !== "")
     : [];
@@ -118,13 +117,13 @@ function parseEntryRecord(value: unknown): LeksisEntryRecord | null {
     $type: LEKSIS_ENTRY_COLLECTION,
     languageID,
     orthography,
+    ...(typeof r.transcription === "string" && r.transcription.trim() !== ""
+      ? { transcription: r.transcription }
+      : {}),
     categories: parseAnnotations(r.categories),
     definitions,
     ...(typeof r.subject === "string" ? { subject: r.subject } : {}),
     ...(todo.length > 0 ? { todo } : {}),
-    ...(typeof r.botSource === "string" && r.botSource.trim() !== ""
-      ? { botSource: r.botSource }
-      : {}),
     createdAt: typeof r.createdAt === "string" ? r.createdAt : "",
   };
 }

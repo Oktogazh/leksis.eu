@@ -227,8 +227,9 @@ function parseRecord(record: unknown): ParsedEntry | null {
     }
   }
 
-  // `botSource` (bot → source traceability) lives on the record only.
-  if (r.botSource !== undefined && typeof r.botSource !== "string") return null;
+  // `transcription` (IPA) is record-only content: type-checked so a malformed
+  // record is rejected whole, then dropped — the DB never stores it.
+  if (r.transcription !== undefined && typeof r.transcription !== "string") return null;
 
   // A deletion is a full version like any other, marked withdrawn: it must
   // carry a reason (a bare `deleted: true` is rejected), and an optional

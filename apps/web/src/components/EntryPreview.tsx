@@ -163,6 +163,14 @@ export function EntryPreview({ entry, onOpen }: EntryPreviewProps) {
                   {record.orthography.slice(1).join(", ")}
                 </p>
               )}
+              {record.transcription !== undefined && record.transcription !== "" && (
+                <p
+                  className="font-mono text-xs text-content-muted"
+                  aria-label={t("entry.transcriptionLabel")}
+                >
+                  {record.transcription}
+                </p>
+              )}
             </div>
             {onOpen && (
               <button

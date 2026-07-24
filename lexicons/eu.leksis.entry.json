@@ -21,6 +21,12 @@
             "items": { "type": "string", "maxLength": 256, "maxGraphemes": 128 },
             "description": "Valid spellings of the word: variants, archaic forms, regional spellings. The first item is the canonical form."
           },
+          "transcription": {
+            "type": "string",
+            "maxLength": 256,
+            "maxGraphemes": 128,
+            "description": "Phonetic transcription of the word in the International Phonetic Alphabet (IPA), e.g. \"[ˈbrɛːzɔ̃nɛk]\". Record-only content, not indexed by the AppView."
+          },
           "categories": {
             "type": "array",
             "items": { "type": "ref", "ref": "#annotation" },
@@ -45,7 +51,7 @@
           "references": {
             "type": "array",
             "items": { "type": "ref", "ref": "#reference" },
-            "description": "Bibliographic references and sources for the entry, shown at the bottom of the entry alongside the (bot-only) botSource."
+            "description": "Bibliographic references and sources for the entry, shown at the bottom of the entry."
           },
           "subject": {
             "type": "string",
@@ -57,11 +63,6 @@
             "maxLength": 64,
             "items": { "type": "string", "maxLength": 2048, "maxGraphemes": 1024 },
             "description": "Pending-work notes: each item is one task this version still needs (e.g. an ingestion bot flagging one unverified aspect), so several bots or editors can each track their own item. Empty or absent means nothing is pending. The AppView indexes only whether any item exists, as a boolean flag."
-          },
-          "botSource": {
-            "type": "string",
-            "maxLength": 2048,
-            "description": "Identifier of the external source this record was derived from (a URL or a source-internal ID), set by ingestion bots so a record can be traced back to its origin for maintenance. Not indexed by the AppView — it lives on the record only."
           },
           "deleted": {
             "type": "boolean",

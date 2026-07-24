@@ -118,17 +118,18 @@ await agent.com.atproto.repo.applyWrites(
 - **Idempotency is on `recordURI + cid`** — replaying the same record is
   harmless, but re-*creating* the same content mints a new rkey and therefore
   a **duplicate entry**. A rerunnable importer must track what it already
-  published (local state file, or `com.atproto.repo.listRecords` on its own
-  repo, matching on `botSource`) and use `putRecord`/`subject` to update
-  rather than re-create.
+  published — keep a local state file mapping each source item to the rkey /
+  recordURI it created (or list its own repo with
+  `com.atproto.repo.listRecords` and match by content) — and use
+  `putRecord`/`subject` to update rather than re-create.
 - The AppView validates strictly at ingest: BCP 47 syntax on `languageID`,
   non-empty `orthography` and `definitions`, well-formed annotation pairs
   (`long` required, `short` optional), and the definition-tree invariants (see
   `place` below — leaf/group text rule + sibling contiguity). `otherForms`,
   when present, must each be a well-formed annotation plus a non-empty `form`;
   `notes` an array of strings; `references` an array of `{ text, url? }`;
-  `todo` an array of strings; `botSource` a string — any wrong type rejects
-  the whole record. Invalid → skipped, no error surfaces.
+  `todo` an array of strings; `transcription` a string — any wrong type
+  rejects the whole record. Invalid → skipped, no error surfaces.
 - **Breaking lexicon changes are handled by reset-and-republish**: while the
   app is bots-only, the operator deletes the old records and the updated bots
   republish in the new shape. Keep every bot able to regenerate its full
@@ -146,12 +147,13 @@ Canonical JSON: `lexicons/eu.leksis.entry.json` in the leksis.eu repo.
   categories: Annotation[],  // ordered grammatical categories; may be empty
   otherForms?: InflectedForm[], // other grammatical forms (plural, gerund…); INDEXED for search
   definitions: Definition[], // ≥1, FLAT list of tree nodes sorted by place (reading order)
+  transcription?: string,    // IPA phonetic transcription ("[ˈbrɛːzɔ̃nɛk]"); ≤128 graphemes;
+                             // record-only content, not indexed
   notes?: string[],          // entry-level free-text notes shown below the definitions
-  references?: Reference[],   // bibliographic references, shown with botSource at the bottom
+  references?: Reference[],   // bibliographic references, shown at the bottom
   subject?: string,          // at:// URI of the version this modifies; omit for new entries
   todo?: string[],           // pending-work notes, ONE ITEM PER TASK (see below);
                              // ≤64 items, each ≤1024 graphemes
-  botSource?: string,        // external-source identifier for bot maintenance; ≤2048 chars
   createdAt: string,         // ISO datetime
 }
 
@@ -216,14 +218,8 @@ code) — copy it into the scraper and run it on every record before publishing.
 A single flat list of leaves `[1], [2], [3]…` is always valid; only build
 hierarchy when the source genuinely has one.
 
-### `todo` and `botSource` — maintenance fields for bots
+### `todo` — the bot maintenance flag
 
-- **`botSource`** identifies the external source item a record was derived
-  from — the source page's URL, or a stable source-internal ID. Set it on
-  every record a bot publishes: it is how a maintenance run maps records back
-  to source items (via `com.atproto.repo.listRecords` on the bot's own repo)
-  to decide what to `putRecord`-update, re-check, or delete. The AppView
-  never indexes it; it lives on the record only.
 - **`todo`** is a list of pending-work notes, **one item per task** — e.g.
   `["conversion unverified", "sense split ambiguous in source"]` — so
   several bots (or a bot and a human) can each track their own item on the
@@ -252,8 +248,10 @@ hierarchy when the source genuinely has one.
   time, not the source's publication date).
 - **Attribution & licensing:** only ingest sources whose license permits it,
   and make the bot account's profile state the source and license. Per-record
-  provenance goes in `botSource` (URL or source-internal ID) — don't invent
-  other extra fields; lexicon-unknown fields may be rejected or dropped.
+  provenance (source URL / citation) goes in `references` when it is worth
+  showing to readers; the bot's own source-item → rkey mapping lives in its
+  local state file. Don't invent extra fields — lexicon-unknown fields may be
+  rejected or dropped.
 - The language of your entries should exist as a `eu.leksis.language` record
   (shape: `{ tag, translations: [{languageID, translation}], createdAt }`,
   rkey = the lowercase tag, endonym required — i.e. one translation whose

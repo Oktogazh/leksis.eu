@@ -183,6 +183,11 @@ export interface LeksisEntryRecord {
   languageID: string;
   /** Valid spellings; the first item is the canonical form. */
   orthography: string[];
+  /**
+   * IPA phonetic transcription of the word (e.g. "[ˈbrɛːzɔ̃nɛk]").
+   * Record-only content, never indexed. Absent when the entry has none.
+   */
+  transcription?: string;
   /** Ordered grammatical categories of the entry. */
   categories: EntryAnnotation[];
   /**
@@ -210,12 +215,6 @@ export interface LeksisEntryRecord {
    * boolean.
    */
   todo?: string[];
-  /**
-   * Identifier of the external source this record was derived from (a URL
-   * or a source-internal ID), set by ingestion bots for maintenance
-   * traceability. Lives on the record only — never indexed.
-   */
-  botSource?: string;
   /**
    * Marks this version as a deletion: the entry is withdrawn from search
    * under this record, but stays reachable at its entryKey for legacy links

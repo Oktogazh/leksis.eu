@@ -232,6 +232,14 @@ export function EntryPage({
                     {record.orthography.slice(1).join(", ")}
                   </p>
                 )}
+                {record.transcription !== undefined && record.transcription !== "" && (
+                  <p
+                    className="mt-1 font-mono text-sm text-content-muted"
+                    aria-label={t("entry.transcriptionLabel")}
+                  >
+                    {record.transcription}
+                  </p>
+                )}
               </div>
               <button
                 type="button"
@@ -355,12 +363,11 @@ export function EntryPage({
           )}
 
           <footer className="mt-8 border-t pt-4">
-            {((record.references !== undefined && record.references.length > 0) ||
-              (record.botSource !== undefined && record.botSource !== "")) && (
+            {record.references !== undefined && record.references.length > 0 && (
               <section className="mb-4">
                 <h2 className="text-sm font-semibold text-content">{t("entry.referencesLabel")}</h2>
                 <ul className="mt-2 space-y-1">
-                  {record.references?.map((ref, i) => (
+                  {record.references.map((ref, i) => (
                     <li key={i} className="text-sm">
                       {ref.url !== undefined && ref.url !== "" ? (
                         <a
@@ -376,25 +383,6 @@ export function EntryPage({
                       )}
                     </li>
                   ))}
-                  {record.botSource !== undefined && record.botSource !== "" && (
-                    // Bot-source traceability, read-only: the entry editor
-                    // preserves it but never lets a human edit it.
-                    <li className="text-sm text-content-subtle">
-                      <span className="font-medium">{t("entry.botSourceLabel")}</span>{" "}
-                      {/^https?:\/\//.test(record.botSource) ? (
-                        <a
-                          href={record.botSource}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="break-all text-primary hover:text-primary-hover"
-                        >
-                          {record.botSource}
-                        </a>
-                      ) : (
-                        <span className="break-all">{record.botSource}</span>
-                      )}
-                    </li>
-                  )}
                 </ul>
               </section>
             )}

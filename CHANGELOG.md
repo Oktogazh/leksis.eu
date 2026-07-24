@@ -3,6 +3,32 @@
 All notable changes to Leksis. This project follows the 8-week development
 timeline; each entry maps to a weekly milestone.
 
+## Entries — IPA transcription, botSource removed
+
+The entry gains a **phonetic transcription** and drops the bot-only source field.
+
+### Lexicon & types (`lexicons/eu.leksis.entry.json`, `packages/types`)
+
+- **New `transcription` field** — an optional single string holding the word's
+  IPA phonetic transcription (e.g. `[ˈbrɛːzɔ̃nɛk]`, ≤128 graphemes).
+  Record-only content like `notes`/`references`: the AppView type-checks it (a
+  non-string rejects the record) but never indexes it. Added to
+  `LeksisEntryRecord`.
+- **`botSource` removed** — the bot-maintenance source identifier is dropped
+  from the lexicon, types, ingest validation and the entry viewer. Ingestion
+  bots now track their source-item → rkey mapping in local state; reader-facing
+  provenance goes in `references`.
+
+### Web (`apps/web`)
+
+- The entry editor gains a **Pronunciation (IPA)** input under the spellings;
+  both the full entry page and the compact `EntryPreview` render the
+  transcription in a monospaced line under the orthography.
+- The entry page's references footer no longer shows a `Source:` line, and the
+  editor no longer preserves a `botSource` on modification.
+
+> Bots-only lexicon change: old records are absorbed by the bots republishing.
+
 ## Entries — tree-shaped definitions, per-node notes, other forms, references
 
 The entry definitions move from a matrix-like coordinate to a **tree** the way
