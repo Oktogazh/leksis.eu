@@ -15,6 +15,8 @@ import {
   type AbbreviationRef,
   type AbbreviationView,
   type EntryAnnotation,
+  type EntryInflectedForm,
+  type EntryReference,
   type EntryView,
   type LanguageView,
   type LeksisEntryRecord,
@@ -24,6 +26,7 @@ import { fetchAbbreviations, searchEntries } from "../lib/api";
 import { DeleteEntryDialog } from "./DeleteEntryDialog";
 import { EntryPreview } from "./EntryPreview";
 import {
+  checkRecordDefinitions,
   editTreeLabels,
   fromRecordDefinitions,
   indent,
@@ -32,6 +35,7 @@ import {
   outdent,
   removeLeaf,
   toRecordDefinitions,
+  updateGroup,
   updateLeaf,
   collectLeaves,
   type EditNode,
@@ -344,6 +348,138 @@ function AnnotationEditor({
 }
 
 /**
+ * Editor for the entry's other grammatical forms: each row is an
+ * abbreviation (drawn from the same per-language pool as categories and
+ * notes) plus the form's spelling. The abbreviation reuses the single-pair
+ * AnnotationEditor; a row is only published when both its label and form are
+ * filled in.
+ */
+function OtherFormsEditor({
+  forms,
+  onChange,
+  suggestions,
+}: {
+  forms: OtherFormDraft[];
+  onChange: (forms: OtherFormDraft[]) => void;
+  suggestions: AbbreviationView[];
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      {forms.map((row) => (
+        <div key={row.id} className="mt-2 rounded-lg border bg-surface-muted/30 p-2">
+          <div className="flex items-center gap-2">
+            <label className="sr-only" htmlFor={`entry-otherform-${row.id}`}>
+              {t("createEntry.otherFormLabel")}
+            </label>
+            <input
+              id={`entry-otherform-${row.id}`}
+              value={row.form}
+              onChange={(e) =>
+                onChange(forms.map((f) => (f.id === row.id ? { ...f, form: e.target.value } : f)))
+              }
+              placeholder={t("createEntry.otherFormPlaceholder")}
+              className="min-w-0 flex-1 rounded-lg border bg-surface px-3 py-2 text-sm text-content outline-none placeholder:text-content-subtle focus:ring-2"
+            />
+            <button
+              type="button"
+              onClick={() => onChange(forms.filter((f) => f.id !== row.id))}
+              aria-label={t("createEntry.removeOtherForm")}
+              title={t("createEntry.removeOtherForm")}
+              className="shrink-0 rounded-lg px-2 py-1 text-lg leading-none text-content-subtle hover:bg-surface-muted hover:text-content"
+            >
+              ×
+            </button>
+          </div>
+          <AnnotationEditor
+            idPrefix={`entry-otherform-annotation-${row.id}`}
+            tags={row.annotation !== null ? [row.annotation] : []}
+            // A form carries exactly one label: adding a new one replaces it.
+            onChange={(tags) =>
+              onChange(
+                forms.map((f) =>
+                  f.id === row.id ? { ...f, annotation: tags[tags.length - 1] ?? null } : f,
+                ),
+              )
+            }
+            addLabel={t("createEntry.addOtherFormLabel")}
+            suggestions={suggestions}
+          />
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={() => onChange([...forms, { id: nextAnnotationId++, annotation: null, form: "" }])}
+        className="mt-2 text-sm text-primary hover:text-primary-hover"
+      >
+        {t("createEntry.addOtherForm")}
+      </button>
+    </>
+  );
+}
+
+/** Editor for the entry's bibliographic references: display text + optional URL. */
+function ReferencesEditor({
+  references,
+  onChange,
+}: {
+  references: EntryReference[];
+  onChange: (references: EntryReference[]) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      {references.map((ref, i) => (
+        <div key={i} className="mt-2 rounded-lg border bg-surface-muted/30 p-2">
+          <div className="flex items-center gap-2">
+            <label className="sr-only" htmlFor={`entry-reference-text-${i}`}>
+              {t("createEntry.referenceTextLabel")}
+            </label>
+            <input
+              id={`entry-reference-text-${i}`}
+              value={ref.text}
+              onChange={(e) =>
+                onChange(references.map((r, j) => (j === i ? { ...r, text: e.target.value } : r)))
+              }
+              placeholder={t("createEntry.referenceTextPlaceholder")}
+              className="min-w-0 flex-1 rounded-lg border bg-surface px-3 py-2 text-sm text-content outline-none placeholder:text-content-subtle focus:ring-2"
+            />
+            <button
+              type="button"
+              onClick={() => onChange(references.filter((_, j) => j !== i))}
+              aria-label={t("createEntry.removeReference")}
+              title={t("createEntry.removeReference")}
+              className="shrink-0 rounded-lg px-2 py-1 text-lg leading-none text-content-subtle hover:bg-surface-muted hover:text-content"
+            >
+              ×
+            </button>
+          </div>
+          <label className="sr-only" htmlFor={`entry-reference-url-${i}`}>
+            {t("createEntry.referenceUrlLabel")}
+          </label>
+          <input
+            id={`entry-reference-url-${i}`}
+            value={ref.url ?? ""}
+            onChange={(e) =>
+              onChange(references.map((r, j) => (j === i ? { ...r, url: e.target.value } : r)))
+            }
+            placeholder={t("createEntry.referenceUrlPlaceholder")}
+            className="mt-2 w-full min-w-0 rounded-lg border bg-surface px-3 py-2 text-sm text-content outline-none placeholder:text-content-subtle focus:ring-2"
+          />
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={() => onChange([...references, { text: "" }])}
+        className="mt-2 text-sm text-primary hover:text-primary-hover"
+      >
+        {t("createEntry.addReference")}
+      </button>
+    </>
+  );
+}
+
+/**
  * Non-blocking heads-up shown while creating a brand-new entry: existing
  * current entries in the target language that already use one of the
  * spellings being typed. Each can be expanded into a full inline preview
@@ -387,14 +523,99 @@ function DuplicateWarning({ duplicates }: { duplicates: EntryView[] }) {
   );
 }
 
-/** Editor leaf payload: one definition's note chips and text. */
+/**
+ * A minimal editable list of free-text strings (one input per item, add and
+ * remove). Used for a node's plain notes and for the entry-level notes.
+ */
+function StringList({
+  items,
+  onChange,
+  idPrefix,
+  itemLabel,
+  placeholder,
+  addLabel,
+  removeLabel,
+  rows,
+}: {
+  items: string[];
+  onChange: (items: string[]) => void;
+  idPrefix: string;
+  itemLabel: string;
+  placeholder: string;
+  addLabel: string;
+  removeLabel: string;
+  rows?: number;
+}) {
+  return (
+    <>
+      {items.map((item, i) => (
+        <div key={i} className="mt-2 flex items-start gap-2">
+          <label className="sr-only" htmlFor={`${idPrefix}-${i}`}>
+            {itemLabel}
+          </label>
+          {rows !== undefined ? (
+            <textarea
+              id={`${idPrefix}-${i}`}
+              value={item}
+              onChange={(e) => onChange(items.map((s, j) => (j === i ? e.target.value : s)))}
+              placeholder={placeholder}
+              rows={rows}
+              className="min-w-0 flex-1 rounded-lg border bg-surface px-3 py-2 text-sm text-content outline-none placeholder:text-content-subtle focus:ring-2"
+            />
+          ) : (
+            <input
+              id={`${idPrefix}-${i}`}
+              value={item}
+              onChange={(e) => onChange(items.map((s, j) => (j === i ? e.target.value : s)))}
+              placeholder={placeholder}
+              className="min-w-0 flex-1 rounded-lg border bg-surface px-3 py-2 text-sm text-content outline-none placeholder:text-content-subtle focus:ring-2"
+            />
+          )}
+          <button
+            type="button"
+            onClick={() => onChange(items.filter((_, j) => j !== i))}
+            aria-label={removeLabel}
+            title={removeLabel}
+            className="shrink-0 rounded-lg px-2 py-1 text-lg leading-none text-content-subtle hover:bg-surface-muted hover:text-content"
+          >
+            ×
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={() => onChange([...items, ""])}
+        className="mt-2 text-sm text-primary hover:text-primary-hover"
+      >
+        {addLabel}
+      </button>
+    </>
+  );
+}
+
+/** Editor leaf payload: one definition's note chips, plain notes and text. */
 interface DefinitionDraft {
   notes: AnnotationTag[];
+  plainNotes: string[];
   text: string;
+}
+
+/** Editor group-node payload: a heading's note chips and plain notes (no text). */
+interface GroupDraft {
+  notes: AnnotationTag[];
+  plainNotes: string[];
+}
+
+/** Editor row for one other grammatical form: an abbreviation + the spelling. */
+interface OtherFormDraft {
+  id: number;
+  annotation: AnnotationTag | null;
+  form: string;
 }
 
 let nextNodeId = 0;
 const mintNodeId = () => nextNodeId++;
+const emptyGroupDraft = (): GroupDraft => ({ notes: [], plainNotes: [] });
 
 export interface EntryEditorDialogProps {
   /** All known languages, for the in-dialog picker when none was preselected. */
@@ -450,15 +671,26 @@ export function EntryEditorDialog({
   const [categories, setCategories] = useState<AnnotationTag[]>(() =>
     toAnnotationTags(initial?.categories ?? []),
   );
-  const [definitions, setDefinitions] = useState<EditNode<DefinitionDraft>[]>(() =>
+  const [otherForms, setOtherForms] = useState<OtherFormDraft[]>(() =>
+    (initial?.otherForms ?? []).map((f) => ({
+      id: nextAnnotationId++,
+      annotation: { ...f.annotation, id: nextAnnotationId++ },
+      form: f.form,
+    })),
+  );
+  const [definitions, setDefinitions] = useState<EditNode<DefinitionDraft, GroupDraft>[]>(() =>
     initial
       ? fromRecordDefinitions(
           initial.definitions,
-          (d) => ({ notes: toAnnotationTags(d.notes), text: d.text }),
+          (d) => ({ notes: toAnnotationTags(d.notes), plainNotes: d.plainNotes ?? [], text: d.text ?? "" }),
+          (d) => ({ notes: toAnnotationTags(d.notes), plainNotes: d.plainNotes ?? [] }),
+          emptyGroupDraft,
           mintNodeId,
         )
-      : [{ kind: "leaf", id: mintNodeId(), payload: { notes: [], text: "" } }],
+      : [{ kind: "leaf", id: mintNodeId(), payload: { notes: [], plainNotes: [], text: "" } }],
   );
+  const [entryNotes, setEntryNotes] = useState<string[]>(initial?.notes ?? []);
+  const [references, setReferences] = useState<EntryReference[]>(initial?.references ?? []);
   const [todoItems, setTodoItems] = useState<string[]>(initial?.todo ?? []);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -525,16 +757,45 @@ export function EntryEditorDialog({
   }, [subject, targetTag, spellingsKey]);
 
   const cleanTodo = todoItems.map((s) => s.trim()).filter((s) => s !== "");
-  const cleanDefinitions = toRecordDefinitions(definitions, (payload) =>
-    payload.text.trim() === ""
-      ? null
-      : {
-          notes: payload.notes.map(toRecordAnnotation),
-          text: payload.text.trim(),
-        },
+  const cleanNotes = entryNotes.map((s) => s.trim()).filter((s) => s !== "");
+  const cleanReferences: EntryReference[] = references
+    .map((r) => ({ text: r.text.trim(), ...(r.url && r.url.trim() !== "" ? { url: r.url.trim() } : {}) }))
+    .filter((r) => r.text !== "");
+  const cleanOtherForms: EntryInflectedForm[] = otherForms
+    .filter((f) => f.annotation !== null && f.form.trim() !== "")
+    .map((f) => ({ annotation: toRecordAnnotation(f.annotation!), form: f.form.trim() }));
+  const cleanPlainNotes = (notes: string[]) => notes.map((s) => s.trim()).filter((s) => s !== "");
+  // Serialize the editor tree to record definitions under the tree place
+  // convention: leaves become definitions with text, annotated group nodes
+  // become group items (notes only), bare groups stay implicit.
+  const cleanDefinitions = toRecordDefinitions(
+    definitions,
+    (payload) =>
+      payload.text.trim() === ""
+        ? null
+        : {
+            notes: payload.notes.map(toRecordAnnotation),
+            ...(cleanPlainNotes(payload.plainNotes).length > 0
+              ? { plainNotes: cleanPlainNotes(payload.plainNotes) }
+              : {}),
+            text: payload.text.trim(),
+          },
+    (group) => {
+      const notes = group.notes.map(toRecordAnnotation);
+      const plainNotes = cleanPlainNotes(group.plainNotes);
+      // A group is only worth an explicit record item when it carries content.
+      return notes.length === 0 && plainNotes.length === 0
+        ? null
+        : { notes, ...(plainNotes.length > 0 ? { plainNotes } : {}) };
+    },
   );
+  // Last guard before writing: the tree must serialize to a strictly valid
+  // definitions list. A failure blocks submit rather than publishing a
+  // malformed record.
+  const definitionsError =
+    cleanDefinitions.length === 0 ? "empty" : checkRecordDefinitions(cleanDefinitions);
   const canSubmit =
-    !submitting && target !== null && cleanSpellings.length > 0 && cleanDefinitions.length > 0;
+    !submitting && target !== null && cleanSpellings.length > 0 && definitionsError === "ok";
 
   async function onSubmit() {
     if (!canSubmit || !agent || !did || target === null) return;
@@ -544,7 +805,10 @@ export function EntryEditorDialog({
       languageID: target.tag,
       orthography: cleanSpellings,
       categories: categories.map(toRecordAnnotation),
+      ...(cleanOtherForms.length > 0 ? { otherForms: cleanOtherForms } : {}),
       definitions: cleanDefinitions,
+      ...(cleanNotes.length > 0 ? { notes: cleanNotes } : {}),
+      ...(cleanReferences.length > 0 ? { references: cleanReferences } : {}),
       ...(subject !== undefined ? { subject } : {}),
       // An empty list clears the entry's needs-attention flag; `botSource`
       // is preserved so the content keeps its source traceability.
@@ -577,6 +841,14 @@ export function EntryEditorDialog({
   const definitionLabels = editTreeLabels(definitions);
   const leafCount = collectLeaves(definitions).length;
 
+  // Which nodes have their (optional) abbreviation field revealed. It is
+  // hidden by default — most definitions carry none — and opened by the
+  // "+ add an abbreviation" action or automatically when the node already has
+  // abbreviations (e.g. when proposing changes to an existing entry).
+  const [abbrevOpen, setAbbrevOpen] = useState<Set<number>>(new Set());
+  const revealAbbrev = (id: number) =>
+    setAbbrevOpen((prev) => new Set(prev).add(id));
+
   function moveButton(label: string, glyph: string, onClick: () => void) {
     return (
       <button
@@ -591,50 +863,128 @@ export function EntryEditorDialog({
     );
   }
 
-  function renderDefinitionNodes(nodes: EditNode<DefinitionDraft>[]): ReactNode {
+  // Movement controls for a definition proper (a leaf). Groups have none —
+  // they emerge and vanish implicitly as their definitions are nested, so a
+  // heading is never moved on its own; ↑ ↓ walk a definition through the
+  // sequence (crossing group edges), ← → change its nesting depth.
+  function leafControls(id: number) {
+    return (
+      <div className="ml-auto flex shrink-0 items-center gap-1">
+        {moveButton(t("createEntry.moveUp"), "↑", () =>
+          setDefinitions((prev) => moveUp(prev, id)),
+        )}
+        {moveButton(t("createEntry.moveDown"), "↓", () =>
+          setDefinitions((prev) => moveDown(prev, id)),
+        )}
+        {moveButton(t("createEntry.moveShallower"), "←", () =>
+          setDefinitions((prev) => outdent(prev, id)),
+        )}
+        {moveButton(t("createEntry.moveDeeper"), "→", () =>
+          setDefinitions((prev) => indent(prev, id, mintNodeId, emptyGroupDraft)),
+        )}
+        {leafCount > 1 && (
+          <button
+            type="button"
+            onClick={() => setDefinitions((prev) => removeLeaf(prev, id))}
+            aria-label={t("createEntry.removeDefinition")}
+            title={t("createEntry.removeDefinition")}
+            className="rounded-lg px-1.5 py-0.5 text-base leading-none text-content-subtle hover:bg-surface-muted hover:text-content"
+          >
+            ×
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  // Shared notes area for a node: the free-text notes list, plus an OPTIONAL
+  // abbreviation editor that stays hidden behind a "+ add an abbreviation"
+  // action until it is opened (or the node already carries abbreviations).
+  function nodeNotes(
+    idPrefix: string,
+    notes: AnnotationTag[],
+    plainNotes: string[],
+    setNotes: (notes: AnnotationTag[]) => void,
+    setPlainNotes: (plainNotes: string[]) => void,
+    revealKey: number,
+  ) {
+    const showAbbrev = notes.length > 0 || abbrevOpen.has(revealKey);
+    return (
+      <div className="mt-2">
+        <StringList
+          items={plainNotes}
+          onChange={setPlainNotes}
+          idPrefix={`${idPrefix}-plainnote`}
+          itemLabel={t("createEntry.plainNoteLabel")}
+          placeholder={t("createEntry.plainNotePlaceholder")}
+          addLabel={t("createEntry.addPlainNote")}
+          removeLabel={t("createEntry.removePlainNote")}
+        />
+        {showAbbrev ? (
+          <div className="mt-2">
+            <p className="text-xs text-content-subtle">{t("createEntry.notesHelp")}</p>
+            <AnnotationEditor
+              idPrefix={`${idPrefix}-note`}
+              tags={notes}
+              onChange={setNotes}
+              addLabel={t("createEntry.addNote")}
+              suggestions={abbreviations}
+            />
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => revealAbbrev(revealKey)}
+            className="mt-1 text-sm text-primary hover:text-primary-hover"
+          >
+            {t("createEntry.addAbbreviation")}
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  function renderDefinitionNodes(nodes: EditNode<DefinitionDraft, GroupDraft>[]): ReactNode {
     return nodes.map((node) => {
       if (node.kind === "group") {
+        // A group node is a HEADING over the definitions nested under it: it
+        // carries notes but no text, and has no move arrows of its own — it
+        // appears and disappears as its definitions are nested. Styled as a
+        // heading band, visually distinct from a definition card.
         return (
           <div
             key={node.id}
-            className="mt-3 rounded-lg border border-l-4 bg-surface-muted/20 p-2 pl-3 sm:pl-4"
+            className="mt-3 rounded-lg border border-dashed border-l-4 border-l-primary/60 bg-surface-muted/10 p-2 pl-3 sm:pl-4"
           >
-            <p className="font-mono text-xs text-content-subtle">{definitionLabels.get(node.id)}</p>
+            <div className="flex items-baseline gap-2">
+              <span className="shrink-0 font-mono text-sm font-semibold text-content">
+                {definitionLabels.get(node.id)}
+              </span>
+              <span className="text-xs uppercase tracking-wide text-content-subtle">
+                {t("createEntry.groupBadge")}
+              </span>
+            </div>
+            <p className="mt-0.5 text-xs text-content-subtle">{t("createEntry.groupNotesHelp")}</p>
+            {nodeNotes(
+              `entry-group-${node.id}`,
+              node.group.notes,
+              node.group.plainNotes,
+              (notes) => setDefinitions((prev) => updateGroup(prev, node.id, (g) => ({ ...g, notes }))),
+              (plainNotes) =>
+                setDefinitions((prev) => updateGroup(prev, node.id, (g) => ({ ...g, plainNotes }))),
+              node.id,
+            )}
             {renderDefinitionNodes(node.children)}
           </div>
         );
       }
       return (
-        <div key={node.id} className="mt-3 rounded-lg border bg-surface-muted/30 p-3">
+        <div key={node.id} className="mt-3 rounded-lg border bg-surface-muted/40 p-3 shadow-sm">
           <div className="flex items-center gap-2">
-            <span className="shrink-0 font-mono text-xs text-content-subtle">
+            <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 font-mono text-xs font-semibold text-primary">
               {definitionLabels.get(node.id)}
             </span>
-            <div className="ml-auto flex shrink-0 items-center gap-1">
-              {moveButton(t("createEntry.moveUp"), "↑", () =>
-                setDefinitions((prev) => moveUp(prev, node.id)),
-              )}
-              {moveButton(t("createEntry.moveDown"), "↓", () =>
-                setDefinitions((prev) => moveDown(prev, node.id)),
-              )}
-              {moveButton(t("createEntry.moveShallower"), "←", () =>
-                setDefinitions((prev) => outdent(prev, node.id)),
-              )}
-              {moveButton(t("createEntry.moveDeeper"), "→", () =>
-                setDefinitions((prev) => indent(prev, node.id, mintNodeId)),
-              )}
-              {leafCount > 1 && (
-                <button
-                  type="button"
-                  onClick={() => setDefinitions((prev) => removeLeaf(prev, node.id))}
-                  aria-label={t("createEntry.removeDefinition")}
-                  title={t("createEntry.removeDefinition")}
-                  className="rounded-lg px-1.5 py-0.5 text-base leading-none text-content-subtle hover:bg-surface-muted hover:text-content"
-                >
-                  ×
-                </button>
-              )}
-            </div>
+            {leafControls(node.id)}
           </div>
           <label className="sr-only" htmlFor={`entry-definition-text-${node.id}`}>
             {t("createEntry.definitionTextLabel")}
@@ -651,18 +1001,15 @@ export function EntryEditorDialog({
             rows={2}
             className="mt-2 w-full min-w-0 rounded-lg border bg-surface px-3 py-2 text-sm text-content outline-none placeholder:text-content-subtle focus:ring-2"
           />
-          <div className="mt-2">
-            <p className="text-xs text-content-subtle">{t("createEntry.notesHelp")}</p>
-            <AnnotationEditor
-              idPrefix={`entry-definition-note-${node.id}`}
-              tags={node.payload.notes}
-              onChange={(notes) =>
-                setDefinitions((prev) => updateLeaf(prev, node.id, (p) => ({ ...p, notes })))
-              }
-              addLabel={t("createEntry.addNote")}
-              suggestions={abbreviations}
-            />
-          </div>
+          {nodeNotes(
+            `entry-definition-${node.id}`,
+            node.payload.notes,
+            node.payload.plainNotes,
+            (notes) => setDefinitions((prev) => updateLeaf(prev, node.id, (p) => ({ ...p, notes }))),
+            (plainNotes) =>
+              setDefinitions((prev) => updateLeaf(prev, node.id, (p) => ({ ...p, plainNotes }))),
+            node.id,
+          )}
         </div>
       );
     });
@@ -788,6 +1135,18 @@ export function EntryEditorDialog({
 
           <fieldset className="mt-5">
             <legend className="text-sm font-medium text-content">
+              {t("createEntry.otherFormsLegend")}
+            </legend>
+            <p className="mt-1 text-xs text-content-subtle">{t("createEntry.otherFormsHelp")}</p>
+            <OtherFormsEditor
+              forms={otherForms}
+              onChange={setOtherForms}
+              suggestions={abbreviations}
+            />
+          </fieldset>
+
+          <fieldset className="mt-5">
+            <legend className="text-sm font-medium text-content">
               {t("createEntry.definitionsLegend")}
             </legend>
             <p className="mt-1 text-xs text-content-subtle">
@@ -799,13 +1158,41 @@ export function EntryEditorDialog({
               onClick={() =>
                 setDefinitions((prev) => [
                   ...prev,
-                  { kind: "leaf", id: mintNodeId(), payload: { notes: [], text: "" } },
+                  { kind: "leaf", id: mintNodeId(), payload: { notes: [], plainNotes: [], text: "" } },
                 ])
               }
               className="mt-2 text-sm text-primary hover:text-primary-hover"
             >
               {t("createEntry.addDefinition")}
             </button>
+            {definitionsError !== "ok" && definitionsError !== "empty" && (
+              <p className="mt-2 text-xs text-red-600">{t("createEntry.definitionsInvalid")}</p>
+            )}
+          </fieldset>
+
+          <fieldset className="mt-5">
+            <legend className="text-sm font-medium text-content">
+              {t("createEntry.notesLegend")}
+            </legend>
+            <p className="mt-1 text-xs text-content-subtle">{t("createEntry.notesLegendHelp")}</p>
+            <StringList
+              items={entryNotes}
+              onChange={setEntryNotes}
+              idPrefix="entry-note"
+              itemLabel={t("createEntry.entryNoteLabel")}
+              placeholder={t("createEntry.entryNotePlaceholder")}
+              addLabel={t("createEntry.addEntryNote")}
+              removeLabel={t("createEntry.removeEntryNote")}
+              rows={2}
+            />
+          </fieldset>
+
+          <fieldset className="mt-5">
+            <legend className="text-sm font-medium text-content">
+              {t("createEntry.referencesLegend")}
+            </legend>
+            <p className="mt-1 text-xs text-content-subtle">{t("createEntry.referencesHelp")}</p>
+            <ReferencesEditor references={references} onChange={setReferences} />
           </fieldset>
 
           <fieldset className="mt-5">

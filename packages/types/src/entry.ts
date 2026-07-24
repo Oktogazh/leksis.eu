@@ -29,23 +29,51 @@ export interface EntryAnnotation {
 }
 
 /**
- * One definition of an entry. `definitions` is a flat list, each definition
- * carrying its coordinate (`place`) in a hierarchy of up to three dimensions:
- * one 0-based index per dimension, deepest last, so the place's length is the
- * definition's own depth ([0] = first top-level definition; [1, 0] = first
- * sub-definition of the second). Numbering in the UI follows the entry's
- * deepest place length: 1 → arabic; 2 → roman then arabic; 3 → letters,
- * roman, then arabic.
+ * One node of an entry's definition tree. `definitions` is a flat list, each
+ * node carrying its address (`place`) in a hierarchy of up to three
+ * dimensions. The LAST index of a place is the node type: non-zero means a
+ * leaf — the definition proper, which carries `text`; 0 means a group node —
+ * a heading that carries notes but no text (e.g. a "transitive" grouping over
+ * several senses). A non-last index of 0 means "no grouping at that
+ * dimension", so a place can render shallower than its length ([0, 1, 1] =
+ * I. 1., [1] = [0, 1] = [0, 0, 1] = 1.). Bare grouping (a group with no notes)
+ * is left implicit — such a group need not appear in the list; the hierarchy
+ * is inferred from the leaves. Numbering: each non-zero index n shows as the
+ * n-th label of its dimension, each 0 is skipped, and the scheme follows the
+ * displayed depth (1 → arabic; 2 → roman, arabic; 3 → letters, roman, arabic).
  */
 export interface EntryDefinition {
   place: number[];
-  /** Ordered lexicographic notes shown before the text. */
+  /** Ordered abbreviation notes shown before the node's content. */
   notes: EntryAnnotation[];
-  text: string;
+  /** Free-text notes shown before the node's content (neither abbreviation nor definition text). */
+  plainNotes?: string[];
+  /** The definition text — present on and only on a leaf (place ending non-zero). */
+  text?: string;
 }
 
 /** Maximum depth of the definitions hierarchy (a place's maximum length). */
 export const ENTRY_DEFINITIONS_MAX_DEPTH = 3;
+
+/**
+ * An inflected/other grammatical form of the word (plural, gerund…): an
+ * abbreviation from the entry's pool plus the form's spelling.
+ */
+export interface EntryInflectedForm {
+  annotation: EntryAnnotation;
+  form: string;
+}
+
+/** A bibliographic reference for the entry: display text and an optional URL. */
+export interface EntryReference {
+  text: string;
+  url?: string;
+}
+
+/** Whether a place addresses a leaf (last index non-zero) rather than a group node. */
+export function isLeafPlace(place: number[]): boolean {
+  return place.length > 0 && place[place.length - 1] !== 0;
+}
 
 /** Lexicographic (reading-order) comparison of two definition places. */
 export function compareDefinitionPlaces(a: number[], b: number[]): number {
@@ -67,27 +95,80 @@ export function isValidDefinitionPlace(value: unknown): value is number[] {
 }
 
 /**
- * Whole-list place invariants, given each place is already well-formed:
- * sorted in reading order, sibling indices contiguous from 0, and no place a
- * prefix of another (a definition cannot also be a group). Walked pairwise:
- * each place must increment its predecessor at exactly one level and reset
- * the deeper ones to 0.
+ * Whole-tree validation of a definitions list under the tree model.
+ * Each definition must already be well-formed ({ place, notes, plainNotes?,
+ * text? }); this checks the coordinate invariants and the leaf/group text
+ * rule, and returns a machine code so the editor and the API report the same
+ * failure. `ok` is the sole success value.
+ *
+ * Rules, over the list in its given order:
+ *  - a leaf (place ending non-zero) must carry non-empty text; a group node
+ *    (place ending in 0) must not carry text ("text-rule");
+ *  - places are strictly sorted in reading order ("order");
+ *  - sibling indices are contiguous from 1 within each parent, and a group
+ *    slot (a non-last index) that some node uses is opened by a matching
+ *    group node or leaf beneath it — i.e. no gaps and no orphan depth
+ *    ("structure");
+ *  - at least one leaf exists ("empty").
  */
-export function validDefinitionPlaces(places: number[][]): boolean {
+export type DefinitionsError = "order" | "structure" | "text-rule" | "empty";
+
+export function validateDefinitions(
+  definitions: readonly EntryDefinition[],
+): DefinitionsError | "ok" {
+  if (definitions.length === 0) return "empty";
+
   let prev: number[] | null = null;
-  for (const place of places) {
-    if (prev === null) {
-      if (place.some((n) => n !== 0)) return false;
-    } else {
-      let branch = 0;
-      while (branch < prev.length && prev[branch] === place[branch]) branch++;
-      if (branch >= prev.length || branch >= place.length) return false; // prefix or duplicate
-      if (place[branch] !== prev[branch]! + 1) return false; // gap or regression
-      if (place.slice(branch + 1).some((n) => n !== 0)) return false;
+  let leaves = 0;
+  // For each depth d (0-based dimension), the highest non-zero index seen so
+  // far under the current prefix — used to check "contiguous from 1" and to
+  // detect gaps. Reset when the prefix above changes.
+  for (const def of definitions) {
+    const place = def.place;
+    const leaf = isLeafPlace(place);
+    if (leaf) leaves += 1;
+
+    // text-rule: leaves need text, group nodes must not have it.
+    const hasText = typeof def.text === "string" && def.text.trim() !== "";
+    if (leaf && !hasText) return "text-rule";
+    if (!leaf && hasText) return "text-rule";
+
+    if (prev !== null) {
+      if (compareDefinitionPlaces(prev, place) >= 0) return "order";
     }
     prev = place;
   }
-  return true;
+
+  if (leaves === 0) return "empty";
+
+  // structure: rebuild the tree from displayed coordinates and check that
+  // every parent's children are contiguous from 1. A place's displayed path
+  // is its sequence of non-zero indices (0s are skipped), truncated so that a
+  // trailing 0 (group node) is dropped only as the type marker, not the path.
+  // We validate on the raw indices per dimension instead: group siblings live
+  // at the same prefix and must be 1,2,3,… with no gaps.
+  const seen = new Set<string>();
+  const childMax = new Map<string, number>(); // prefix → highest child index used
+  for (const { place } of definitions) {
+    // Walk each dimension; the value at dimension i is a child of the prefix
+    // place[0..i-1]. Zero at a non-last dimension = degenerate (no grouping),
+    // which is always allowed and shares the "0" slot; a non-zero value must
+    // be contiguous with its siblings.
+    for (let i = 0; i < place.length; i++) {
+      const value = place[i]!;
+      const prefix = place.slice(0, i).join(",");
+      if (value === 0) continue; // degenerate slot or group marker — no sibling constraint
+      const key = `${prefix}|${i}`;
+      const max = childMax.get(key) ?? 0;
+      if (value > max + 1) return "structure"; // gap (e.g. jumped to 3 with no 2)
+      if (value > max) childMax.set(key, value);
+    }
+    const k = place.join(",");
+    if (seen.has(k)) return "structure";
+    seen.add(k);
+  }
+
+  return "ok";
 }
 
 /**
@@ -105,11 +186,20 @@ export interface LeksisEntryRecord {
   /** Ordered grammatical categories of the entry. */
   categories: EntryAnnotation[];
   /**
-   * Flat list of definitions, sorted by `place` (see EntryDefinition).
-   * Coordinates are meaningful: future fields reference a definition by its
-   * place.
+   * Other grammatical forms (plural, gerund…), each an abbreviation from the
+   * entry's pool plus the form's spelling. The AppView indexes each form for
+   * search. Absent when the entry has none.
+   */
+  otherForms?: EntryInflectedForm[];
+  /**
+   * Flat list of definition-tree nodes, sorted by `place` (see
+   * EntryDefinition). Leaves carry text; group nodes carry notes only.
    */
   definitions: EntryDefinition[];
+  /** Entry-level free-text notes shown below the definitions. Absent when none. */
+  notes?: string[];
+  /** Bibliographic references shown at the bottom of the entry. Absent when none. */
+  references?: EntryReference[];
   /** AT URI of the record version this modifies; absent for a new entry. */
   subject?: string;
   /**

@@ -26,11 +26,26 @@
             "items": { "type": "ref", "ref": "#annotation" },
             "description": "Ordered grammatical categories of the entry (e.g. \"n.\"/\"noun\", \"f.\"/\"feminine\"). Freeform, not an enforced vocabulary."
           },
+          "otherForms": {
+            "type": "array",
+            "items": { "type": "ref", "ref": "#inflectedForm" },
+            "description": "Other grammatical forms of the word (plural, gerund, construct state…), each an abbreviation-tagged form (e.g. \"pl.\"/\"plural\" + \"bugale\"). The abbreviations are drawn from the same per-language pool as the entry's categories and definition notes; the AppView indexes each form's spelling for search so an inflected form leads back to its entry."
+          },
           "definitions": {
             "type": "array",
             "minLength": 1,
             "items": { "type": "ref", "ref": "#definition" },
-            "description": "The entry's definitions as a flat list, each carrying its coordinate (`place`) in a hierarchy of up to three dimensions. The array is sorted by `place` (lexicographic reading order). Coordinates are meaningful: future fields reference a definition by its place."
+            "description": "The entry's definitions as a flat list, each item a node of a hierarchy of up to three dimensions addressed by its `place`. A node whose place ends in a non-zero index is a leaf (the definition proper: it carries `text`); a node whose place ends in 0 is a group node (a heading that carries notes but no text — e.g. the \"transitive\" grouping over several senses). Bare grouping (a group with no notes) is left implicit — it need not appear as its own item; the hierarchy is inferred from the leaves. The array is sorted by `place` in reading order."
+          },
+          "notes": {
+            "type": "array",
+            "items": { "type": "string", "maxLength": 2048, "maxGraphemes": 1024 },
+            "description": "Entry-level free-text notes shown below the definitions (usage remarks, provenance, editorial comments). Freeform prose, not abbreviations."
+          },
+          "references": {
+            "type": "array",
+            "items": { "type": "ref", "ref": "#reference" },
+            "description": "Bibliographic references and sources for the entry, shown at the bottom of the entry alongside the (bot-only) botSource."
           },
           "subject": {
             "type": "string",
@@ -91,25 +106,64 @@
     },
     "definition": {
       "type": "object",
-      "required": ["place", "notes", "text"],
+      "required": ["place"],
       "properties": {
         "place": {
           "type": "array",
           "minLength": 1,
           "maxLength": 3,
           "items": { "type": "integer", "minimum": 0 },
-          "description": "Coordinate of the definition in the entry's hierarchy: one 0-based index per dimension, deepest last, so the length is the definition's own depth (e.g. [0] = first top-level definition; [1, 0] = first sub-definition of the second). Across the entry, places must be sorted, sibling indices contiguous from 0, and no place a prefix of another (a definition cannot also be a group). Display numbering follows the deepest place length used: 1 → arabic; 2 → roman, arabic; 3 → letters, roman, arabic."
+          "description": "Address of the node in the entry's tree: one index per dimension, deepest last. The LAST index is the node type — non-zero means a leaf (the definition proper, so `text` is required), 0 means a group node (a heading carrying notes but no text). A non-last index of 0 means \"no grouping at that dimension\", so a place can render shallower than its length (e.g. [0,1,1] = I. 1., [1] = [0,1] = [0,0,1] = 1.). In display each non-zero index n shows as the n-th label of its dimension and each 0 is skipped; numbering by displayed depth: 1 → arabic; 2 → roman, arabic; 3 → letters, roman, arabic (so [1,2,0] = A. II., [1,1,1] = A. I. 1.). Across the entry, places are sorted in reading order and sibling indices are contiguous from 1."
         },
         "notes": {
           "type": "array",
           "items": { "type": "ref", "ref": "#annotation" },
-          "description": "Ordered lexicographic notes shown before the definition text (e.g. \"by ext.\"/\"by extension\", \"arch.\"/\"archaic\"). May be empty."
+          "description": "Ordered abbreviation notes shown before the node's content (e.g. \"by ext.\"/\"by extension\", \"arch.\"/\"archaic\"). Allowed on leaves and group nodes alike. May be empty."
+        },
+        "plainNotes": {
+          "type": "array",
+          "items": { "type": "string", "maxLength": 2048, "maxGraphemes": 1024 },
+          "description": "Free-text notes shown before the node's content — remarks that are neither abbreviations nor part of the definition text. Allowed on leaves and group nodes alike."
         },
         "text": {
           "type": "string",
           "maxLength": 4096,
           "maxGraphemes": 2048,
-          "description": "The definition text."
+          "description": "The definition text. Required on and only on a leaf (place ending in a non-zero index); a group node (place ending in 0) must not carry text."
+        }
+      }
+    },
+    "inflectedForm": {
+      "type": "object",
+      "required": ["annotation", "form"],
+      "properties": {
+        "annotation": {
+          "type": "ref",
+          "ref": "#annotation",
+          "description": "The abbreviation labelling this form (e.g. \"pl.\"/\"plural\"), from the same per-language pool as categories and notes."
+        },
+        "form": {
+          "type": "string",
+          "maxLength": 256,
+          "maxGraphemes": 128,
+          "description": "The spelling of the inflected form (e.g. \"bugale\")."
+        }
+      }
+    },
+    "reference": {
+      "type": "object",
+      "required": ["text"],
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 512,
+          "maxGraphemes": 256,
+          "description": "The reference's display text (a citation, source name or note)."
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 2048,
+          "description": "Optional URL the reference links to."
         }
       }
     }

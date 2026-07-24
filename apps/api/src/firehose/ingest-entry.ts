@@ -1,11 +1,13 @@
 import { createHash } from "node:crypto";
 import { aql } from "arangojs";
 import {
+  isLeafPlace,
   isValidDefinitionPlace,
   isValidLanguageTag,
   normalizeLanguageTag,
-  validDefinitionPlaces,
+  validateDefinitions,
   type EntryAnnotation,
+  type EntryDefinition,
 } from "@leksis/types";
 import { db } from "../db";
 import { syncEntryAbbreviations, type AbbreviationPair } from "./abbreviations";
@@ -51,6 +53,8 @@ interface EntryDoc {
 interface ParsedEntry {
   languageID: string;
   orthography: string[];
+  /** Spellings of the entry's other grammatical forms, indexed for search. */
+  otherForms: string[];
   subject: string | null;
   todo: boolean;
   deleted: boolean;
@@ -79,29 +83,76 @@ function parseAnnotations(value: unknown): EntryAnnotation[] | null {
   return annotations;
 }
 
+/** Validate a `string[]` field; empty items are dropped, others trimmed. */
+function parsePlainNotes(value: unknown): string[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) return null;
+  const out: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string") return null;
+    const trimmed = item.trim();
+    if (trimmed !== "") out.push(trimmed);
+  }
+  return out;
+}
+
 /**
- * Validate the flat definitions list: a non-empty array of
- * {place, notes?, text} definitions whose places, in array order, satisfy
- * the whole-list invariants (sorted reading order, contiguous sibling
- * indices, no place a prefix of another). Returns every definition's notes
- * (they feed the abbreviations read model), or null when the list is
- * invalid.
+ * Validate the definitions tree and harvest every node's abbreviation notes
+ * (they feed the abbreviations read model). A node whose place ends non-zero
+ * is a leaf (text required); a node ending in 0 is a group (no text). The
+ * whole-tree invariants are checked by `validateDefinitions`. Returns the
+ * harvested notes, or null when the list is invalid.
  */
 function collectDefinitionNotes(value: unknown): EntryAnnotation[] | null {
   if (!Array.isArray(value) || value.length === 0) return null;
-  const places: number[][] = [];
+  const definitions: EntryDefinition[] = [];
   const notes: EntryAnnotation[] = [];
   for (const item of value) {
     if (typeof item !== "object" || item === null) return null;
     const def = item as Record<string, unknown>;
-    if (typeof def.text !== "string" || def.text.trim() === "") return null;
+    if (!isValidDefinitionPlace(def.place)) return null;
     const defNotes = parseAnnotations(def.notes);
     if (defNotes === null) return null;
     notes.push(...defNotes);
-    if (!isValidDefinitionPlace(def.place)) return null;
-    places.push(def.place);
+    const plainNotes = parsePlainNotes(def.plainNotes);
+    if (plainNotes === null) return null;
+    // `text` must be a string when present; the leaf/group text rule is
+    // enforced by validateDefinitions below.
+    let text: string | undefined;
+    if (def.text !== undefined) {
+      if (typeof def.text !== "string") return null;
+      text = def.text.trim();
+    }
+    const leaf = isLeafPlace(def.place);
+    definitions.push({ place: def.place, notes: defNotes, plainNotes, ...(leaf ? { text } : {}) });
   }
-  return validDefinitionPlaces(places) ? notes : null;
+  return validateDefinitions(definitions) === "ok" ? notes : null;
+}
+
+/**
+ * Validate the entry's other grammatical forms and return them: each is an
+ * abbreviation (harvested into the abbreviations pool) plus a non-empty form
+ * spelling (indexed for search). Returns null when the list is malformed.
+ */
+function parseOtherForms(
+  value: unknown,
+): { annotations: EntryAnnotation[]; forms: string[] } | null {
+  if (value === undefined) return { annotations: [], forms: [] };
+  if (!Array.isArray(value)) return null;
+  const annotations: EntryAnnotation[] = [];
+  const forms: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "object" || item === null) return null;
+    const f = item as Record<string, unknown>;
+    if (typeof f.form !== "string") return null;
+    const form = f.form.trim();
+    if (form === "") return null;
+    const annotation = parseAnnotations([f.annotation]);
+    if (annotation === null || annotation.length !== 1) return null;
+    annotations.push(annotation[0]!);
+    forms.push(form);
+  }
+  return { annotations, forms };
 }
 
 /**
@@ -130,13 +181,30 @@ function parseRecord(record: unknown): ParsedEntry | null {
   const categories = parseAnnotations(r.categories);
   if (categories === null) return null;
 
+  const otherForms = parseOtherForms(r.otherForms);
+  if (otherForms === null) return null;
+
   const notes = collectDefinitionNotes(r.definitions);
   if (notes === null) return null;
 
-  // The version's distinct annotation pairs — grammatical categories and
-  // definition notes alike — for the abbreviations read model.
+  // Entry-level free-text notes and references are record-only content: they
+  // are validated for well-formedness (so a malformed record is rejected
+  // whole), then dropped — the DB never stores the content.
+  if (parsePlainNotes(r.notes) === null) return null;
+  if (r.references !== undefined) {
+    if (!Array.isArray(r.references)) return null;
+    for (const item of r.references) {
+      if (typeof item !== "object" || item === null) return null;
+      const ref = item as Record<string, unknown>;
+      if (typeof ref.text !== "string" || ref.text.trim() === "") return null;
+      if (ref.url !== undefined && typeof ref.url !== "string") return null;
+    }
+  }
+
+  // The version's distinct annotation pairs — grammatical categories, other
+  // forms' labels and definition notes alike — for the abbreviations model.
   const pairs = new Map<string, AbbreviationPair>();
-  for (const { short, long } of [...categories, ...notes]) {
+  for (const { short, long } of [...categories, ...otherForms.annotations, ...notes]) {
     const pair = { short: short ?? null, long };
     pairs.set(`${pair.short ?? ""}\u0000${pair.long}`, pair);
   }
@@ -186,6 +254,7 @@ function parseRecord(record: unknown): ParsedEntry | null {
   return {
     languageID,
     orthography,
+    otherForms: otherForms.forms,
     subject,
     todo,
     deleted,
@@ -278,7 +347,15 @@ export async function ingestEntry(
     orthography: parsed.orthography,
     // A deleted version is withdrawn from search — its entry stays
     // addressable by entryKey, but never surfaces as a search result.
-    search: parsed.deleted ? [] : parsed.orthography.map((o) => o.toLowerCase()),
+    // Other grammatical forms are searchable too, so an inflected form (e.g.
+    // a plural) leads back to its entry.
+    search: parsed.deleted
+      ? []
+      : [
+          ...new Set(
+            [...parsed.orthography, ...parsed.otherForms].map((o) => o.toLowerCase()),
+          ),
+        ],
     recordURI,
     cid,
     authorDID,

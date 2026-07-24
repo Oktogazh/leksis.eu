@@ -3,6 +3,74 @@
 All notable changes to Leksis. This project follows the 8-week development
 timeline; each entry maps to a weekly milestone.
 
+## Entries — tree-shaped definitions, per-node notes, other forms, references
+
+The entry definitions move from a matrix-like coordinate to a **tree** the way
+a subchapter organises paragraphs, and the entry gains other grammatical forms,
+free-text notes and bibliographic references. The `place` array keeps its
+`number[]` shape; only its meaning changes, so no data migration is needed.
+
+### Lexicon & types (`lexicons/eu.leksis.entry.json`, `packages/types`)
+
+- **`place` reinterpreted as a tree address.** The last index is the node type:
+  non-zero → a leaf (the definition proper, which carries `text`); 0 → a group
+  node (a heading carrying notes but no text — e.g. a "transitive" grouping over
+  several senses). A non-last 0 means "no grouping at that dimension", so a
+  place can render shallower than its length (`[0,1,1]` = I. 1., `[1]` =
+  `[0,1]` = `[0,0,1]` = 1.). A non-zero index `n` shows as the n-th label of its
+  dimension; numbering follows the displayed depth (1 → arabic; 2 → roman,
+  arabic; 3 → letters, roman, arabic — so `[1,2,0]` = A. II., `[1,1,1]` =
+  A. I. 1.). `validDefinitionPlaces` is replaced by `validateDefinitions`
+  (returns `"ok"` or a rule code: `order` / `structure` / `text-rule` /
+  `empty`), shared by the API (strict at ingest) and the editor (last guard
+  before writing). `isLeafPlace` is exported. `EntryDefinition.text` is now
+  optional and gains `plainNotes: string[]` (free-text notes on a leaf or group
+  node, before the abbreviation notes). Bare grouping stays **implicit** — a
+  group appears in the array only when it carries notes.
+- **New entry fields:** `otherForms` (`{ annotation, form }[]` — plural, gerund…,
+  each an abbreviation from the entry's pool plus the spelling), `notes`
+  (`string[]`, entry-level free text below the definitions) and `references`
+  (`{ text, url? }[]`, shown with the bot-only `botSource` at the bottom). New
+  `#inflectedForm` and `#reference` defs; new `EntryInflectedForm` /
+  `EntryReference` types.
+
+### API (`apps/api/src/firehose/ingest-entry.ts`)
+
+- Validates the new definition shape (leaf/group text rule, `plainNotes`,
+  tree-place invariants), `otherForms`, entry `notes` and `references` — a
+  malformed record is still rejected whole; the new content stays record-only
+  and is dropped after validation, except that **each other-form's spelling is
+  added to the entry's `search` index** (deduped, lowercased) so an inflected
+  form leads back to its entry. Other-form and group-node abbreviations join the
+  harvested `abbreviations` read model alongside categories and definition
+  notes.
+
+### Web (`apps/web`)
+
+- **`lib/definition-tree.ts`** reworked for the new convention: numbering reads
+  a place directly (value → label, 0 skipped); group nodes carry their own
+  payload; `toRecordDefinitions` emits leaves and annotated groups (bare groups
+  implicit) with tree-correct places and a strict `checkRecordDefinitions`
+  guard; `fromRecordDefinitions` rebuilds the tree from mixed group/leaf items
+  and synthesises implicit groups. A bare definition beside a group is promoted
+  to its own numbered slot (I. 1. / I. 2. / II. 1.) so ordering stays total;
+  the round-trip is lossless. `updateGroup` added.
+- **Entry editor** (`CreateEntryPanel.tsx`): group nodes get their own notes +
+  plain-notes editors; leaves get a plain-notes editor; new *Other forms*,
+  *Notes* and *References* fieldsets; submit is blocked (with a message) when
+  the tree does not serialize to a valid definitions list. UX distinction
+  between a definition proper and a grouping heading is sharpened: a group is a
+  dashed heading band with a "grouping" badge and **no move arrows** (it emerges
+  and vanishes as its definitions are nested), a definition is a solid card with
+  the ↑ ↓ ← → controls. The abbreviation editor is **opt-in** — hidden behind a
+  "+ add an abbreviation" action beside "+ add a free-text note", and auto-shown
+  only when the node already carries one.
+- **Entry viewer** (`EntryPreview.tsx`, `EntryPage.tsx`): the definition list
+  renders group headings (notes, no text) and per-node plain notes and indents
+  by displayed depth; the entry page shows other forms (by the categories),
+  entry notes (below the definitions), and references + the read-only
+  `botSource` in the footer.
+
 ## Language dashboard reorg — record editing as a first-class action
 
 The per-language dashboard is re-sequenced and its name editing is promoted

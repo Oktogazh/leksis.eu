@@ -273,6 +273,27 @@ export function EntryPage({
                 })}
               </ul>
             )}
+            {record.otherForms !== undefined && record.otherForms.length > 0 && (
+              <ul
+                className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm"
+                aria-label={t("entry.otherFormsLabel")}
+              >
+                {record.otherForms.map((form, i) => (
+                  <li key={i} className="text-content">
+                    <span className="mr-1 font-mono text-xs text-content-muted">
+                      {form.annotation.short !== undefined ? (
+                        <abbr title={form.annotation.long} className="no-underline">
+                          {form.annotation.short}
+                        </abbr>
+                      ) : (
+                        form.annotation.long
+                      )}
+                    </span>
+                    {form.form}
+                  </li>
+                ))}
+              </ul>
+            )}
           </header>
 
           {record.todo !== undefined && record.todo.length > 0 && (
@@ -296,6 +317,19 @@ export function EntryPage({
             <h2 className="sr-only">{t("entry.definitionsLabel")}</h2>
             <DefinitionList definitions={record.definitions} abbreviations={abbreviations} />
           </section>
+
+          {record.notes !== undefined && record.notes.length > 0 && (
+            <section className="mt-6">
+              <h2 className="text-sm font-semibold text-content">{t("entry.notesLabel")}</h2>
+              <ul className="mt-2 space-y-1.5">
+                {record.notes.map((note, i) => (
+                  <li key={i} className="text-sm text-content-muted">
+                    {note}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
           {homonyms.length > 0 && (
             <section className="mt-8">
@@ -321,6 +355,49 @@ export function EntryPage({
           )}
 
           <footer className="mt-8 border-t pt-4">
+            {((record.references !== undefined && record.references.length > 0) ||
+              (record.botSource !== undefined && record.botSource !== "")) && (
+              <section className="mb-4">
+                <h2 className="text-sm font-semibold text-content">{t("entry.referencesLabel")}</h2>
+                <ul className="mt-2 space-y-1">
+                  {record.references?.map((ref, i) => (
+                    <li key={i} className="text-sm">
+                      {ref.url !== undefined && ref.url !== "" ? (
+                        <a
+                          href={ref.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="break-words text-primary hover:text-primary-hover"
+                        >
+                          {ref.text}
+                        </a>
+                      ) : (
+                        <span className="text-content-muted">{ref.text}</span>
+                      )}
+                    </li>
+                  ))}
+                  {record.botSource !== undefined && record.botSource !== "" && (
+                    // Bot-source traceability, read-only: the entry editor
+                    // preserves it but never lets a human edit it.
+                    <li className="text-sm text-content-subtle">
+                      <span className="font-medium">{t("entry.botSourceLabel")}</span>{" "}
+                      {/^https?:\/\//.test(record.botSource) ? (
+                        <a
+                          href={record.botSource}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="break-all text-primary hover:text-primary-hover"
+                        >
+                          {record.botSource}
+                        </a>
+                      ) : (
+                        <span className="break-all">{record.botSource}</span>
+                      )}
+                    </li>
+                  )}
+                </ul>
+              </section>
+            )}
             <p className="text-xs">
               {/* The record URI goes into the path verbatim — atproto.at
                   expects the raw at:// form, so no percent-encoding. */}

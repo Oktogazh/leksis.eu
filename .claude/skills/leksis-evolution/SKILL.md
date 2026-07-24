@@ -63,13 +63,17 @@ State the current position in one sentence ("Week N complete, next is Week N+1: 
 | Week | Theme | Milestone (definition of done) |
 |---|---|---|
 | 1 | Foundation + CI/CD | Live URL + green pipeline ✅ |
-| 2 | AT Proto auth | Log in with a Bluesky account (OAuth, real session) |
-| 3 | Loop 1: Languages | Create and browse languages; **firehose consumption starts** |
-| 4 | Loop 2: Entries + orthography | Create, edit, delete entries |
-| 5 | Loop 3: Definitions | Look up a word and read its definitions |
-| 6 | Loop 4: Structure + grammar | Hierarchical definitions + harvested grammatical tags |
+| 2 | AT Proto auth | Log in with a Bluesky account (OAuth, real session) ✅ |
+| 3 | Loop 1: Languages | Create and browse languages; **firehose consumption starts** ✅ |
+| 4 | Loop 2: Entries + orthography | Create, edit, delete entries ✅ |
+| 5 | Loop 3: Definitions | Look up a word and read its definitions ✅ |
+| 6 | Loop 4: Structure + grammar | Hierarchical definitions + harvested grammatical tags — ✅ (tree-shaped definitions + abbreviations read model shipped v0.8; other forms, per-node notes, references added) |
 | 7 | Loop 5: Translations | Cross-language graph traversal |
 | 8 | Search + polish + release | Public collaborator demo |
+
+> Confirm the actual current position from `CHANGELOG.md` + `git tag` at orient time (step 1) —
+> these ✅ marks are a convenience, not the source of truth. As of v0.8 the prototype is past
+> Loop 4's core; Loop 5 (translations) is the next unbuilt loop.
 
 > Week 3 is the hinge: once the AppView consumes `subscribeRepos`, it must stay online and **real data
 > starts accumulating**. ADR-0001 action items #4 (deploy secrets) and #5 (off-box backups) must be done

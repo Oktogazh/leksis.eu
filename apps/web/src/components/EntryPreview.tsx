@@ -40,44 +40,60 @@ export function DefinitionList({
     })}`;
   }
 
+  // Indentation by displayed depth (0s in the place are skipped, so a place
+  // like [0, 1, 1] renders at depth 2, not 3).
+  const displayedDepth = (place: number[]) =>
+    place.filter((n, i) => n !== 0 || i === place.length - 1).filter((n) => n !== 0).length;
+
   return (
     <ol className="space-y-4">
-      {definitions.map((def, i) => (
-        <li
-          key={i}
-          className={`flex gap-3 ${DEPTH_INDENT[Math.min(def.place.length, 3) - 1]}`}
-        >
-          <span className="mt-0.5 shrink-0 font-mono text-sm text-content-subtle">
-            {placeLabel(depth, def.place)}
-          </span>
-          <div className="min-w-0">
-            {def.notes.length > 0 && (
-              <span className="mr-2">
-                {def.notes.map((note, j) => {
-                  const conflicted = annotationConflicts(note, abbreviations).length > 0;
-                  const chipClass = `mr-1 rounded border bg-surface-muted/60 px-1.5 py-0.5 font-mono text-xs text-content-muted ${
-                    conflicted ? "border-red-400" : ""
-                  }`;
-                  return note.short !== undefined ? (
-                    <abbr key={j} title={noteTitle(note)} className={`${chipClass} no-underline`}>
-                      {conflicted && <span aria-hidden="true">⚠ </span>}
-                      {note.short}
-                    </abbr>
-                  ) : (
-                    // No abbreviation: the full form is shown directly, so
-                    // there is nothing to reveal on hover (and no conflict —
-                    // a pair without a short form never conflicts).
-                    <span key={j} className={chipClass}>
-                      {note.long}
-                    </span>
-                  );
-                })}
-              </span>
-            )}
-            <span className="text-sm text-content">{def.text}</span>
-          </div>
-        </li>
-      ))}
+      {definitions.map((def, i) => {
+        const isGroup = def.place[def.place.length - 1] === 0;
+        const plainNotes = def.plainNotes ?? [];
+        return (
+          <li
+            key={i}
+            className={`flex gap-3 ${DEPTH_INDENT[Math.max(displayedDepth(def.place), 1) - 1]}`}
+          >
+            <span className="mt-0.5 shrink-0 font-mono text-sm text-content-subtle">
+              {placeLabel(depth, def.place)}
+            </span>
+            <div className="min-w-0">
+              {def.notes.length > 0 && (
+                <span className="mr-2">
+                  {def.notes.map((note, j) => {
+                    const conflicted = annotationConflicts(note, abbreviations).length > 0;
+                    const chipClass = `mr-1 rounded border bg-surface-muted/60 px-1.5 py-0.5 font-mono text-xs text-content-muted ${
+                      conflicted ? "border-red-400" : ""
+                    }`;
+                    return note.short !== undefined ? (
+                      <abbr key={j} title={noteTitle(note)} className={`${chipClass} no-underline`}>
+                        {conflicted && <span aria-hidden="true">⚠ </span>}
+                        {note.short}
+                      </abbr>
+                    ) : (
+                      // No abbreviation: the full form is shown directly, so
+                      // there is nothing to reveal on hover (and no conflict —
+                      // a pair without a short form never conflicts).
+                      <span key={j} className={chipClass}>
+                        {note.long}
+                      </span>
+                    );
+                  })}
+                </span>
+              )}
+              {plainNotes.length > 0 && (
+                <span className="mr-2 text-sm italic text-content-muted">
+                  {plainNotes.join(" · ")}
+                </span>
+              )}
+              {/* A group node (place ending in 0) is a heading: it carries
+                  notes but no definition text. */}
+              {!isGroup && <span className="text-sm text-content">{def.text}</span>}
+            </div>
+          </li>
+        );
+      })}
     </ol>
   );
 }

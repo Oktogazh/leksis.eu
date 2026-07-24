@@ -123,9 +123,12 @@ await agent.com.atproto.repo.applyWrites(
   rather than re-create.
 - The AppView validates strictly at ingest: BCP 47 syntax on `languageID`,
   non-empty `orthography` and `definitions`, well-formed annotation pairs
-  (`long` required, `short` optional), and the `place` invariants. `todo`,
-  when present, must be an **array of strings**; `botSource` a string — any
-  other type rejects the whole record. Invalid → skipped, no error surfaces.
+  (`long` required, `short` optional), and the definition-tree invariants (see
+  `place` below — leaf/group text rule + sibling contiguity). `otherForms`,
+  when present, must each be a well-formed annotation plus a non-empty `form`;
+  `notes` an array of strings; `references` an array of `{ text, url? }`;
+  `todo` an array of strings; `botSource` a string — any wrong type rejects
+  the whole record. Invalid → skipped, no error surfaces.
 - **Breaking lexicon changes are handled by reset-and-republish**: while the
   app is bots-only, the operator deletes the old records and the updated bots
   republish in the new shape. Keep every bot able to regenerate its full
@@ -141,7 +144,10 @@ Canonical JSON: `lexicons/eu.leksis.entry.json` in the leksis.eu repo.
   languageID: string,        // well-formed BCP 47 tag, LOWERCASE ("br", "br-gw"); max 64 chars
   orthography: string[],     // ≥1 spelling; [0] is the canonical form; each ≤128 graphemes
   categories: Annotation[],  // ordered grammatical categories; may be empty
-  definitions: Definition[], // ≥1, FLAT list sorted by place (reading order)
+  otherForms?: InflectedForm[], // other grammatical forms (plural, gerund…); INDEXED for search
+  definitions: Definition[], // ≥1, FLAT list of tree nodes sorted by place (reading order)
+  notes?: string[],          // entry-level free-text notes shown below the definitions
+  references?: Reference[],   // bibliographic references, shown with botSource at the bottom
   subject?: string,          // at:// URI of the version this modifies; omit for new entries
   todo?: string[],           // pending-work notes, ONE ITEM PER TASK (see below);
                              // ≤64 items, each ≤1024 graphemes
@@ -161,34 +167,54 @@ Annotation = { long: string, short?: string }
 // then have to untangle. short ≤32 graphemes, long ≤128.
 
 Definition = {
-  place: number[],           // hierarchy coordinate, 1–3 non-negative ints (see below)
-  notes: Annotation[],       // lexicographic notes before the text; may be empty
-  text: string,              // ≤2048 graphemes
+  place: number[],           // tree address, 1–3 non-negative ints (see below)
+  notes: Annotation[],       // abbreviation notes before the node's content; may be empty
+  plainNotes?: string[],     // free-text notes before the content (not abbreviations, not text)
+  text?: string,             // ≤2048 graphemes; REQUIRED on a leaf, FORBIDDEN on a group node
 }
+
+InflectedForm = { annotation: Annotation, form: string }
+// An other grammatical form: a pool abbreviation (e.g. { short:"pl.", long:"plural" })
+// plus the spelling (e.g. "bugale", ≤128 graphemes). Each `form` is added to the
+// entry's search index, so an inflected form leads back to the entry.
+
+Reference = { text: string, url?: string }  // text ≤256 graphemes; url ≤2048 chars
 ```
 
-### `place` — hierarchical definitions as a flat list
+### `place` — definitions as a tree
 
-Each definition carries its coordinate in a hierarchy of up to 3 dimensions:
-one 0-based index per dimension, deepest last; the array's **length is the
-definition's own depth**. `[0]` = first top-level definition; `[1,0]` = first
-sub-definition of the second; a standalone `[2]` can sit beside them (mixed
-depths are legal). Display numbering follows the deepest length used:
-1 → `1.`; 2 → `I. 1.`; 3 → `A. I. 1.`.
+`definitions` is a flat list of **tree nodes**; each node's `place` is its
+address (up to 3 dimensions). The **last index is the node type**:
 
-**Whole-list invariants — the AppView rejects the record if any fails:**
+- **non-zero → a leaf** — the definition proper: it MUST carry non-empty `text`.
+- **0 → a group node** — a heading that carries `notes`/`plainNotes` but MUST
+  NOT carry `text` (e.g. state the "transitive" abbreviation once at `[1,0,0]`
+  = A., and every sense under it inherits it without repeating).
 
-1. Sorted in reading order (lexicographic on place).
-2. Sibling indices contiguous from 0 (no gaps: after `[1]` comes `[2]`, not `[3]`).
-3. No place is a prefix of another (`[1]` and `[1,0]` cannot both exist — a
-   definition cannot also be a group).
+A non-last `0` means "no grouping at that dimension", so a place renders
+shallower than its length: `[0,1,1]` = I. 1., and `[1]` = `[0,1]` = `[0,0,1]`
+= 1. Display: each non-zero index `n` shows as the n-th label of its dimension
+(1 → A/I/1, 2 → B/II/2) and each `0` is skipped; the scheme follows the
+displayed depth — 1 → `1.`; 2 → `I. 1.`; 3 → `A. I. 1.` (so `[1,2,0]` = A. II.,
+`[1,1,1]` = A. I. 1.).
 
-Equivalently, walked pairwise: each place increments its predecessor at
-exactly one level and resets all deeper levels to 0. The reference validator
-is `validDefinitionPlaces()` in `packages/types/src/entry.ts` of the leksis.eu
-repo — copy it into the scraper and run it on every record before publishing.
-A single flat list `[0], [1], [2]…` is always valid; only build hierarchy when
-the source genuinely has one.
+**Bare grouping is implicit:** a group node appears in the list ONLY when it
+carries notes. If a group has no notes, omit it — the AppView infers the
+hierarchy from the leaves. So a simple two-level entry is just leaves at
+`[0,1,1]`, `[0,1,2]`… (I. 1., I. 2.) with no group item; add a `[0,1,0]`
+(= I., last index 0) only to annotate that heading.
+
+**Whole-tree invariants — the AppView rejects the record if any fails:**
+
+1. Leaf ⇒ non-empty `text`; group node ⇒ no `text`.
+2. Sorted in reading order (lexicographic on place).
+3. Sibling indices contiguous from 1 (no gaps).
+
+The reference validator is `validateDefinitions()` in
+`packages/types/src/entry.ts` of the leksis.eu repo (returns `"ok"` or a rule
+code) — copy it into the scraper and run it on every record before publishing.
+A single flat list of leaves `[1], [2], [3]…` is always valid; only build
+hierarchy when the source genuinely has one.
 
 ### `todo` and `botSource` — maintenance fields for bots
 

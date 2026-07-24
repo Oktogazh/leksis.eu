@@ -1,15 +1,25 @@
-import { compareDefinitionPlaces, type EntryDefinition } from "@leksis/types";
+import {
+  compareDefinitionPlaces,
+  isLeafPlace,
+  validateDefinitions,
+  type DefinitionsError,
+  type EntryDefinition,
+} from "@leksis/types";
 
-// Utilities for the definitions hierarchy (a flat list of definitions, each
-// carrying its coordinate `place` — see the entry lexicon): display
-// numbering, and the editor's tree model with its arrow-movement operations.
-// The editor works on a tree (groups make the movement rules natural) and
-// serializes to/from the record's flat, place-carrying shape.
+// Utilities for the definition tree (a flat list of nodes, each carrying its
+// address `place` — see the entry lexicon): display numbering, and the
+// editor's tree model with its arrow-movement operations. The editor works on
+// a tree (leaves carry text, group nodes carry notes) and serializes to/from
+// the record's flat, place-carrying shape.
 //
-// Numbering follows the entry's deepest place length:
+// Place convention (see EntryDefinition): the place is fixed to the tree's
+// depth D. A leaf fills its dimensions from the right, so its arabic number is
+// the LAST index (non-zero); a group node fills its own dimensions but leaves
+// the last index 0. A 0 at any position is skipped in display, and a non-zero
+// value n shows as the n-th label of its dimension:
 //   depth 1 → 1. 2. 3.          (arabic)
-//   depth 2 → I. 1.  /  II. 1.  (roman, then arabic)
-//   depth 3 → A. I. 1.          (letters, roman, then arabic)
+//   depth 2 → I. 1.  /  II.     (roman, then arabic)
+//   depth 3 → A. I. 1.  /  A. II. (letters, roman, then arabic)
 
 const ROMAN: [number, string][] = [
   [1000, "M"], [900, "CM"], [500, "D"], [400, "CD"], [100, "C"], [90, "XC"],
@@ -42,15 +52,24 @@ function toAlpha(n: number): string {
 export type DefinitionDepth = 1 | 2 | 3;
 
 /**
- * Label for the item at `index` (0-based) of a dimension, given the entry's
- * total depth and the dimension's level (1-based).
+ * Numbering scheme by dimension for a tree of the given depth. Position i
+ * (0-based) is dimension i; the last is always arabic (the leaf's number).
  */
-export function numberingLabel(totalDepth: DefinitionDepth, level: number, index: number): string {
-  const scheme =
-    totalDepth === 1 ? ["arabic"] : totalDepth === 2 ? ["roman", "arabic"] : ["alpha", "roman", "arabic"];
-  const kind = scheme[level - 1] ?? "arabic";
-  const n = index + 1;
-  return `${kind === "roman" ? toRoman(n) : kind === "alpha" ? toAlpha(n) : String(n)}.`;
+function schemeFor(totalDepth: DefinitionDepth): ("alpha" | "roman" | "arabic")[] {
+  return totalDepth === 1
+    ? ["arabic"]
+    : totalDepth === 2
+      ? ["roman", "arabic"]
+      : ["alpha", "roman", "arabic"];
+}
+
+/**
+ * Label for a non-zero index `value` (1-based: 1 → A/I/1, 2 → B/II/2) at
+ * dimension `position` (0-based) of a tree of the given depth.
+ */
+export function numberingLabel(totalDepth: DefinitionDepth, position: number, value: number): string {
+  const kind = schemeFor(totalDepth)[position] ?? "arabic";
+  return `${kind === "roman" ? toRoman(value) : kind === "alpha" ? toAlpha(value) : String(value)}.`;
 }
 
 /** Deepest dimension used by a record's definitions (1–3): longest place. */
@@ -60,9 +79,15 @@ export function definitionsDepth(definitions: EntryDefinition[]): DefinitionDept
   return depth as DefinitionDepth;
 }
 
-/** Full display label of a definition's place, e.g. [1, 0] → "II. 1.". */
+/**
+ * Full display label of a place under its tree depth, skipping 0 indices —
+ * e.g. depth 3: [1, 2, 0] → "A. II.", [0, 1, 1] → "I. 1.", [0, 0, 1] → "1.".
+ */
 export function placeLabel(totalDepth: DefinitionDepth, place: number[]): string {
-  return place.map((index, i) => numberingLabel(totalDepth, i + 1, index)).join(" ");
+  return place
+    .map((value, i) => (value === 0 ? null : numberingLabel(totalDepth, i, value)))
+    .filter((label): label is string => label !== null)
+    .join(" ");
 }
 
 // ---------------------------------------------------------------------------
@@ -75,16 +100,22 @@ export interface EditLeaf<P> {
   payload: P;
 }
 
-export interface EditGroup<P> {
+/**
+ * A group node. Beyond holding children, it carries its own group-level
+ * payload G (its notes/plain notes), so an annotated heading (e.g. the
+ * "transitive" grouping) survives the tree round-trip.
+ */
+export interface EditGroup<P, G> {
   kind: "group";
   id: number;
-  children: EditNode<P>[];
+  group: G;
+  children: EditNode<P, G>[];
 }
 
-export type EditNode<P> = EditLeaf<P> | EditGroup<P>;
+export type EditNode<P, G> = EditLeaf<P> | EditGroup<P, G>;
 
 /** Deepest dimension used by the editor tree (1–3). */
-export function editTreeDepth<P>(nodes: EditNode<P>[]): DefinitionDepth {
+export function editTreeDepth<P, G>(nodes: EditNode<P, G>[]): DefinitionDepth {
   let depth = 1;
   for (const node of nodes) {
     if (node.kind === "group") {
@@ -94,34 +125,50 @@ export function editTreeDepth<P>(nodes: EditNode<P>[]): DefinitionDepth {
   return depth as DefinitionDepth;
 }
 
-/** Labels for every node id, per the numbering scheme of the tree's depth. */
-export function editTreeLabels<P>(nodes: EditNode<P>[]): Map<number, string> {
+/**
+ * Labels for every node id, per the numbering scheme of the tree's depth.
+ * Mirrors `toRecordDefinitions`: each sibling advances one dimension, a group
+ * occupies its slot, and a leaf shallower than the remaining depth is promoted
+ * to a numbered slot with a lone arabic child (so it shows e.g. "II. 1."
+ * beside a group's "I. 1.").
+ */
+export function editTreeLabels<P, G>(nodes: EditNode<P, G>[]): Map<number, string> {
   const depth = editTreeDepth(nodes);
   const labels = new Map<number, string>();
-  const walk = (level: number, prefix: string, siblings: EditNode<P>[]) => {
+  const walk = (prefix: string, position: number, dimensionsLeft: number, siblings: EditNode<P, G>[]) => {
     siblings.forEach((node, i) => {
-      const label = `${prefix}${numberingLabel(depth, level, i)}`;
-      labels.set(node.id, label);
-      if (node.kind === "group") walk(level + 1, `${label} `, node.children);
+      const own = numberingLabel(depth, position, i + 1);
+      if (node.kind === "leaf") {
+        // A promoted leaf (shallower than the remaining depth) gets its slot
+        // number plus a lone "1" label at every deeper dimension, matching the
+        // singleton-group chain the serializer emits.
+        const deeper = Array.from({ length: dimensionsLeft - 1 }, (_, k) =>
+          numberingLabel(depth, position + 1 + k, 1),
+        );
+        labels.set(node.id, [`${prefix}${own}`, ...deeper].join(" "));
+      } else {
+        labels.set(node.id, `${prefix}${own}`);
+        walk(`${prefix}${own} `, position + 1, dimensionsLeft - 1, node.children);
+      }
     });
   };
-  walk(1, "", nodes);
+  walk("", 0, depth, nodes);
   return labels;
 }
 
-interface NodeLocation<P> {
+interface NodeLocation<P, G> {
   /** The array holding the node (the root list or a group's children). */
-  siblings: EditNode<P>[];
+  siblings: EditNode<P, G>[];
   index: number;
   /** The group owning `siblings`, or null when it's the root list. */
-  parent: EditGroup<P> | null;
+  parent: EditGroup<P, G> | null;
 }
 
-function locate<P>(
-  nodes: EditNode<P>[],
+function locate<P, G>(
+  nodes: EditNode<P, G>[],
   id: number,
-  parent: EditGroup<P> | null = null,
-): NodeLocation<P> | null {
+  parent: EditGroup<P, G> | null = null,
+): NodeLocation<P, G> | null {
   for (let i = 0; i < nodes.length; i++) {
     const node = nodes[i]!;
     if (node.id === id) return { siblings: nodes, index: i, parent };
@@ -134,7 +181,7 @@ function locate<P>(
 }
 
 /** 1-based dimension a node's siblings live at (root = 1). */
-function levelOf<P>(nodes: EditNode<P>[], location: NodeLocation<P>): number {
+function levelOf<P, G>(nodes: EditNode<P, G>[], location: NodeLocation<P, G>): number {
   let level = 1;
   let parent = location.parent;
   while (parent !== null) {
@@ -145,15 +192,15 @@ function levelOf<P>(nodes: EditNode<P>[], location: NodeLocation<P>): number {
   return level;
 }
 
-/** Structural clone: fresh arrays/groups, shared leaf payloads. */
-function cloneTree<P>(nodes: EditNode<P>[]): EditNode<P>[] {
+/** Structural clone: fresh arrays/groups, shared leaf and group payloads. */
+function cloneTree<P, G>(nodes: EditNode<P, G>[]): EditNode<P, G>[] {
   return nodes.map((node) =>
     node.kind === "group" ? { ...node, children: cloneTree(node.children) } : node,
   );
 }
 
 /** Drop empty groups anywhere in the tree (movement can empty them). */
-function pruneEmptyGroups<P>(nodes: EditNode<P>[]): EditNode<P>[] {
+function pruneEmptyGroups<P, G>(nodes: EditNode<P, G>[]): EditNode<P, G>[] {
   return nodes
     .map((node) =>
       node.kind === "group" ? { ...node, children: pruneEmptyGroups(node.children) } : node,
@@ -167,7 +214,7 @@ function pruneEmptyGroups<P>(nodes: EditNode<P>[]): EditNode<P>[] {
  * parent group when already at its tail. Groups themselves only swap.
  * Returns a new tree, or the input tree unchanged when the move is illegal.
  */
-export function moveDown<P>(nodes: EditNode<P>[], id: number): EditNode<P>[] {
+export function moveDown<P, G>(nodes: EditNode<P, G>[], id: number): EditNode<P, G>[] {
   const tree = cloneTree(nodes);
   const loc = locate(tree, id);
   if (!loc) return nodes;
@@ -194,7 +241,7 @@ export function moveDown<P>(nodes: EditNode<P>[], id: number): EditNode<P>[] {
 }
 
 /** Mirror of moveDown: up across siblings, entering a preceding group at its tail. */
-export function moveUp<P>(nodes: EditNode<P>[], id: number): EditNode<P>[] {
+export function moveUp<P, G>(nodes: EditNode<P, G>[], id: number): EditNode<P, G>[] {
   const tree = cloneTree(nodes);
   const loc = locate(tree, id);
   if (!loc) return nodes;
@@ -221,17 +268,22 @@ export function moveUp<P>(nodes: EditNode<P>[], id: number): EditNode<P>[] {
 }
 
 /**
- * Wrap a leaf into a new group in place (one dimension deeper). Illegal on
- * the third dimension and on groups.
+ * Wrap a leaf into a new group in place (one dimension deeper), carrying a
+ * fresh (empty) group payload. Illegal on the third dimension and on groups.
  */
-export function indent<P>(nodes: EditNode<P>[], id: number, nextId: () => number): EditNode<P>[] {
+export function indent<P, G>(
+  nodes: EditNode<P, G>[],
+  id: number,
+  nextId: () => number,
+  emptyGroup: () => G,
+): EditNode<P, G>[] {
   const tree = cloneTree(nodes);
   const loc = locate(tree, id);
   if (!loc) return nodes;
   const node = loc.siblings[loc.index]!;
   if (node.kind !== "leaf") return nodes;
   if (levelOf(tree, loc) >= 3) return nodes;
-  loc.siblings[loc.index] = { kind: "group", id: nextId(), children: [node] };
+  loc.siblings[loc.index] = { kind: "group", id: nextId(), group: emptyGroup(), children: [node] };
   return tree;
 }
 
@@ -239,7 +291,7 @@ export function indent<P>(nodes: EditNode<P>[], id: number, nextId: () => number
  * Move a leaf out of its group, right after it (one dimension shallower);
  * the group disappears if that empties it. Illegal at the root.
  */
-export function outdent<P>(nodes: EditNode<P>[], id: number): EditNode<P>[] {
+export function outdent<P, G>(nodes: EditNode<P, G>[], id: number): EditNode<P, G>[] {
   const tree = cloneTree(nodes);
   const loc = locate(tree, id);
   if (!loc || loc.parent === null) return nodes;
@@ -252,7 +304,7 @@ export function outdent<P>(nodes: EditNode<P>[], id: number): EditNode<P>[] {
 }
 
 /** Remove a leaf (and any group this empties). */
-export function removeLeaf<P>(nodes: EditNode<P>[], id: number): EditNode<P>[] {
+export function removeLeaf<P, G>(nodes: EditNode<P, G>[], id: number): EditNode<P, G>[] {
   const tree = cloneTree(nodes);
   const loc = locate(tree, id);
   if (!loc) return nodes;
@@ -261,7 +313,11 @@ export function removeLeaf<P>(nodes: EditNode<P>[], id: number): EditNode<P>[] {
 }
 
 /** Replace a leaf's payload. */
-export function updateLeaf<P>(nodes: EditNode<P>[], id: number, patch: (payload: P) => P): EditNode<P>[] {
+export function updateLeaf<P, G>(
+  nodes: EditNode<P, G>[],
+  id: number,
+  patch: (payload: P) => P,
+): EditNode<P, G>[] {
   const tree = cloneTree(nodes);
   const loc = locate(tree, id);
   if (!loc) return nodes;
@@ -271,10 +327,25 @@ export function updateLeaf<P>(nodes: EditNode<P>[], id: number, patch: (payload:
   return tree;
 }
 
+/** Replace a group node's own payload (its notes). */
+export function updateGroup<P, G>(
+  nodes: EditNode<P, G>[],
+  id: number,
+  patch: (group: G) => G,
+): EditNode<P, G>[] {
+  const tree = cloneTree(nodes);
+  const loc = locate(tree, id);
+  if (!loc) return nodes;
+  const node = loc.siblings[loc.index]!;
+  if (node.kind !== "group") return nodes;
+  loc.siblings[loc.index] = { ...node, group: patch(node.group) };
+  return tree;
+}
+
 /** All leaves in visual order (for validation and serialization checks). */
-export function collectLeaves<P>(nodes: EditNode<P>[]): EditLeaf<P>[] {
+export function collectLeaves<P, G>(nodes: EditNode<P, G>[]): EditLeaf<P>[] {
   const leaves: EditLeaf<P>[] = [];
-  const walk = (siblings: EditNode<P>[]) => {
+  const walk = (siblings: EditNode<P, G>[]) => {
     for (const node of siblings) {
       if (node.kind === "leaf") leaves.push(node);
       else walk(node.children);
@@ -285,69 +356,168 @@ export function collectLeaves<P>(nodes: EditNode<P>[]): EditLeaf<P>[] {
 }
 
 /**
- * Serialize the editor tree to the record's flat definitions, dropping
- * leaves whose text is empty (and groups that empties). Places are the
- * remaining nodes' sibling positions, so they come out sorted and contiguous.
+ * Serialize the editor tree to the record's flat definitions. Empty leaves
+ * (no text) are dropped along with any group they empty; a group node is
+ * emitted as its own item only when it carries content (`groupToRecord`
+ * returns a non-null notes/plainNotes payload), so bare grouping stays
+ * implicit. Places follow the tree convention (see EntryDefinition): a leaf's
+ * number is its last index, a group's last index is 0, and the array comes out
+ * sorted in reading order.
+ *
+ * Mixed siblings (a bare definition beside a group at the same level) are
+ * resolved by promoting the bare leaf into its own numbered slot with an
+ * arabic child — so "I. 1. / I. 2." and a plain sense beside them become
+ * "I. 1. / I. 2. / II. 1." rather than an un-orderable mix.
  */
-export function toRecordDefinitions<P>(
-  nodes: EditNode<P>[],
+export function toRecordDefinitions<P, G>(
+  nodes: EditNode<P, G>[],
   leafToRecord: (payload: P) => Omit<EntryDefinition, "place"> | null,
+  groupToRecord: (group: G) => Omit<EntryDefinition, "place" | "text"> | null,
 ): EntryDefinition[] {
   type Kept =
     | { kind: "leaf"; def: Omit<EntryDefinition, "place"> }
-    | { kind: "group"; children: Kept[] };
-  const prune = (siblings: EditNode<P>[]): Kept[] =>
+    | { kind: "group"; def: Omit<EntryDefinition, "place" | "text"> | null; children: Kept[] };
+  // Prune empty leaves and the groups they leave empty; keep a surviving
+  // group's own (possibly null) record payload.
+  const prune = (siblings: EditNode<P, G>[]): Kept[] =>
     siblings.flatMap((node): Kept[] => {
       if (node.kind === "leaf") {
         const def = leafToRecord(node.payload);
         return def === null ? [] : [{ kind: "leaf", def }];
       }
       const children = prune(node.children);
-      return children.length === 0 ? [] : [{ kind: "group", children }];
+      return children.length === 0
+        ? []
+        : [{ kind: "group", def: groupToRecord(node.group), children }];
     });
 
+  const keptDepth = (siblings: Kept[]): number => {
+    let d = 1;
+    for (const node of siblings) {
+      if (node.kind === "group") d = Math.max(d, 1 + keptDepth(node.children));
+    }
+    return d;
+  };
+
+  const pruned = prune(nodes);
+  const depth = keptDepth(pruned);
   const out: EntryDefinition[] = [];
-  const flatten = (siblings: Kept[], prefix: number[]) => {
+
+  // `dimensionsLeft` is how many place slots remain from this level down to
+  // the arabic dimension (starts at `depth`). A leaf fills the remaining slots
+  // with its own number then 0-pads none; a group fills one slot then recurses
+  // with one fewer. When siblings mix depths, every sibling still advances one
+  // slot, and a leaf that is shallower than the remaining depth gets its
+  // number followed by an implicit arabic 1 (and inner 0s) — i.e. it is
+  // promoted to a numbered slot with a lone arabic child.
+  const walk = (siblings: Kept[], prefix: number[], dimensionsLeft: number) => {
     siblings.forEach((node, i) => {
-      const place = [...prefix, i];
-      if (node.kind === "leaf") out.push({ place, ...node.def });
-      else flatten(node.children, place);
+      const slot = [...prefix, i + 1];
+      if (node.kind === "leaf") {
+        // Pad down to the arabic dimension: a leaf shallower than the
+        // remaining depth is promoted to a numbered slot, then a lone "1" at
+        // every deeper dimension (a singleton group chain). This keeps the
+        // tree round-trippable — every promoted leaf reads back to the same
+        // structure — at the cost of showing e.g. "B. I. 1." rather than
+        // "B. 1." for a lone plain sense beside a three-deep group.
+        const place = [...slot, ...Array<number>(dimensionsLeft - 1).fill(1)];
+        out.push({ place, ...node.def });
+      } else {
+        // A group occupies this slot; its arabic (and any deeper) dimensions
+        // are 0 for the group node itself. It carries content only when kept.
+        if (node.def !== null) {
+          out.push({
+            place: [...slot, ...Array<number>(dimensionsLeft - 1).fill(0)],
+            ...node.def,
+          });
+        }
+        walk(node.children, slot, dimensionsLeft - 1);
+      }
     });
   };
-  flatten(prune(nodes), []);
+  walk(pruned, [], depth);
+  out.sort((a, b) => compareDefinitionPlaces(a.place, b.place));
   return out;
 }
 
 /**
- * Build an editor tree from a record's flat definitions: sorted into reading
- * order, then consecutive definitions sharing a place index at each level
- * fold into one group.
+ * Build an editor tree from a record's flat definitions. The list is read
+ * under the tree convention: each definition's displayed path (its non-zero
+ * indices) locates it, group nodes (last index 0) becoming interior nodes
+ * that carry their notes, leaves carrying text. Missing (implicit) groups are
+ * synthesised so the tree is complete. Robust to loosely-valid records: it
+ * never throws, filling gaps with empty leaves rather than failing.
  */
-export function fromRecordDefinitions<P>(
+export function fromRecordDefinitions<P, G>(
   definitions: EntryDefinition[],
   recordToLeaf: (definition: EntryDefinition) => P,
+  recordToGroup: (definition: EntryDefinition) => G,
+  emptyGroup: () => G,
   nextId: () => number,
-): EditNode<P>[] {
-  const sorted = [...definitions].sort((a, b) => compareDefinitionPlaces(a.place, b.place));
-  const build = (defs: EntryDefinition[], level: number): EditNode<P>[] => {
-    const out: EditNode<P>[] = [];
-    let i = 0;
-    while (i < defs.length) {
-      const def = defs[i]!;
-      if (def.place.length <= level + 1) {
-        out.push({ kind: "leaf", id: nextId(), payload: recordToLeaf(def) });
-        i += 1;
-        continue;
-      }
-      const index = def.place[level]!;
-      const groupDefs: EntryDefinition[] = [];
-      while (i < defs.length && defs[i]!.place.length > level + 1 && defs[i]!.place[level] === index) {
-        groupDefs.push(defs[i]!);
-        i += 1;
-      }
-      out.push({ kind: "group", id: nextId(), children: build(groupDefs, level + 1) });
+): EditNode<P, G>[] {
+  // The displayed path of a place: its non-zero indices, dropping a trailing
+  // 0 (the group-type marker). e.g. [1,2,0] → [1,2]; [0,1,1] → [1,1];
+  // [0,0,1] → [1]. The path values are the 1-based sibling positions.
+  const pathOf = (place: number[]): number[] =>
+    place.filter((n, i) => n !== 0 || i === place.length - 1).filter((n) => n !== 0);
+
+  const roots: EditNode<P, G>[] = [];
+  // Index groups by their path (joined) so a leaf can attach under the right
+  // ancestors, creating implicit groups on the way down.
+  const groupByPath = new Map<string, EditGroup<P, G>>();
+
+  const ensureGroup = (path: number[]): EditNode<P, G>[] => {
+    // Returns the children array a node at `path` should live in.
+    if (path.length === 0) return roots;
+    const key = path.join(",");
+    let group = groupByPath.get(key);
+    if (!group) {
+      group = { kind: "group", id: nextId(), group: emptyGroup(), children: [] };
+      groupByPath.set(key, group);
+      ensureGroup(path.slice(0, -1)).push(group);
     }
-    return out;
+    return group.children;
   };
-  return build(sorted, 0);
+
+  const sorted = [...definitions].sort((a, b) => compareDefinitionPlaces(a.place, b.place));
+  for (const def of sorted) {
+    const path = pathOf(def.place);
+    if (isLeafPlace(def.place)) {
+      // The last path value is the leaf's own position; its parent is the
+      // prefix. (The position itself is implied by array order, so it's not
+      // used as a key — siblings just append in reading order.)
+      ensureGroup(path.slice(0, -1)).push({
+        kind: "leaf",
+        id: nextId(),
+        payload: recordToLeaf(def),
+      });
+    } else {
+      // A group node: materialise it (or fill in its payload if a descendant
+      // leaf already created it implicitly).
+      const key = path.join(",");
+      const existing = groupByPath.get(key);
+      if (existing) {
+        existing.group = recordToGroup(def);
+      } else {
+        const group: EditGroup<P, G> = {
+          kind: "group",
+          id: nextId(),
+          group: recordToGroup(def),
+          children: [],
+        };
+        groupByPath.set(key, group);
+        ensureGroup(path.slice(0, -1)).push(group);
+      }
+    }
+  }
+  return roots;
+}
+
+/**
+ * Strictly validate the definitions a `toRecordDefinitions` call produced,
+ * mirroring the API's `validateDefinitions` — the editor's last guard before
+ * writing to the PDS. Returns "ok" or the failing rule.
+ */
+export function checkRecordDefinitions(definitions: EntryDefinition[]): DefinitionsError | "ok" {
+  return validateDefinitions(definitions);
 }
