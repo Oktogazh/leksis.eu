@@ -170,7 +170,6 @@ atom* (the dictionary) that the rest can grow from.
 
 ## Guardrails (hard "don'ts")
 
-- **Don't suggest Fly.io or ArangoDB Cloud** — superseded by ADR-0001. Everything is one self-hosted VPS.
 - **Don't invert the priority ladder** — dictionary before corpora before translation before usage tools.
 - **Don't build the full lexicon or future apps "to save time"** — scope creep is the main failure mode
   for a solo dev on a constellation-sized vision. Defer, with a trigger.

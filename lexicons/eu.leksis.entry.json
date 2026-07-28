@@ -4,7 +4,7 @@
   "defs": {
     "main": {
       "type": "record",
-      "description": "A dictionary entry of the Leksis dictionary. Records prove authorship, not ownership: any user may publish an entry record, and a record carrying a `subject` reference is a proposed new version of the entry that record belongs to — the AppView treats the latest version as current and archives previous ones. The record is the source of truth for its content; the AppView indexes only what search needs.",
+      "description": "A dictionary entry of the Leksis dictionary. Records prove authorship, not ownership: any user may publish an entry record, and a record carrying a `subject` reference is a proposed new version of the entry that record belongs to — the AppView treats the latest version as current and archives previous ones. The record is the source of truth for its content; the AppView indexes only what search needs. The entry is homolingual: every piece of text it carries — definitions, notes, abbreviations, references — is written in the entry's own language (`languageID`), for a reader of that language.",
       "key": "tid",
       "record": {
         "type": "object",

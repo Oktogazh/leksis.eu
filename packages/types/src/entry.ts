@@ -24,6 +24,9 @@ export interface EntryAnnotation {
   /**
    * Optional abbreviated display form (e.g. "n.", "bot."); when present it
    * is shown instead of the full form, which appears on hover.
+   * Written in the entry's own language (entries are homolingual — see the file
+   * header): a Breton entry carries "anv-kadarn", not "noun". The pairs a
+   * language uses are that language's own abbreviation list.
    */
   short?: string;
 }
