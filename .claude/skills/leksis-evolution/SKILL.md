@@ -97,6 +97,16 @@ Every proposed feature must pass the **bottom-up test**. Reject or defer anythin
   No hardcoded language assumptions.
 - **Decentralised & owned.** Contributions live on users' own PDSs; the AppView only indexes pointers.
   Don't move data ownership into the platform.
+- **Every linguistic resource is a user-authored record.** The `eu.leksis.*` family is *designed to keep
+  growing*: entries and languages today; tag bindings and inflection paradigms in the morphology arc;
+  and beyond the prototype, example sentences, corpora, the weighted-voting ballots themselves, and even
+  the UI's own interface translations — all of them records any user can publish, none of them platform
+  configuration. So when a new kind of linguistic knowledge appears, **the default answer is "a new
+  lexicon", not "a table only admins can write"** or a hardcoded asset in `apps/web`. Two consequences
+  that regularly get designed away by accident: (a) a record type being *hot* (frequently rewritten by
+  many people, like a language record collecting tag bindings) is normal and not an argument against
+  making it a record; (b) any surface that reads such data must tolerate it being absent, partial, or
+  authored by someone the reader has never heard of.
 - **Consensus-ready.** Keep full version history from day one (`current: false` archival, never delete),
   so the weighted voting mechanism has something to act on later.
 - **Sustainability is a requirement, not a bonus.** Favour choices that let the project endure and let
@@ -134,6 +144,15 @@ Each feature milestone follows this sequence. Do them in order; don't skip the d
   schema and the AT Proto lexicon. Change it deliberately; it's how a solo dev keeps three surfaces coherent.
 - **Last-write-wins, archive-don't-delete.** Until voting exists, any logged-in user can overwrite an
   entry; the prior version is archived (`current: false`). This is what makes voting buildable later.
+- **Before `v1.0.0`, breaking lexicon changes are free — take them.** The app is not public and every
+  contribution is a test contribution, so a lexicon change that invalidates existing records costs
+  nothing but a bot reset-and-republish (the precedent: `botSource` removal, v0.9). **Do not** design
+  around backward compatibility, add compatibility shims, or accept a worse shape to avoid a migration
+  while pre-1.0. Get the shape right instead. This inverts at `v1.0.0`: from then on records live on
+  strangers' PDSs and *cannot* be migrated by us, so the cost of a wrong shape goes from a republish to
+  permanent. **The corollary is a sequencing rule:** any change that must be breaking (e.g. narrowing a
+  field's type) has a window that closes at 1.0 — surface that timing when it applies, and let the user
+  decide, rather than deferring it silently into impossibility.
 
 ---
 
@@ -157,26 +176,26 @@ its home:
 
 ## The morphology arc — north star for the coming loops
 
-*Recorded 2026-07-29 as alignment context, not as a plan. Detailed planning is deliberately deferred to
-the top of each rung. This section exists so that (a) every loop between now and then picks shapes this
-arc can grow into, and (b) no session invents tagset details nobody has actually verified.*
+*Alignment context, not a plan. Detailed planning is deliberately deferred to the top of each layer. This
+section exists so that (a) every loop picks shapes this arc can grow into, and (b) no session invents tagset
+details nobody has actually verified. **The next thing to build is layer 1.***
 
 ### Where it ends up
 
 Opening an entry **hydrates it with language-level grammatical knowledge** and renders the word's full
 morphology as a table (declension, conjugation, mutation set…):
 
-- the **entry** declares what kind of word it is — its part of speech and its *inherent* features;
-- the **language** declares, once, the **paradigms**: the inflection table that applies to each kind of
-  word, and the Hunspell-like rules that generate each cell from the lemma;
-- the entry adds **only what cannot be derived** — irregular forms, plus the *diagnostic* form that
-  **selects** the paradigm (a Latin genitive picks the declension group; the system fills the rest);
+- the **entry** declares what kind of word it is — its part of speech, its *inherent* features, and its
+  inflection class;
+- the **language** declares, once, both the **layout** of the inflection tables and the Hunspell-like
+  **rules** that generate each cell from the lemma;
+- the entry adds **only what cannot be derived** — irregular forms, which override generated cells;
 - a perfectly regular lemma carries **nothing**: the table is generated in the frontend;
-- with no paradigm defined for that language, it degrades to today's behaviour — `otherForms` shown as a
+- with no layout declared for that language, it degrades to today's behaviour — `otherForms` shown as a
   flat list above the definitions, never a fake table.
 
-Paradigm = the language-level object. Irregular/diagnostic forms = the entry-level override. Generation =
-from language-level rules, not stored data.
+Layout and rules = the language-level objects. Irregular forms and the class selector = the entry-level
+override. Generation = from language-level rules, not stored data.
 
 ### Why it is in scope
 
@@ -187,30 +206,35 @@ the start** *only if* designed for languages with no published tagset at all; se
 below.
 
 The risk is equally clear: a general morphology engine is a research project. So the arc advances in
-**thin rungs, each shippable and useful alone**, and it never displaces loops 5–8.
+**thin layers, each shippable and useful alone**, and it never displaces loops 5–8.
 
 ### Invariants any design must satisfy
 
-These are the alignment guarantees. A plan that breaks one is wrong even if it works.
+These are the alignment guarantees — the **test** a plan must pass. A plan that breaks one is wrong even if
+it works. The *mechanisms* that satisfy them live in `docs/design/grammatical-tagging.md`; these are
+deliberately short so they stay readable as a checklist.
 
-1. **Three annotation altitudes, kept apart.** UD/UniMorph separate what Leksis currently mixes:
-   - *lexeme-level* — part of speech + **inherent** features (gender, animacy, noun class, Slavic aspect)
-     → the entry's `categories`;
-   - *form-level* — **inflectional** features (case, number, tense, person, mood) → they belong to a
-     **form**, never to the entry as a whole (`otherForms`, later paradigm cells);
-   - *sense-level* — features that vary by sense (a verb's transitivity across its I./II. groups) → the
-     definition **group node**, which already exists for exactly this.
+1. **Three annotation altitudes, kept apart.** *lexeme-level* → the entry's `categories`; *form-level* →
+   a **form**, never the entry as a whole (`otherForms`, later paradigm cells); *sense-level* → the
+   definition **group node**. `categories` is lexeme-level and must stay so: "plural" is not a category, it
+   is a form's feature. Sense-level is **no longer aspirational** — layer 1's lexicon break makes
+   `definition.notes` annotation-XOR-tag.
 
-   `categories` is lexeme-level and must stay so: "plural" is not a category, it is a form's feature.
-2. **Tags are machine data; labels are homolingual display.** The entry lexicon's homolingual rule (every
-   piece of text in an entry is written in the entry's own language) holds. A UD tag is not reader-facing
-   text — it is an identifier. So the tag rides on the record while the **language record carries the
-   binding `tag → {long, short}` in that language**. Never render a raw tag; never store an English label
-   inside an entry.
-3. **Free annotation never disappears.** Most labels a real dictionary uses (`bot.`, `arch.`, `fam.`,
-   register, dialect) have no UD/UniMorph equivalent. Tagging is an **optional machine layer bound to**
-   the existing `{long, short}` pair, not a replacement for it. An entry in a language whose tagset nobody
-   has declared yet must stay fully editable.
+   **Altitude is a property of (category × feature), not of a feature** — and UD says so itself (Animacy is
+   "usually a lexical feature of nouns and inflectional feature of other parts of speech"; Aspect is lexical
+   in Slavic, inflectional in Turkish). So there is **no global list of inherent features to hardcode**: the
+   language declares it, **per category rather than per POS**, because a Slavic perfective verb's cell space
+   differs from an imperfective one's. That declaration is also the paradigm's cell-coordinate system.
+2. **Tags are machine data; labels are homolingual display, and the two never coexist on one item.** The
+   tag rides on the entry record; the **language record carries the binding**. Never render a raw tag as
+   prose; never store an English label inside an entry. A tag is a **bundle**, not an atom, and provenance
+   rides on **each item** of it.
+3. **Free annotation never disappears, and tagging is a property *of* an abbreviation.** Most labels a real
+   dictionary uses (`bot.`, `arch.`, `fam.`, register, dialect) have no UD equivalent and stay free pairs
+   forever. The framing is **"a tagged abbreviation", not "a labelled tag"** — so binding does not create a
+   second kind of thing, and ADR-0004's `abbreviations` read model stays the single home rather than gaining
+   a parallel tag collection. An entry in a language whose tagset nobody has declared must stay fully
+   editable.
 4. **Four different things live at annotation sites — don't let them collapse into one.**
    (a) a taggable grammatical feature; (b) an untaggable editorial/domain/register label — stays a free
    pair; (c) a free prose remark — `plainNotes`; (d) a **collocation or example phrase** (a word shown
@@ -227,77 +251,199 @@ These are the alignment guarantees. A plan that breaks one is wrong even if it w
    archived, contestable, votable later. A paradigm's blast radius is an entire language, which makes
    version history *more* important here, not less.
 
-### Open questions — do not answer these by guessing
+### Settled questions — recorded, do not re-litigate
 
-- **Its own lexicon?** `eu.leksis.paradigm` vs. fields on `eu.leksis.language`. Deciders: AT Proto record
-  size (a full Finnish/Basque paradigm set is not small — check the actual PDS record limit), authorship
-  granularity (one contributor per paradigm vs. per language), and the blast radius of a rewrite.
-- **Search vs. generation.** Inflected spellings are searchable today *because* `otherForms` carries them
-  into the `search` index. Generated forms are not in the record → **regular words would silently lose
-  inflected-form search**. Resolve deliberately: run the generator at ingest to expand the index,
-  normalise queries, or accept the gap.
-- **Binding vs. harvest.** The `abbreviations` read model (ADR-0004) *derives* pairs from entries; a tag
-  binding would be *authored* on the language record. Decide how they coexist (likely: authored binding +
-  derived free pairs, both surfaced on the language dashboard).
-- **XPOS at all?** Whether Leksis needs a language-specific POS layer, or whether UPOS + FEATS + free
-  pairs cover it.
-- **Which schema wins where.** UD and UniMorph overlap and disagree; choose per layer and record it in an
-  ADR rather than drifting between them.
+**Every design decision for this arc lives in `docs/design/grammatical-tagging.md`**, organised by layer and
+referenced *by name*. Read it before touching any layer, do not re-derive it from recall, and do not re-open
+what it has closed. The closed set, named so a session recognises them on sight:
 
-### Known unknowns: UD and UniMorph
+**follow UD and only UD** · **UD supplies the vocabulary, Leksis defines its lexicographic use** ·
+**`scheme: "ud"` means documented anywhere on universaldependencies.org** · **per-item provenance** ·
+**one bundle, one chip** · **exact → decomposition → verbatim** · **the canonical key** ·
+**tag-only `categories`, and the friction is deliberate** · **the XOR rule** ·
+**binding is declaring (the cascade)** · **store sparse, display complete** ·
+**harvest-first, "a tagged abbreviation"** · **bindings and layout on the language record, rules in their
+own lexicon** · **no XPOS as storage** · **`VerbForm=` on a VERB** · **the triage gate before minting** ·
+**the no-orphan rule** · **the layer-1 name→value gate** · **the layer-2 inherence gate, and its enumeration
+prompt is not a constraint** · **inflection classes are minted primitives, declared inherent at layer 2 —
+there is no separate class layer and no `appliesTo`** · **a (category, feature) pair is inherent XOR an
+axis** · **live UD candidate lists with degrade-to-manual** · **sense-level tagging on definition nodes** ·
+**`categories` order is the author's, `otherForms` order is the language's** ·
+**index expansion at ingest for inflected-form search** (leaning, priced at layer 5).
 
-**The developer has not studied Universal Dependencies or UniMorph yet, and no session may paper over
-that.** Rules for any session touching this arc:
+### Still genuinely open — do not answer these by guessing
+
+- **Should the entry-level annotation site also accept a *tag*, or free pairs only?** Recorded as
+  free-pairs-only, which leaves a whole-entry tag that is not a grammatical category with no home.
+- **The `layout` sub-object's inner shape** (layer 5) — deliberately undesigned until a real conjugation
+  table has been drawn by hand.
+- **The lexicon `union` encoding for annotation-XOR-tag.** It is the mechanism `app.bsky` embeds use, but
+  confirm it validates for local object refs before relying on it.
+- **The remaining ~19 UD FEATS value inventories.** *Not* a layer-1 blocker — layer 1 validates shape, not
+  vocabulary, and the editor fetches candidates live — but nothing in the table below may be extended from
+  memory.
+
+### Rules that bind every session touching this arc
 
 - **Never invent tag names, feature names or values.** Anything written into a lexicon, a type or the UI
-  must be traceable to a published inventory. If you cannot cite it, you do not know it.
+  must be traceable to a published inventory *or* explicitly minted as a language-declared tag. If you
+  cannot cite it and it is not language-declared, you do not know it.
 - **Verify at the source — do not trust the table below, and do not trust model recall.** Tagset details
-  are exactly the kind of thing an LLM reproduces confidently and wrongly. Fetch the pages.
-- **Design each rung so it does not depend on the parts not yet understood.** Bind the container
-  generically (a tag + the scheme it comes from + its homolingual label pair) so a later layer slots in
-  without a new mechanism.
-- **An explicit list of "I don't know yet" is a valid deliverable** for a rung's plan, and better than a
-  confident wrong vocabulary baked into records living on other people's PDSs. Lexicon shape mistakes are
-  not local: records already published elsewhere cannot be migrated by us.
+  are exactly what an LLM reproduces confidently and wrongly.
+- **An explicit list of "I don't know yet" is a valid deliverable** for a layer's plan, and better than a
+  confident wrong vocabulary. Pre-1.0 a wrong shape costs a bot republish; post-1.0 it is permanent.
 
-**Orientation only — verify every cell before relying on it:**
-
-| Thing | What it is (unverified summary) | Where it fits |
-|---|---|---|
-| **UPOS** (UD) | ~17 closed, universal part-of-speech tags (NOUN, VERB, ADJ, ADV, ADP, AUX, CCONJ, SCONJ, DET, NUM, PART, PRON, PROPN, INTJ, PUNCT, SYM, X) | The most stable, least contested rung. Lexeme-level; maps to the first item of today's `categories`. |
-| **FEATS** (UD) | `Feature=Value` pairs (`Case=Gen\|Number=Sing`), a universal inventory plus documented language-specific extensions | Splits lexeme-inherent from form-inflectional features; supplies the paradigm's cell coordinates. |
-| **XPOS** (UD) | Free, unstandardised language-specific POS string | Possibly unnecessary — see open questions. |
-| **UniMorph** | Paradigm-oriented schema: `lemma ⇥ form ⇥ features` (`V;IND;PRS;1;SG`), full inflection tables per lemma; v4 ships a UD↔UniMorph feature mapping | Closer to what a *paradigm* is than UD, which annotates tokens in running text rather than lexemes. |
-| **Hunspell** `.aff`/`.dic` | Affix rules + per-word flags selecting them | The generation model already in mind; also a concrete export target. |
-| **Apertium `lttoolbox`** monodix | `<pardef>` paradigms declared once, entries pointing at a paradigm | Near-exact prior art for "paradigm at language level, selector on the entry". |
-| **Wikidata Lexemes** | Lexeme / Form / Sense split with grammatical features | Prior art for the entry/form/sense layering at scale. |
-
-Canonical sources to fetch: `universaldependencies.org/u/pos/`, `universaldependencies.org/u/feat/`,
-`universaldependencies.org/format.html`, the per-language pages under `universaldependencies.org/treebanks/`
-(language-specific features), `unimorph.github.io`, `wiki.apertium.org/wiki/Monodix_basics`,
-`man 5 hunspell`.
+| Verified at source | What it is |
+|---|---|
+| **UPOS** | Exactly 17, its own CoNLL-U column (never a feature). *Open* ADJ ADV INTJ NOUN PROPN VERB; *closed* ADP AUX CCONJ DET **NUM** PART PRON SCONJ; *other* PUNCT SYM X. The page states **no extension policy either way**. PUNCT/SYM/X are excluded from headwords by **Leksis's** judgement, not UD's. ART routes to DET + `PronType=Art`; COMP → SCONJ. |
+| **FEATS** | `Feature=Value`, `\|`-separated, features **and** multivalue values sorted alphabetically (`Gender=Fem,Masc`); layered names `Number[psor]`. **"UD treebanks may use additional features and values if they are properly documented"** — the licence for minting. |
+| **Inventories fetched** | Gender, Case, NounClass; `Number` (11, **no singulative**; `Coll` is a subtype of *singular*); `VerbForm` (Conv Fin Gdv Ger Inf Part Sup Vnoun); `PronType` (11, incl. `Art`); `Animacy` (Anim **Hum** Inan Nhum); `Aspect` (Hab Imp Iter Perf Prog Prosp). `Animacy=Hum` answers "noun denoting a male person" with **no minting**; Breton's singulative genuinely must be minted. |
+| **Three tiers of UD docs** | universal (the index) · non-universal **with a global page** (`Subcat`, whose value list is unsettled) · language-specific in treebank docs (`Gender[psor]`). Only the third needs minting. |
+| **`NounClass`** | Family-specific values (`Bantu1`–`Bantu23`, `Wol1`–`Wol12`); UD says comparable systems should be developed for other families — **the citation that makes a language declaring its own inventory UD working as designed.** |
+| **Altitude, in UD's own words** | Animacy is "usually a lexical feature of nouns and inflectional feature of other parts of speech"; Aspect is lexical in Slavic, inflectional in Turkish. Cite these for invariant 1. |
+| **AT Proto** | Record ceiling ~1 MiB; a full grammar object is ~30 KB, so **size never constrains this arc**. The real pressure is firehose churn, since every edit republishes the whole record. |
+| **Apertium / Hunspell** | `<pardef>` + `<par n>` — stem plus paradigm pointer — is **the** prior art, since neither UD nor UniMorph defines a paradigm object. Hunspell affix rules are the generation model and are **not cheaply invertible**, which is why search wants ingest-time expansion. |
 
 > **Design for the language that has nothing.** A low-resource language usually has **no UD treebank**, so
 > no documented language-specific feature set exists for it at all. That is not a gap in Leksis — it is
 > Leksis's job: the language record becomes the place where that language's tagset is *declared*. Never
 > design a flow that assumes a published tagset already exists for the language.
 
-### The ladder (indicative order, not a commitment)
+### The layer model
 
-Each rung must ship and be useful on its own. A rung may be interleaved with loops 5–8; none may replace
-one. Plan a rung at its top, not now.
+The arc is a **stack of layers on the language record**, each shippable on its own. Full shapes, record
+schema and reasoning: `docs/design/grammatical-tagging.md`.
 
-1. **UPOS binding** — the language record declares `tag → {long, short}` in its own language; an entry's
-   category can carry the tag. Editor suggests from the binding, viewer displays the homolingual label.
-2. **Inherent FEATS** — lexeme-level features (gender, animacy, noun class) bound the same way.
-3. **Form-level FEATS** — `otherForms` carry feature bundles alongside (or instead of) a free label,
-   without breaking inflected-form search.
-4. **Paradigm definition** — the language-level paradigm object, its cells addressed by feature bundles,
-   plus the selector/diagnostic form on the entry.
-5. **Generation** — Hunspell-like rules fill regular cells client-side; entries carry only exceptions;
-   the flat list becomes a table.
-6. **Export** — Hunspell dictionaries and UniMorph TSV out of the graph: the annotation *becomes* the NLP
-   resource the white paper promises.
+A layer may be interleaved with loops 5–8; none may replace one. **The scopes are deliberately
+hard-edged** — the failure mode of this arc is a layer quietly absorbing the next one. Still plan each
+layer at its top; the scope says *what is in and out*, not *how*.
+
+> **The cascade is the core mechanism.** Each layer draws its options from the layer below, so an option
+> not declared below cannot be chosen above. In layer 1 a language binds only the tags it actually uses;
+> `Gender=Neut` left unbound in French means neuter never appears as an option in layers 2–5. **Binding
+> is therefore not merely labelling — it is how a language declares its inventory**, which is what makes
+> the flow work for a language with no published tagset.
+>
+> **The cascade governs authoring, never rendering.** A tag arriving unbound from a bot or another
+> AppView still renders (verbatim, styled unbound — design note §2.4). A viewer that *rejected* unbound
+> tags would make the AppView the arbiter of a language's grammar, which invariant 3 forbids.
+
+| Layer | What it declares | Status |
+|---|---|---|
+| **0 — Abbreviations** | free homolingual `{long, short}` pairs bound to nothing: definition notes, register, domain | **shipped** (v0.8) — gains an **entry-level** site at layer 1, since tag-only `categories` evicts `vulg.`/`arch.` |
+| **1 — Primitives** | the atoms this language uses: 14 headword-eligible UPOS, feature *names*, feature *values*. **Minting lives here**, including inflection-class features and their values | next |
+| **2 — Inherent combinations** | which features are **inherent** to a category, then the labelled headword categories that follow: masculine noun, first-declension feminine noun, transitive imperfective verb | |
+| **3 — Axes** | per category, which features **vary across its forms** — the option set of the `otherForms` editor | |
+| **4 — Layout** | the *shape* of the inflection tables: which axis sits where, one table or several, their order, what is shown by default, and the order of the flat `otherForms` list — **not** chip order | |
+| **5 — Rules** | Hunspell-shaped rules populating cells, overridden by the entry's own `otherForms`; its own lexicon | |
+| **6 — Export** | Hunspell `.aff`/`.dic`, UniMorph TSV, CoNLL-U — and XPOS as a *derived* output | |
+
+**Layer 1 — Primitives.** *In:* the tag type in `packages/types` (per-item `scheme`, canonical key for
+matching); `grammar.bindings` + `grammar.features` on `eu.leksis.language`; the `abbreviations` read model
+widened to carry the tag ("tagged abbreviation") and to surface **unbound tags in use** as a worklist; the
+entry editor's suggestion flow; the viewer resolving **exact → decomposition → verbatim**. Two row kinds are
+both needed: a feature *name* row (the axis header layer 4 prints) and a feature *value* row (the chip), and
+they are **gated — a feature name must be bound before any of its values can be**, mirror included. The 14
+headword-eligible UPOS are 17 minus PUNCT/SYM/X — **a Leksis editorial judgement, not UD's**, which states
+no extension or eligibility policy on its POS page.
+*Also in, and non-negotiable:* **minting** (`scheme` = the language's BCP 47 tag) at three granularities: a
+new value on a UD feature (`Number=Sgv` for the Breton singulative — UD's Number has none); a new feature
+name; and, reluctantly and as a justified exception, a POS. **Inflection classes are minted primitives and
+nothing more** — a Latin declension or French conjugation group is a minted *feature* whose *values* are
+minted and bound here; which category it applies to is layer 2's business.
+*Also in — the whole entry-lexicon break, done once:* `categories` narrowed to **tag-only**; the new
+**entry-level annotation site** it evicts `vulg.`/`arch.` into; and `definition.notes` becoming
+**annotation-XOR-tag**, so a sense group can be tagged transitive while the entry itself is `VERB`. Pre-1.0
+one break costs one bot republish; two breaks cost two.
+*Also in — two interfaces, both specified in design note §4:* the **binding editor**, a tabbed path-scoped
+tree whose navigation *is* the gate (one level at a time, path in the sidebar, everything inside the layer's
+own tab), with **live UD candidate lists** and a **degrade-to-manual** guardrail; and the **entry editor's
+progressive narrowing** — the contributor clicks bound abbreviations and each click narrows what is offered
+next (`n.` → gender options → `nf.` → declension options), never typing a criterion. Four properties that
+must hold: the suggestion tree is a **derived view** of layers 1–2, not a separate declaration; a refinement
+path stores **one bundle, not an accumulation**; it **degrades to a flat multi-select** and never blocks an
+unenumerated combination; and **every step shows a bound homolingual label**, which is only possible because
+tag-only `categories` forced the grammar to be declared first.
+Note layer 1 also binds **form-level vocabulary** (Tense and Case values, for table headers layer 4 will
+print), so it applies **no altitude filter**: altitude emerges from which higher layer references an item.
+*Out:* inherence, axes, layout, rules, export.
+
+**Layer 2 — Inherent combinations.** Two steps, and the first is the one no earlier design had:
+**declare that a feature is inherent to a category at all** *before* any of its value-combinations can be
+bound. Previously inherence was only *implied* by which combinations happened to exist, so the system could
+not distinguish "aspect is inherent to verbs" from "somebody bound one aspectual verb category". The editor
+then **prompts** for one combination per bound value — `{VERB, Aspect=Perf}`, `{VERB, Aspect=Imp}`, … — each
+with its own label.
+**This is every category, not nouns.** The row is `(category, feature)` and *both* halves are variables:
+`VERB × Aspect`, `VERB × Conjugation`, `ADJ × Degree`, `PRON × Person`, `ADP × Conjugation` (Breton
+conjugates prepositions), `NOUN × Gender`, `NOUN × Declension`. No privileged category, no per-UPOS
+special-casing. And since `category` is a `Tag`, inherence may be declared on a **combination** too, which is
+what sets the *depth* of the entry editor's narrowing tree: `Declension` inherent to `{NOUN}` offers it
+straight after `n.`, inherent to `{NOUN, Gender=Fem}` only after the gender is chosen. The language's call.
+**The enumeration is a prompt, not a constraint:** an incomplete set must not block a save, because a
+language may bind a value for another category's sake while no headword of this one takes it.
+Note the **gate symmetry** — layer 1 gates value-behind-name, layer 2 gates
+value-combination-behind-inherence. One rule at two levels, which is why both render as navigation rather
+than as validation errors. *Never a whitelist:* an unenumerated combination stays authorable and renders by
+decomposition. *Out:* anything concerning forms.
+
+**Layer 3 — Axes.** Per category, which features **vary across its forms** — the `otherForms` editor's
+option set, filtered by the cascade to bound tags only. With layer 2 this completes invariant 1's
+declaration: layer 2 is its inherent half, layer 3 its axis half, and the pair *is* the paradigm's
+cell-coordinate system. Keyed on **a category (a layer-1 atom or a layer-2 combination), not on UPOS
+alone**: a Slavic perfective verb has a different cell space from an imperfective one, and UPOS-only keying
+cannot say that. **Validate that a (category, feature) pair is not both inherent and an axis** — the
+apparent counterexample resolves through the keying, since `Number` is an axis for `{NOUN}` and inherent for
+`{NOUN, Number=Ptan}`. `otherForms[].annotation` also pluralises to a bundle here — a form's label is
+"gen. pl." in real dictionaries. Inflected-form search must keep working unchanged. *Out:* generated forms.
+
+**Layer 4 — Layout.** Layer 3 gives a category's *cell space*; it does **not** say what the table looks
+like, and axes alone underdetermine presentation — four axes could be one grid with nested headers or four
+separate tables. So, per category: which axis sits on which dimension, one table or several, the order the
+tables appear in, and **what is shown by default** — Latin dictionaries print the genitive and expect the
+reader to derive the rest, so a full table is not always wanted. It also fixes the display order of the flat
+`otherForms` list, the one-dimensional degenerate case of the same declaration. **Chip order is *not*
+here** — `categories` order stays the entry author's: order-as-phrasing belongs to the entry,
+order-as-table-geometry to the language.
+**Ships alone and is immediately useful:** with no rules behind it, an entry's own hand-entered forms land
+in a proper grid instead of a flat list, and the fallback becomes exactly "no layout declared → flat list".
+*Out:* generation.
+
+**Layer 5 — Rules.** A new `eu.leksis.paradigm` lexicon (not fields on the language record): Hunspell-like
+rules populating the cells layer 4 laid out. **The entry's own `otherForms` override any generated cell** —
+matched by canonical key on the cell address, which is why layer 3 must make a form's annotation a bundle. An
+`otherForm` matching no declared cell falls back to the flat list rather than being dropped; that is the safe
+failure. The entry carries its inherent categories plus exceptions, never generated forms (invariant 5).
+**Which inherent feature selects a paradigm is decided here, not declared anywhere** — a rule keys on
+whatever bundle its author chooses (`{VERB, Conjugation=1}`, `{VERB, Aspect=Perf}`, or both), which is why
+deleting the old class layer cost nothing. Apertium's `<pardef>` + `<par n>` is the model; the record ceiling
+is ~1 MiB (verified). One shared generator (invariant 6). Three things to price honestly: cells are
+**many-to-one** (syncretism — the table must merge, not repeat); ingest-time index expansion means a rule
+edit re-expands an entire language; and **"no such cell" and "one form spanning the whole axis" must render
+differently**, or a reader cannot tell a missing form from an incomplete entry — spell the second as a UD
+multivalue over the language's declared inventory (`Gender=Fem,Masc`, values alphabetical), never as a
+UniMorph `*`. Per-lexeme defectiveness is an entry-level exception here, not a property of any declaration.
+*Out:* export formats.
+
+**Layer 6 — Export.** Hunspell `.aff`/`.dic`, UniMorph TSV, CoNLL-U FEATS out of the graph: the annotation
+*becomes* the NLP resource the white paper promises. Losses are declared, not accidental. XPOS belongs here
+too — a string *generated* from layers 1–2, never storage.
+
+**Referential integrity — the cost of the cascade.** Unbinding a layer-1 atom orphans every higher row that
+references it. All of layers 0–4 therefore live in **one self-contained `grammar` sub-object** on the
+language record, so a single write keeps it consistent — which is why bindings are *not* lifted into their
+own record type: the layers couple them, and splitting would cost cross-record integrity. Two guards, both
+required at layer 1:
+
+- **The no-orphan rule.** Unbinding is refused while any higher layer depends on the row — including a
+  feature name whose values are still bound. "Unbinding" is not a delete operation: the whole `grammar`
+  object is rewritten, so the client must **diff proposed against current** and refuse to publish a version
+  that orphans anything. A pure function over (old, new) in `packages/types`. Enforced in the browser; at
+  the AppView **detection only, never rejection** — the orphan already renders safely, and rejecting would
+  discard a version's good content and make the AppView the arbiter of a language's grammar. The dashboard
+  surfaces orphans as a **repair worklist** beside the unbound-tag worklist.
+- **An optimistic-concurrency guard.** Refuse the write if the record changed since load: last-write-wins
+  can now drop a reference, not merely a label.
 
 ---
 
@@ -329,10 +475,12 @@ atom* (the dictionary) that the rest can grow from.
 - **Don't delete records or skip version archival** — it destroys the substrate the voting system needs.
 - **Don't end a loop on localhost** — a milestone is reached when it's verified on the live URL.
 - **Don't let the white paper and the code silently disagree** — record the divergence as an amendment/ADR.
-- **Don't guess a tagset.** No UD/UniMorph tag, feature or value goes into a lexicon, type or UI unless it
-  was checked against the published inventory in that session. Records live on other people's PDSs — a
-  wrong vocabulary cannot be migrated away later.
-- **Don't let the morphology arc pre-empt the loops** — it advances in thin, individually shippable rungs
-  beside loops 5–8, never instead of them; and it never breaks the "no paradigm defined" fallback.
+- **Don't guess a tagset, and don't reach for UniMorph.** Leksis follows **UD only**; a UniMorph tag never
+  enters a lexicon, type or UI — it exists solely in the layer-7 exporter. No UD tag, feature or value goes
+  in either unless it was checked against the published inventory in that session, **or** is explicitly
+  minted as a language-declared tag (`scheme` ≠ `"ud"`), which is a legitimate and expected act — not a
+  fallback for not having checked. Pre-1.0 a wrong vocabulary costs a bot reset-and-republish; from 1.0 on,
+  records live on strangers' PDSs and it cannot be migrated away at all.
+- **Don't let the morphology arc pre-empt the loops** — it advances in thin, individually shippable layers
+  beside loops 5–8, never instead of them; and it never breaks the "no layout declared" fallback.
 - **Add the new versions to the package files** – the package.json and package-lock.json must be updated to reflect the new versions of dependencies used in the project, then give the new version number as the conclusion of the answers in the chat session, so that they can be added manually after review.
-- **Always edit the code in the master branch without creating new worktrees**, so that the codebase can be navigated and reviewed easily without confusion.

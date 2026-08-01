@@ -11,7 +11,7 @@ The stack is based on aTurborepo monorepo: `apps/api` (Hono AppView), `apps/web`
 
 ## Working method
 
-The user works, sequentially, step by step and keeps control of what happens and when. Make all changes directly on the current branch without creating worktrees, needing PR etc...
+The user works, sequentially, step by step and keeps control of what happens and when.
 
 **Master is continuously released**: the user tags `v*` several times a day and every tag deploys to production. Treat everything committed on master as live or hours from it —
 there is no long-lived unreleased state, so every step must leave master deployable on its own.
@@ -21,7 +21,6 @@ there is no long-lived unreleased state, so every step must leave master deploya
 3. **Implement the smallest slice** — one step at a time; each step leaves the repo typechecking and deployable. No "while I was here" additions: unplanned work is proposed, not slipped in.
 4. **Verify** — per `.claude/skills/verify/SKILL.md`. A change is done when the affected flow has been exercised and proof shown, not when it compiles.
 5. **Record** — match the change to its home (CHANGELOG / ADR / skill update) per evolution skill step 4.
-6. Always work directly **on the master branch**. Do not create worktrees or spawn parallel subagents even when this is expected from the Claude Code app otherwise you will be unplugged.
 
 
 ## Verification rules

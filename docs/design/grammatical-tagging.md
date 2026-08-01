@@ -1,0 +1,593 @@
+# Design note: the Leksis grammar layer
+
+**Status:** Designed, not implemented. Supersedes into an ADR when layer 1 ships.
+**Date:** 2026-07-30; rewritten 2026-08-01 around the layer model; layers renumbered 2026-08-01 (old layer 3
+merged into 1 + 2).
+**For:** The morphology arc (`leksis-evolution` skill). **The next build is layer 1.**
+**Related:** `lexicons/eu.leksis.entry.json`, `lexicons/eu.leksis.language.json`, ADR-0004 (abbreviations
+read model), ADR-0002 (the browser is the write path)
+
+> **How to read this.** §0 is binding on every session. §1 is what has been **verified at source** — treat
+> anything absent from it as unknown, and §6 as the list of things nobody has checked. §§2–4 are the design.
+> Decisions are referred to **by name**, not by number, so references survive edits.
+
+---
+
+## 0. Governing rules
+
+**Follow UD, and only UD.** Where another schema disagrees, UD wins by default and **the disagreement is
+not adjudicated** — it is not a design input. Do not import UniMorph's decompositions, POS inventory or
+feature algebra "because it is more expressive". When UD is awkward for a language, the escape hatch is a
+**language-declared tag**, never a UniMorph-shaped one. *What UniMorph is still for:* an **export target at
+layer 6**, nothing else — its bundles are `;`-joined bare atoms whose dimension is implicit and whose atoms
+are not globally unique, so they cannot safely ride on a record other AppViews read. Apertium and Hunspell
+are unaffected: they supply the paradigm architecture and generation model, which UD does not define at all,
+and are not competing tagsets. The rule is provisional; revisiting it is a decision to be recorded, not
+something a session may do implicitly.
+
+**UD supplies the vocabulary; Leksis defines its lexicographic use.** UD is the base because its ecosystem
+is mature, not because Leksis is a treebank — and the two annotate different objects (§1.1). A language may
+bind a UD item and use it in a way a UD treebank would not; the binding's homolingual label is what tells a
+reader what it means *here*. This is the semantics of use, not the import of another schema, so the rule
+above is untouched. **Its cost must be declared, not discovered:** layer 6's CoNLL-U carries FEATS that look
+interoperable but are lexicographic. A deterministic UD→UniMorph mapping reaches only ~64% recall even
+between the two published schemas, so lossy export is normal — lossy *by declaration* is acceptable, lossy
+by accident is not.
+
+**Never invent a tag name, feature name or value.** Anything written into a lexicon, a type or the UI must
+be traceable to a published inventory **or** explicitly minted as a language-declared tag. If you cannot
+cite it and it is not language-declared, you do not know it.
+
+**Verify at the source; do not trust this file's summary and do not trust model recall.** Tagset details are
+exactly what an LLM reproduces confidently and wrongly. **An explicit "I don't know yet" is a valid
+deliverable** and beats a confident wrong vocabulary. Pre-1.0 a wrong shape costs a bot republish; from 1.0
+it is permanent.
+
+**Tags are machine data; labels are homolingual display, and the two never coexist on one item.** A tag is
+an identifier, not reader-facing text, so it rides on the entry record while the **language record carries
+the binding `tag → {long, short}`**. Never render a raw tag as prose; never store an English label inside an
+entry.
+
+**Design for the language that has nothing.** A low-resource language usually has no UD treebank, so no
+documented feature set exists for it at all. That is not a gap in Leksis — it is Leksis's job: the language
+record is where that language's tagset gets *declared*. Never design a flow that assumes a published tagset
+already exists.
+
+---
+
+## 1. What UD is — verified at source
+
+### 1.1 UD annotates a token in a sentence; Leksis annotates a lexeme in a dictionary
+
+UPOS is a **token-level** tagset being used here as a **lexeme-level** classification. That mismatch is real
+and bites in three places: **AUX** (Breton *bezañ* is a VERB lemma that *functions* as an auxiliary — let
+each language decide whether it binds AUX at all), **PROPN**, and participles (settled: `VerbForm=` on a
+VERB, not separate parts of speech, which also keeps them inside the verb's paradigm instead of scattered
+across headwords).
+
+### 1.2 UPOS — exactly 17, in three groups
+
+*Open:* ADJ ADV INTJ NOUN PROPN VERB · *Closed:* ADP AUX CCONJ DET **NUM** PART PRON SCONJ ·
+*Other:* PUNCT SYM X.
+
+UPOS is its **own CoNLL-U column**, not a feature — never mint `UPOS` as a pseudo-feature name. The page
+states **no extension policy either way**; an earlier draft claimed "extension is not offered", which was
+stronger than the source. The **14 headword-eligible** tags are 17 minus PUNCT/SYM/X — **a Leksis editorial
+judgement, not UD's.** ART is not really missing: it routes to `DET` + `PronType=Art`. COMP routes to SCONJ.
+
+### 1.3 FEATS — the vocabulary and the storage grammar
+
+`Feature=Value`, `|`-separated, **features sorted alphabetically**; multivalue values also sorted
+alphabetically (`Case=Acc,Dat`, `Gender=Fem,Masc`); layered names `Number[psor]` matching
+`[A-Z][A-Za-z0-9]*(\[[a-z0-9]+\])?`; `_` means none.
+
+Groups: *lexical* (PronType, NumType, Poss, Reflex, Foreign) · *inflectional* (Gender, VerbForm, Animacy,
+Mood, NounClass, Tense, Number, Aspect, Case, Voice) · *other* (Abbr, Definite, Evident, Typo, Deixis,
+Polarity, DeixisRef, Person, ExtPos, Degree, Polite, Clusivity).
+
+**The extension licence, verbatim:** "UD treebanks may use additional features and values if they are
+properly documented." This one sentence is what makes language-declared tags UD-compatible rather than a
+divergence.
+
+### 1.4 Three tiers of UD-documented vocabulary
+
+1. **Universal** features, on the features index.
+2. **Non-universal with a global description page** — `Subcat` (transitivity) is the known case. Absent from
+   the index, but published, therefore citable.
+3. **Language-specific**, documented in treebank docs — `Gender[psor]` in UD_Breton-KEB.
+
+**`scheme: "ud"` therefore means "documented anywhere on universaldependencies.org", not "in the universal
+set".** Reading it narrowly causes a real failure: a session mints a Breton `Transitivity` when `Subcat=Tran`
+was already citable. Only tier 3 needs minting.
+
+### 1.5 Verified inventories
+
+| Feature | Values | Note |
+|---|---|---|
+| `Number` | Coll Count Dual Grpa Grpl Inv Pauc Plur Ptan Sing Tri | **No singulative.** `Coll` is "a special case of singular", so it covers only the collective half of a Breton-style pair. |
+| `VerbForm` | Conv Fin Gdv Ger Inf Part Sup Vnoun | Load-bearing: participles, converbs and verbal nouns route through it. |
+| `PronType` | Art Dem Emp Exc Ind Int Neg Prs Rcp Rel Tot | `Art` is how UPOS's missing ART is expressed, on `DET`. |
+| `Animacy` | Anim **Hum** Inan Nhum | `Hum` answers "noun denoting a male person" with **no minting**: `{NOUN, Gender=Masc, Animacy=Hum}`. |
+| `Aspect` | Hab Imp Iter Perf Prog Prosp | Whether `Perf` means *perfective* or *perfect* does not bind Leksis — see §0. |
+| `Gender`, `Case`, `NounClass` | fetched 2026-07-30 | `NounClass` values are **family-specific** (`Bantu1`–`Bantu23`, `Wol1`–`Wol12`) and UD says comparable systems should be developed for other families — **the citation proving that a language declaring its own inventory is UD working as designed.** |
+
+**Altitude is a property of (category × feature), not of a feature** — and UD says so itself. The `Animacy`
+page: animacy is "usually a lexical feature of nouns and inflectional feature of other parts of speech". The
+`Aspect` page: lexical in Czech and the Slavic languages, inflectional where bound morphemes mark it as in
+Turkish. So there is **no global list of inherent features to hardcode**; the language declares it, and §3's
+layers 2 and 3 are the two halves of that declaration.
+
+**Neither UD nor UniMorph defines a paradigm object.** UD has no lexeme; UniMorph ships enumerated triples
+with no notion of which cells exist. The prior art is Apertium's monodix: `<pardef n="beer__n">` declared
+once, entry `<e lm="beer"><i>beer</i><par n="beer__n"/></e>` — stem plus paradigm pointer. Hunspell
+`.aff`/`.dic` supplies the generation model (affix rules + per-word flags), and its rules are **not cheaply
+invertible** — which is why inflected-form search wants ingest-time expansion.
+
+**Other verified facts.** The AT Proto record ceiling is ~1 MiB (`MAX_CBOR_RECORD_SIZE`), with
+`subscribeRepos` commit blocks capped at 2 MB. A full grammar object is ~30 KB, so **size is not a constraint
+on this arc and will not become one**; the real pressure is firehose churn, since every edit republishes the
+whole record. And `universaldependencies.org` sends `access-control-allow-origin: *` (GitHub Pages), so the
+browser may fetch it directly.
+
+---
+
+## 2. The shape
+
+### 2.1 A tag is a bundle, and provenance rides on each item
+
+```
+Tag = { upos?: { value, scheme? },
+        feats?: [{ feature, value, scheme? }] }        // scheme omitted = "ud"
+```
+
+At least one of `upos`/`feats` must be present. **`scheme` is per item, not per bundle:** a bundle-level
+scheme cannot describe `{NOUN (ud), Number=Sgv (br)}`, which is the normal shape of a minted category, and
+marking the whole bundle `br` would break decomposition against `ud`-scheme bindings, leave the exporter
+unable to tell which halves are exportable, and silently relate unrelated languages.
+
+**One bundle = one displayed chip.** Languages abbreviate at different granularities: French `nf.` is *one*
+label for NOUN + Gender=Fem where Breton uses two (`n.`, `f.`).
+
+**Bundle equality is computed on a canonicalised key** — feats sorted by feature name, multivalue values
+sorted alphabetically, `upos` in its own slot, scheme included — or matching silently fails on ordering.
+
+### 2.2 The language record
+
+```
+eu.leksis.language.grammar = {
+  bindings: [ { tag: Tag, label: {long, short?}, references?: [{text, url}] } ],   // L1 atoms
+  features: [ { feature, scheme?, label: {long, short?}, references?: [{text, url}] } ],   // L1 feature names
+  values: [ { feature, value, scheme?, label: {long, short?}, references?: [{text, url}] } ],   // L1 feature value names
+  inherent: [ { category: Tag, features: [{ feature, scheme? }] } ],   // L2 — declares inherence of a feature or several features on a category
+  bundles: [ { category: Tag, values: [{ feature, value, scheme? }], label: {long, short?} } ],    // L2 — declares bundles of inherent values on a category
+  axes:     [ { category: Tag, feature: { feature, scheme? } } ],                  // L3 — declares variation
+  layout:   [ { category: Tag, ... } ]                                             // L4 — inner shape TBD
+}
+```
+
+One **self-contained `grammar` sub-object** holding layers 0–4. Layer 5's rules get their own
+`eu.leksis.paradigm` lexicon: they are large, per-class, and written at a different cadence.
+
+Note what is **absent by design**: no `appliesTo`, and no `enumerated` flag. Both were bespoke fields on the
+old inflection-class layer, and `inherent` now does that work generically (§3, layer 2).
+
+**Store sparse, display complete.** The record holds only *authored* rows. The closed 17-item UPOS inventory
+is a constant in `packages/types`; the dashboard left-joins it to present a complete worklist ("4 of 14
+bound"). A stored skeleton of empty rows carries no facts, makes "complete" a stored state that goes stale
+when UD moves, and invites writing UD's English names in as placeholders. Absence already means unbound,
+which is what the rendering fallback depends on. **One representation, not two.**
+
+Corollary: embed **UPOS** (closed, stable since UD v2); do **not** embed the FEATS value inventories (27
+features, hundreds of values, released twice a year). A harvested FEATS inventory may exist as dated
+reference data feeding suggestions, but **never as a validator** — the AppView must not reject a tag for
+being absent from a snapshot.
+
+### 2.3 The four annotation sites
+
+| Site | Contents |
+|---|---|
+| `categories` | **tag only** |
+| entry-level annotations *(new)* | free pairs only — *open: should a whole-entry non-category tag be allowed?* |
+| `definition.notes` (leaf and group) | tag **XOR** free pair |
+| `otherForms[].annotation` | a bundle (layer 3) |
+
+**The XOR rule:** an item is *either* a free `{long, short}` pair *or* a tag, never both — two sources of
+truth for one displayed string can only drift, and the language-level one has to win. **Encode the XOR
+structurally as a lexicon `union`**, not as two optional fields plus a documented rule, so the illegal state
+is unrepresentable rather than merely discouraged.
+
+**`categories` is tag-only, and the friction is deliberate.** Non-grammatical headword labels (`vulg.`,
+`arch.`, `fam.`) are not categories: they go to the entry-level site. The reasoning is a **forcing
+function** — requiring a tag makes a contributor settle the language's grammar declaration *before*
+authoring entries, so entries come out consistent across the system. Authoring convenience is deliberately
+not what is being optimised. Two corollaries: do **not** mint `Register=Vulg` to smuggle a register label
+into the headword line, and do **not** relax `categories` to XOR later on the grounds that contributors find
+it hard — the difficulty is the mechanism working.
+
+**Sense-level tagging is why `definition.notes` is XOR.** A verb is `VERB` at the entry level and transitive
+on one sense group, intransitive on another — which is what the tree-shaped definitions of v0.8 were built to
+express. Declaring a feature inherent at layer 2 does **not** restrict its use at a definition node: a
+dictionary may legitimately print `v.t.` in the headword line *and* split senses by transitivity. Do not
+build a cross-check that forbids it.
+
+**`categories` order belongs to the entry author** (order-as-phrasing); `otherForms` order belongs to the
+language (order-as-table-geometry — it is the one-dimensional degenerate case of layer 4's layout).
+
+### 2.4 Rendering precedence: exact → decomposition → verbatim
+
+This ordering is *how the viewer chooses* between valid renderings, not merely a fallback chain.
+
+1. **Exact bundle match.** French, having bound `{NOUN, Gender=Fem}` → `nf.`, shows **`nf.`**
+2. **Decomposition.** No exact match, but the parts are bound → render the parts **in the bundle's own
+   order**. A language that bound `{NOUN}` → `n.` and `{Gender=Fem}` → `f.` but never the pair shows
+   **`n. f.`** — never a synthesised `nf.` nobody authored. Decomposition is **greedy** (largest bound
+   sub-bundles first), so `{NOUN, Gender=Fem, Number=Plur}` in a language that bound `nf.` and `pl.` renders
+   `nf. pl.`. **Partial decomposition still beats a raw tag:** bound parts render as labels and only the
+   unbound remainder falls to rule 3.
+3. **Verbatim tag**, visibly styled as unbound. It must **not** be UD's English documentation name, which
+   would look like content and breach the homolingual rule. An untranslated identifier reads as "this needs
+   binding", which is the wanted signal and the affordance that opens the binding flow. Bots typically know
+   the UD tag before any abbreviation exists, so this is the common path, not an edge case.
+
+---
+
+## 3. The layers
+
+Each layer draws its options from the layer below, and each must ship and be useful alone.
+
+> **The cascade is the core mechanism.** In layer 1 a language binds only the tags it uses; `Gender=Neut`
+> left unbound in French means neuter never appears as an option in layers 2–5. **Binding is therefore not
+> merely labelling — it is how a language declares its inventory**, which is what makes the flow work for a
+> language with no published tagset. A language's inventory is exactly what it has bound; "considered and
+> rejected" and "not got to it yet" look identical, and the dashboard worklist makes that harmless.
+>
+> **The cascade governs authoring, never rendering.** A tag arriving unbound from a bot or another AppView
+> still renders (§2.4 rule 3). A viewer that *rejected* unbound tags would make the AppView the arbiter of a
+> language's grammar.
+
+| Layer | Declares | Home |
+|---|---|---|
+| **0 Abbreviations** | free homolingual pairs bound to nothing | entry records (shipped v0.8) |
+| **1 Primitives** | the atoms this language uses: 14 UPOS, feature *names*, feature *values*; minting | `grammar.bindings`, `grammar.features` |
+| **2 Inherent combinations** | which features are **inherent** to a category, and the resulting labelled headword categories | `grammar.inherent`, `grammar.bindings` |
+| **3 Axes** | which features **vary across the forms** of a category | `grammar.axes` |
+| **4 Layout** | table shape, order, default visibility; `otherForms` list order | `grammar.layout` |
+| **5 Rules** | Hunspell-like generation filling cells | `eu.leksis.paradigm` |
+| **6 Export** | Hunspell, UniMorph TSV, CoNLL-U, XPOS as derived output | — |
+
+### Layer 1 — Primitives
+
+*In:* the `Tag` type and canonical key in `packages/types`; `grammar.bindings` + `grammar.features`; the
+`abbreviations` read model widened to carry the tag and to surface **unbound tags in use** as a worklist; the
+binding editor; the entry editor's suggestion flow; the viewer's resolution chain.
+
+**Two row kinds, and both are needed:** a feature *value* row is the chip (`Gender=Fem` → `b.`); a feature
+*name* row is the axis header layer 4 will print (`Case` → `troad`). **They are gated — a feature name must
+be bound before any of its values can be**, and its mirror holds: a name cannot be unbound while a value is
+bound.
+
+**Layer 1 binds form-level vocabulary too**, not only headword vocabulary: Tense and Case values are bound
+here although they never appear in `categories`. So layer 1 applies **no altitude filter** — altitude is not
+a property of a bound item, it *emerges from which higher layer references it* (layer 2 makes it inherent,
+layer 3 makes it an axis, a definition-node tag makes it sense-level).
+
+**Minting is in scope on day one and is non-negotiable** (`scheme` = the language's BCP 47 tag), at three
+granularities: a new **value** on a UD feature (`Number=Sgv`, since UD's Number has none); a new **feature
+name**; and, reluctantly and as a justified exception, a **POS**.
+
+**Inflection classes are minted primitives — nothing more.** A Latin declension or a French conjugation group
+is a minted *feature* (`Conjugation`, scheme `fr`) whose *values* (`1`, `2`, `3`) are minted and bound, both
+here. There is no separate class mechanism: which category a class applies to is a layer-2 inherence
+declaration, and the completeness of its value set is layer 2's enumeration prompt. Since neither UD nor
+UniMorph defines a paradigm object, these values are *necessarily* language-declared — the clearest
+legitimate minting in the arc, and the reason layer 1 must support minting from the start.
+
+*Also in — the whole entry-lexicon break, done once:* `categories` narrowed to tag-only, the new entry-level
+annotation site, and `definition.notes` becoming annotation-XOR-tag. Pre-1.0 one break costs one bot
+republish; two breaks cost two. The *editor UI* for sense-level tagging may follow later; the shape must be
+right now.
+
+*Out:* inherence, axes, layout, rules, export.
+
+### Layer 2 — Inherent combinations
+
+Two steps, and the first is the one that was missing: **before any value-combination can be bound, the
+language must declare that the feature is inherent to the category at all.**
+
+**This applies to every category, not to nouns.** `NOUN × Gender` is only the running example below; the
+mechanism is identical and equally expected for `VERB × Aspect`, `VERB × Subcat`, `VERB × Conjugation`,
+`ADJ × Degree`, `PRON × Person`, `ADP × Conjugation` (Breton conjugates its prepositions), `NOUN × Animacy`,
+`NOUN × Declension`. There is no privileged category and no per-UPOS special-casing anywhere in the layer:
+the row is `(category, feature)` and *both* halves are variables.
+
+1. **Declare inherence:** `{category: <Tag>, feature: <feature>}` — e.g.
+   `{category: {upos: {value: "VERB"}}, feature: {feature: "Aspect"}}`, "for verbs, aspect is inherent".
+   This is the explicit statement no earlier design had; previously inherence was only *implied* by which
+   value-combinations happened to exist, so the system could not distinguish "aspect is inherent to verbs"
+   from "somebody bound one aspectual verb category".
+2. **Enumerate the combinations:** the editor then prompts for one combination per bound value of that
+   feature — `{VERB, Aspect=Perf}`, `{VERB, Aspect=Imp}`, … — each getting its own label. These rows are
+   ordinary `grammar.bindings` entries whose tag carries both a `upos` and one or more `feats` items.
+
+**`category` is a `Tag`, so inherence can be declared on a combination, not only on a bare UPOS.** This is
+what controls the *depth* of the entry editor's narrowing tree (§4.2). A language that declares
+`Declension` inherent to `{NOUN}` offers declension immediately after `n.`; one that declares it inherent to
+`{NOUN, Gender=Fem}` offers it only after the gender is chosen. Both are legitimate — the choice is a
+lexicographic judgement about which distinctions are prerequisite to which, and it is the language's to make.
+
+**The enumeration is a prompt, not a constraint.** The dashboard shows "VERB × Aspect: 2 of 3 bound values
+combined", but an incomplete set is legitimate and must not block a save — a language may bind a value
+because *another* category inflects for it while having no headword of this category that takes it (French
+binds `Gender=Neut` for nothing at all; a language may bind `Aspect=Prog` for a periphrastic construction
+without a perfective/progressive lexeme split). Enforcing completeness would make that unexpressible.
+
+**Note the gate symmetry.** Layer 1 gates value-behind-name; layer 2 gates value-combination-behind-inherence
+declaration. It is one rule applied at two levels, which is why both can be rendered as navigation rather
+than as validation errors (§4.1).
+
+**Never a whitelist.** A combination nobody enumerated must stay authorable and simply renders by
+decomposition, or a missing row blocks a contributor.
+
+*Out:* anything concerning forms.
+
+### Layer 3 — Axes
+
+Per category, which features **vary across its forms** — the `otherForms` editor's option set, filtered by
+the cascade to bound tags only. Together with layer 2 this completes invariant 1's declaration: layer 2 is
+its inherent half, layer 3 its axis half, and the pair *is* the paradigm's cell-coordinate system.
+
+**Keyed on a category — a layer-1 atom or a layer-2 combination — not on a UPOS alone:** a Slavic perfective
+verb's cell space differs from an imperfective one's, and UPOS-only keying cannot say that.
+
+**A (category, feature) pair should not be both inherent and an axis.** Validate it. The apparent
+counterexample resolves through the keying: `Number` is an *axis* for `{NOUN}` and *inherent* for
+`{NOUN, Number=Ptan}` — different categories, no conflict.
+
+`otherForms[].annotation` also pluralises to a bundle here — a form's label is "gen. pl." in real
+dictionaries. Inflected-form search must keep working unchanged. *Out:* generated forms.
+
+### Layer 4 — Layout
+
+Layer 3 gives the cell space; it does **not** say what the table looks like, and **axes alone underdetermine
+presentation** — four axes could be one grid with nested headers or four separate tables. So, per category:
+which axis sits on which dimension, one table or several, the order tables appear in, and **what is shown by
+default** (a Latin dictionary prints the genitive and expects the reader to derive the rest, so a full table
+is not always wanted). It also fixes the display order of the flat `otherForms` list — **not** of category
+chips.
+
+**Ships alone and is immediately useful:** with no rules behind it, an entry's own hand-entered forms land in
+a proper grid instead of a flat list. The old "no paradigm → flat list" fallback becomes exactly "no layout
+declared → flat list". *Out:* generation.
+
+### Layer 5 — Rules
+
+Hunspell-like rules populating the cells layer 4 laid out, in `eu.leksis.paradigm`. **The entry's own
+`otherForms` override any generated cell**, matched by canonical key on the cell address — which is why layer
+3 must make a form's annotation a bundle. An `otherForm` matching no declared cell falls back to the flat
+list rather than being dropped: the safe failure. The entry carries its inherent categories plus exceptions,
+**never generated forms** — fixing a language's rule must re-render every entry without republishing anything
+on anyone's PDS.
+
+**Which inherent feature selects a paradigm is decided here, not declared anywhere.** A rule keys on whatever
+bundle its author chooses — `{VERB, Conjugation=1}`, or `{VERB, Aspect=Perf}`, or both. That is why deleting
+the old class layer cost nothing: the "this feature is the paradigm selector" claim was never needed.
+
+**One shared generator**, in a shared package, never inside a React component: it serves the viewer now and
+the exporters later. Three things to price honestly: cells are **many-to-one** (syncretism — the table must
+merge, not repeat); ingest-time index expansion means a rule edit re-expands an entire language; and see §5
+on the three cell states. *Out:* export formats.
+
+### Layer 6 — Export
+
+Hunspell `.aff`/`.dic`, UniMorph TSV, CoNLL-U FEATS out of the graph: the annotation *becomes* the NLP
+resource the white paper promises. XPOS belongs here too — a string *generated* from layers 1–2, never
+storage, because XPOS is a single opaque token-level string and collapsing the layers into `Ncmsp` throws
+away the structure they exist to create.
+
+### Referential integrity — the cost of the cascade
+
+Unbinding a layer-1 atom orphans every higher row referencing it. Hence one `grammar` sub-object, and two
+guards required at layer 1:
+
+- **The no-orphan rule.** Unbinding is refused while any higher layer depends on the row. Note "unbinding" is
+  not a delete operation — the whole object is rewritten, so the client must **diff proposed against
+  current** and refuse to publish a version that orphans a reference. Build it as a pure function over
+  (old, new) in `packages/types`, shared by every client. Enforced in the browser; at the AppView
+  **detection only, never rejection** — rejecting a version would discard that version's good content to
+  punish one bad row and would make the AppView the arbiter of a language's grammar, and it buys little
+  because an orphan already renders safely by decomposition or verbatim. The AppView indexes it, flags the
+  orphans, and the dashboard surfaces them as a **repair worklist** beside the unbound-tag worklist.
+- **An optimistic-concurrency guard.** Refuse the write if the record changed since load: last-write-wins can
+  now drop a *reference*, not merely a label.
+
+**Every layer's constraint is a gate, and every gate has a mirror.** Expect each new layer to add one of
+each, and expect both to live in the shared validator.
+
+**Records prove authorship, not ownership.** Every layer is a record like any other: last-write-wins,
+archived, contestable, votable later. A language record's blast radius is an entire language, which makes
+version history *more* important here, not less.
+
+---
+
+## 4. The interface
+
+### 4.1 The binding editor — a tabbed, path-scoped tree
+
+One tab per layer. Inside a tab a sidebar holds the *path* through a tree while the main panel shows exactly
+one level. Layer 1:
+
+1. choose **UPOS** or **FEATS**;
+2. UPOS → the flat list of UPOS; FEATS → the flat list of feature names;
+3. opening an item — or "add" at the top of the list — → the binding form;
+4. opening a *feature* → two options: **bind the feature name**, and, revealed only once that binding exists,
+   **open its values**.
+
+Layer 2 has the same shape one level up: pick a category → declare which features are inherent to it →
+the value-combinations for a declared feature become available to bind.
+
+In both, the gate is rendered **as navigation rather than as an error**: the illegal action is simply not
+offered, so no validation copy is needed.
+
+**The discipline to preserve: one level visible at a time, the path in the sidebar, everything inside the
+layer's own tab.** The failure mode of a binding UI is a single screen showing POS, features, values and
+combinations at once.
+
+**Candidate lists are fetched from UD live; the contributor chooses what to bind.** The editor builds the
+list from the universal inventory **plus the language's own treebank pages**, resolved from its BCP 47 tag,
+and the contributor picks. This dissolves questions like "does `Subcat` have two values or four" — the editor
+shows what the page currently offers and the contributor calls the shot, so no inventory needs transcribing
+into code. CORS is open (§1.5), so fetch directly; keep the **HTML parser in a shared package** (the pages
+are `text/html`, not an API) so it can move behind an AppView cache if UD restructures. Implied small piece
+of work: a BCP 47 → treebank code mapping (`br` → `br_keb`).
+
+**Non-negotiable guardrail: the editor must degrade to manual entry.** If the fetch fails, a contributor must
+still be able to type a tag and bind it — otherwise UD's uptime becomes a hard dependency for authoring,
+which breaks "design for the language that has nothing".
+
+### 4.2 The entry editor — progressive narrowing by clicking abbreviations
+
+The contributor never types a criterion. They are shown the language's bound **UPOS abbreviations**, and each
+click narrows what is offered next, drawn from layer 2's declarations:
+
+> A Latin first-declension feminine noun: click **`n.`** → gender options appear (because Gender is declared
+> inherent to NOUN) → click the abbreviation for `{NOUN, Gender=Fem}` → declension options appear (because
+> `Declension` is declared inherent too) → click **`1.`**. Three clicks, no typing.
+
+Four properties this must have:
+
+- **The suggestion tree is a derived view of layers 1–2, not a separate declaration.** The inherence
+  declarations and the enumerated combinations are what generate the narrowing; nothing extra is authored to
+  get it. *(This is also what makes deleting the old class layer free: `appliesTo` existed only to drive this
+  narrowing, and inherence now does it.)*
+- **A refinement path produces one bundle, not an accumulation.** Clicking `n.` then `nf.` stores
+  `{NOUN, Gender=Fem}` — *not* `{NOUN}` and `{NOUN, Gender=Fem}` both. Whether it displays as one chip or two
+  is decided by the rendering chain (§2.4), not by the editor. To add a genuinely separate category the
+  contributor starts a new path.
+- **It degrades to a flat multi-select.** A language that has declared no inherence offers nothing to narrow
+  to, so atoms are picked independently — and an *unenumerated* combination must stay reachable, since layer
+  2 is a menu and not a whitelist.
+- **Every step shows a bound homolingual label, never a raw tag.** This is only possible because the grammar
+  was declared first — the payoff of tag-only `categories` (§2.3). The entry editor can be entirely
+  homolingual precisely because the forcing function did its work.
+
+Binding **from inside the entry editor is allowed**: publish a new language-record version, then save the
+entry. Language records are already user-editable this way, and records prove authorship, not ownership.
+
+### 4.3 The contributor's walk
+
+1. Language dashboard → **Grammatical labels**. The 14 headword-eligible UPOS appear as rows, each glossed
+   **in the reader's interface language**, with a bind affordance. The list is closed, so the task visibly
+   ends. *(That gloss is UI chrome sourced from UD's English docs — never entry content, so the homolingual
+   rule is untouched. It is a real layer-1 deliverable: without it a non-linguist cannot bind `NOUN`.)*
+2. Bind `NOUN` → `anv-kadarn` / `an.`. Done once for every entry in the language.
+3. Bind `Gender`, then its values — `Gender=Fem` → `benel` / `b.`. Leave `Gender=Neut` unbound and it never
+   appears again downstream.
+4. Layer 2: declare **Gender is inherent to NOUN**, then bind the combinations the editor prompts for. Where
+   the tradition prints one chip for two atoms, that combination's label is `an.b.`; where it prints two, the
+   combination is left unbound and decomposition renders `an. b.`.
+5. Look for a singulative under `Number`; it is not there. **Mint at the value level**: `Number=Sgv`, scheme
+   `br`, bound to `unanennek` / `un.`, with a `references` row citing a Breton grammar. Minting happens
+   exactly where the contributor can see nothing in UD fits, which makes it a justified act rather than a
+   shrug.
+6. Mint a `Conjugation` feature and its values, declare it inherent to VERB, bind each combination — useful
+   in the headword line with no generation behind it.
+7. Layer 3: declare that a verb's forms vary by person, number, tense and mood — which is what the
+   `otherForms` editor then offers.
+
+### 4.4 The triage gate — run it in order before minting anything
+
+Minting is legitimate and expected, but reaching for it first is how "follow UD only" dies quietly.
+
+1. **Is it a grammatical feature at all?** Register, domain, dialect and editorial hedges stay free pairs
+   forever. "Masculine but sometimes used as feminine" fails here: a bundle cannot rank or hedge its values,
+   and inventing a way to would be exactly the algebra §0 bars. True épicène is different — that is
+   multivalue `Gender=Fem,Masc`.
+2. **Which altitude?** Lexeme (`categories`) / form (`otherForms`, later a cell) / **sense** (the definition
+   group node). Transitivity is sense-level in most dictionaries.
+3. **Does UD already express it** — across all three tiers (§1.4), and via its own routing rules (articles →
+   `DET` + `PronType=Art`; participles → `VerbForm=`; "spans the axis" → multivalue enumeration)? Check at
+   source; the assumption that UD lacks something is often wrong.
+4. **Only then mint**, and record why.
+
+### 4.5 Sources of trust
+
+For a `ud`-scheme item the documentation URL is **derivable** from the item itself (`u/pos/`,
+`u/feat/<Feature>.html`) — compute it in the UI and store nothing, which keeps records small and links
+unrotted. For a **minted** item and for a **free layer-0 pair** the source is not derivable, so the row
+carries `references: [{text, url}]`, reusing the entry lexicon's existing shape. On a minted item this is not
+decoration: UD's licence is conditional on being "properly documented", so the reference is what makes the
+compatibility claim honest.
+
+---
+
+## 5. Consequences to design for
+
+- **The `abbreviations` read model inverts, and stays the single home.** The framing is **"a tagged
+  abbreviation", not "a labelled tag"**: the abbreviation is the primary object and the tag an attribute it
+  may acquire, so binding does not create a second kind of thing and there is no parallel tag collection. The
+  dashboard's question becomes *"which tags are in use with no label yet?"* — the language dashboard becomes
+  a **translation worklist**, and the model must tolerate a row with a tag and no label, a row with a label
+  and no tag, and now an orphaned reference.
+- **Most labels a real dictionary uses stay free pairs forever** (`bot.`, `arch.`, `fam.`, register,
+  dialect). An entry in a language whose tagset nobody has declared must stay fully editable.
+- **Four different things live at annotation sites — do not let them collapse.** (a) a taggable grammatical
+  feature; (b) an untaggable editorial/domain/register label — a free pair; (c) a free prose remark —
+  `plainNotes`; (d) a **collocation or example phrase**, which is *content*, not annotation, and needs its
+  own field rather than being smuggled into notes. The project's bet is that structure substitutes for corpus
+  size, so a mislabelled note is structure lost.
+- **Syncretism makes cells many-to-one** (layers 4–5): a generated table must merge cells, not repeat a form
+  four times. Cell-address-as-bundle handles this; an ordinal grid does not.
+- **"Cell absent" and "cell spans the axis" must render differently.** Three states, not two: a feature that
+  *does not apply*; a cell covering **every** value of an axis; a cell with one specific value. Collapse the
+  first two and the table renders identically for "this language has no imperative for this verb" and "this
+  verb's imperative is one form for all persons" — the reader cannot tell an absent form from an incomplete
+  entry. Express the middle state as a **UD multivalue over the language's declared inventory**
+  (`Gender=Fem,Masc`), never as a wildcard. Absence stays absence: the feature is simply not in the bundle.
+  This also covers an indeclinable borrowing (one form spanning the whole Case axis, stored once) and rule
+  economy at layer 5. If layer 4 enumerates cells Apertium-style, the three states fall out of the structure;
+  a dense grid must say it explicitly.
+- **Inflected-form search** (layer 5): query-side normalisation needs the *inverse* of the generator, and
+  Hunspell affix rules are not cheaply invertible. Ingest-time index expansion is the leaning answer, at the
+  cost that a rule edit re-expands a whole language. No PDS record is touched either way.
+- **Per-lexeme defectiveness is an entry-level exception at layer 5**, not a property of any declaration.
+
+---
+
+## 6. Not verified — fetch before relying on any of this
+
+- **The remaining ~19 UD FEATS value inventories.** Under "store sparse" and the live-fetch editor this is
+  **not a layer-1 blocker** — layer 1 validates shape, not vocabulary — but nothing in §1.5 may be extended
+  from memory.
+- **`Subcat`'s value list.** Two reads disagreed (`Intr/Tran` vs `Intr/Indir/Tran/Ditr`) and the treebank
+  lists differed too. The live-fetch editor dissolves the need to settle it; do not hardcode either reading.
+- **The lexicon `union` encoding for annotation-XOR-tag.** It is the mechanism `app.bsky` embeds use, but
+  confirm it validates for local object refs before relying on it.
+- **The `layout` sub-object's inner shape** (layer 4) — deliberately undesigned until a real conjugation
+  table has been drawn by hand.
+- **Whether the entry-level annotation site should also accept a tag.** Recorded as free-pairs-only, which
+  leaves a whole-entry non-category tag with no home.
+- **Wikidata Lexemes.** Lexeme/Form/Sense split, plausible prior art. **Closed for now by decision** — do
+  not spend a layer on it.
+
+---
+
+## Sources
+
+**UD:** [POS](https://universaldependencies.org/u/pos/) ·
+[features index](https://universaldependencies.org/u/feat/index.html) ·
+[CoNLL-U format](https://universaldependencies.org/format.html) ·
+[Gender](https://universaldependencies.org/u/feat/Gender.html) ·
+[Case](https://universaldependencies.org/u/feat/Case.html) ·
+[NounClass](https://universaldependencies.org/u/feat/NounClass.html) ·
+[Number](https://universaldependencies.org/u/feat/Number.html) ·
+[VerbForm](https://universaldependencies.org/u/feat/VerbForm.html) ·
+[PronType](https://universaldependencies.org/u/feat/PronType.html) ·
+[Animacy](https://universaldependencies.org/u/feat/Animacy.html) ·
+[Aspect](https://universaldependencies.org/u/feat/Aspect.html) ·
+[Subcat](https://universaldependencies.org/u/feat/Subcat.html) (values unsettled) ·
+[UD_Breton-KEB](https://universaldependencies.org/treebanks/br_keb/index.html) — uses only `Sing`/`Plur` and
+the layered `Gender[psor]`: **a treebank existing is not a usable tagset existing.**
+
+**Other:** [Apertium monodix](https://wiki.apertium.org/wiki/Monodix_basics) · `man 5 hunspell` ·
+[AT Proto data validation](https://atproto.com/guides/data-validation) ·
+[UD↔UniMorph mismatches](https://arxiv.org/abs/1810.06743) (the ~64% figure; export only)
