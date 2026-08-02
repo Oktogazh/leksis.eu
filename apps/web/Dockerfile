@@ -6,10 +6,12 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 COPY apps/web/package.json ./apps/web/package.json
 COPY packages/types/package.json ./packages/types/package.json
+COPY packages/ud/package.json ./packages/ud/package.json
 RUN npm install --workspaces --include-workspace-root
 
 COPY tsconfig.base.json ./
 COPY packages/types ./packages/types
+COPY packages/ud ./packages/ud
 COPY apps/web ./apps/web
 RUN npm run build --workspace @leksis/web
 
