@@ -12,8 +12,12 @@
 // Requires ARANGO_URL / ARANGO_DB / ARANGO_USER / ARANGO_PASSWORD in the env.
 
 import { aql, Database } from "arangojs";
-import type { LanguageTranslation } from "@leksis/types";
-import { buildAbbreviationDocs, type AbbreviationPair } from "../firehose/abbreviations";
+import type { LanguageTranslation, Tag } from "@leksis/types";
+import {
+  buildAbbreviationDocs,
+  type AbbreviationPair,
+  type BindingPair,
+} from "../firehose/abbreviations";
 import { syncLocalLanguages } from "../firehose/local-languages";
 
 const url = process.env.ARANGO_URL ?? "http://127.0.0.1:8529";
@@ -132,6 +136,14 @@ async function main() {
     fields: ["entries[*]"],
     unique: false,
   });
+  // Bound pairs are looked up by the atom they label (the viewer's resolution
+  // chain, and the binding sync's stale sweep).
+  await db.collection("abbreviations").ensureIndex({
+    type: "persistent",
+    name: "idx_bindingkey",
+    fields: ["bindingKey"],
+    unique: false,
+  });
   console.log('ensured indexes on "abbreviations"');
 
   // Backfill the localLanguages read model from language docs indexed before
@@ -162,19 +174,38 @@ async function main() {
     entryKey: string;
     languageID: string;
     abbreviations: AbbreviationPair[];
+    tags: Tag[] | null;
   }>(aql`
     FOR e IN entries
       FILTER e.current == true AND e.abbreviations != null AND e.deleted != true
-      RETURN { entryKey: e.entryKey, languageID: e.languageID, abbreviations: e.abbreviations }
+      RETURN {
+        entryKey: e.entryKey,
+        languageID: e.languageID,
+        abbreviations: e.abbreviations,
+        tags: e.tags
+      }
   `);
   const pairRows = await pairRowsCursor.all();
-  const abbreviationDocs = buildAbbreviationDocs(pairRows);
+  // Second source: the labels each current language record binds to a
+  // grammatical atom. Stored on the language doc precisely so this rebuild
+  // does not have to resolve every record from its PDS — without it, a
+  // db:init would erase every binding the model carries.
+  const bindingRowsCursor = await db.query<{ languageID: string; bindings: BindingPair[] }>(aql`
+    FOR l IN languages
+      FILTER l.current == true AND l.bindings != null
+      RETURN { languageID: l.tag, bindings: l.bindings }
+  `);
+  const bindingRows = await bindingRowsCursor.all();
+  const abbreviationDocs = buildAbbreviationDocs(pairRows, bindingRows);
   await db.query(aql`FOR a IN abbreviations REMOVE a IN abbreviations`);
   if (abbreviationDocs.length > 0) {
     await db.query(aql`FOR d IN ${abbreviationDocs} INSERT d INTO abbreviations`);
   }
+  const boundCount = abbreviationDocs.filter((d) => d.bindingKey !== null).length;
   console.log(
-    `rebuilt "abbreviations": ${abbreviationDocs.length} pair doc(s) from ${pairRows.length} current entry version(s)`,
+    `rebuilt "abbreviations": ${abbreviationDocs.length} pair doc(s) ` +
+      `from ${pairRows.length} current entry version(s) and ` +
+      `${bindingRows.length} language grammar(s) (${boundCount} bound)`,
   );
 
   console.log("database init complete.");

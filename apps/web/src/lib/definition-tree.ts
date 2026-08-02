@@ -1,6 +1,5 @@
 import {
   compareDefinitionPlaces,
-  isLeafPlace,
   validateDefinitions,
   type DefinitionsError,
   type EntryDefinition,
@@ -443,10 +442,17 @@ export function toRecordDefinitions<P, G>(
 /**
  * Build an editor tree from a record's flat definitions. The list is read
  * under the tree convention: each definition's displayed path (its non-zero
- * indices) locates it, group nodes (last index 0) becoming interior nodes
- * that carry their notes, leaves carrying text. Missing (implicit) groups are
- * synthesised so the tree is complete. Robust to loosely-valid records: it
- * never throws, filling gaps with empty leaves rather than failing.
+ * indices) locates it, group nodes becoming interior nodes that carry their
+ * notes, leaves carrying text. Missing (implicit) groups are synthesised so
+ * the tree is complete. Robust to loosely-valid records: it never throws,
+ * filling gaps with empty leaves rather than failing.
+ *
+ * A node is a leaf when it **carries text**, not when its place says so. The
+ * place is the strict rule (`isLeafPlace`) the API enforces at ingest, but
+ * records written before the v0.8 tree convention use 0-based coordinates, so
+ * their leaves read as group nodes — and since the editor republishes a full
+ * rewrite, trusting the place would drop those definitions' text for good.
+ * Saving such an entry re-derives correct places, migrating it on the way out.
  */
 export function fromRecordDefinitions<P, G>(
   definitions: EntryDefinition[],
@@ -482,7 +488,7 @@ export function fromRecordDefinitions<P, G>(
   const sorted = [...definitions].sort((a, b) => compareDefinitionPlaces(a.place, b.place));
   for (const def of sorted) {
     const path = pathOf(def.place);
-    if (isLeafPlace(def.place)) {
+    if (def.text !== undefined && def.text.trim() !== "") {
       // The last path value is the leaf's own position; its parent is the
       // prefix. (The position itself is implied by array order, so it's not
       // used as a key — siblings just append in reading order.)

@@ -1,10 +1,15 @@
 import { aql } from "arangojs";
 import {
+  grammarIssues,
+  isValidGrammar,
   isValidLanguageTag,
   normalizeLanguageTag,
+  type Grammar,
+  type GrammarIssue,
   type LanguageTranslation,
 } from "@leksis/types";
 import { db } from "../db";
+import { grammarBindingPairs, syncLanguageBindings, type BindingPair } from "./abbreviations";
 import { syncLocalLanguages } from "./local-languages";
 
 // Decomposition of eu.leksis.language records into two collections:
@@ -21,6 +26,20 @@ interface LanguageDoc {
   recordURI: string;
   cid: string;
   authorDID: string;
+  /**
+   * Defects in this version's grammar — a value whose feature name nobody
+   * bound, or two rows keying the same. Stored rather than recomputed so the
+   * dashboard can serve a repair worklist without resolving the record.
+   */
+  grammarIssues: GrammarIssue[];
+  /**
+   * The label pairs this version's grammar binds. The grammar itself is not
+   * indexed (the record is its source of truth), but its *pairs* are, for the
+   * same reason entry docs store theirs: the abbreviations read model has to
+   * survive version transitions and a wholesale db:init rebuild without
+   * re-fetching every record from its PDS.
+   */
+  bindings: BindingPair[];
   createdAt: string;
   indexedAt: string;
   current: boolean;
@@ -34,9 +53,12 @@ export type IngestResult = "indexed" | "skipped-duplicate" | "skipped-invalid";
  * Rules: well-formed lowercase BCP 47 tag, non-empty translations of the
  * right shape, and the endonym present (an item whose languageID === tag).
  */
-function parseRecord(
-  record: unknown,
-): { tag: string; translations: LanguageTranslation[]; createdAt: string } | null {
+function parseRecord(record: unknown): {
+  tag: string;
+  translations: LanguageTranslation[];
+  grammar: Grammar | null;
+  createdAt: string;
+} | null {
   if (typeof record !== "object" || record === null) return null;
   const r = record as Record<string, unknown>;
 
@@ -57,9 +79,19 @@ function parseRecord(
   }
   if (!translations.some((t) => t.languageID === tag)) return null; // endonym required
 
+  // The grammar is validated for SHAPE only: a malformed one rejects the whole
+  // record, exactly like any other field. Vocabulary is never judged — a
+  // language may bind items no UD snapshot knows, which is the point of the
+  // layer.
+  let grammar: Grammar | null = null;
+  if (r.grammar !== undefined) {
+    if (!isValidGrammar(r.grammar)) return null;
+    grammar = r.grammar;
+  }
+
   const createdAt =
     typeof r.createdAt === "string" ? r.createdAt : new Date().toISOString();
-  return { tag, translations, createdAt };
+  return { tag, translations, grammar, createdAt };
 }
 
 /**
@@ -91,11 +123,29 @@ export async function ingestLanguage(
     return "skipped-duplicate";
   }
 
+  // A grammar can be well-formed and still incoherent — a value whose feature
+  // name nobody bound, two rows keying the same. That is **detected, never
+  // rejected**: refusing the version would discard everything else it carries
+  // to punish one row, and would make the AppView the arbiter of a language's
+  // grammar. An orphan renders safely anyway (by decomposition, or verbatim),
+  // so it is a repair worklist item, not a write error.
+  const issues = parsed.grammar === null ? [] : grammarIssues(parsed.grammar);
+  if (issues.length > 0) {
+    console.warn(
+      `firehose: language "${parsed.tag}" has ${issues.length} grammar issue(s): ` +
+        issues.map((i) => `${i.kind}(${i.key})`).join(", "),
+    );
+  }
+
+  const bindings = parsed.grammar === null ? [] : grammarBindingPairs(parsed.grammar);
+
   const doc: LanguageDoc = {
     tag: parsed.tag,
     recordURI,
     cid,
     authorDID,
+    grammarIssues: issues,
+    bindings,
     createdAt: parsed.createdAt,
     indexedAt: new Date().toISOString(),
     current: true,
@@ -107,9 +157,13 @@ export async function ingestLanguage(
     `);
   }
   await db.query(aql`INSERT ${doc} INTO languages`);
-  // The version just became current: propagate its names into the
-  // per-locale read model.
+
+  // The version just became current: propagate its names into the per-locale
+  // read model, and its bound labels into the abbreviations model — where a
+  // binding's label joins the language's own abbreviation list even before
+  // any entry uses it.
   await syncLocalLanguages(db, parsed.tag, parsed.translations);
+  await syncLanguageBindings(db, parsed.tag, bindings);
   console.log(
     `firehose: indexed language "${doc.tag}" (${current ? "new version" : "new language"}) from ${authorDID}`,
   );

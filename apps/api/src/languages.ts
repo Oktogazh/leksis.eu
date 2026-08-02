@@ -42,7 +42,7 @@ export async function getCurrentLanguageRecord(
     FOR l IN languages
       FILTER l.tag == ${tag} AND l.current == true
       LIMIT 1
-      RETURN { tag: l.tag, recordURI: l.recordURI, authorDID: l.authorDID }
+      RETURN { tag: l.tag, recordURI: l.recordURI, cid: l.cid, authorDID: l.authorDID }
   `);
   return (await cursor.next()) ?? null;
 }

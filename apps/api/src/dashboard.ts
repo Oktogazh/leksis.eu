@@ -4,6 +4,7 @@ import type {
   DashboardFeedItem,
   DashboardLanguage,
   DashboardTodoEntry,
+  GrammarIssue,
   LanguageDashboardResponse,
 } from "@leksis/types";
 import { db } from "./db";
@@ -31,14 +32,20 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export async function getLanguageDashboard(
   tag: string,
 ): Promise<LanguageDashboardResponse | null> {
-  const languageCursor = await db.query<DashboardLanguage>(aql`
+  const languageCursor = await db.query<DashboardLanguage & { grammarIssues: GrammarIssue[] }>(aql`
     FOR l IN languages
       FILTER l.tag == ${tag} AND l.current == true
       LIMIT 1
-      RETURN { tag: l.tag, recordURI: l.recordURI, authorDID: l.authorDID }
+      RETURN {
+        tag: l.tag,
+        recordURI: l.recordURI,
+        authorDID: l.authorDID,
+        grammarIssues: NOT_NULL(l.grammarIssues, [])
+      }
   `);
-  const language = await languageCursor.next();
-  if (!language) return null;
+  const languageRow = await languageCursor.next();
+  if (!languageRow) return null;
+  const { grammarIssues, ...language } = languageRow;
 
   // Withdrawn (deleted) entries don't count toward totals or the todo
   // queue — a deletion-marker version can still carry `todo == true` from
@@ -142,5 +149,6 @@ export async function getLanguageDashboard(
     todoEntries: await todoCursor.all(),
     feed,
     activity: await activityCursor.all(),
+    grammarIssues,
   };
 }

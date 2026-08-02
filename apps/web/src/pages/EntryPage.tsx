@@ -1,15 +1,14 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  annotationConflicts,
-  formatAbbreviationRef,
+  abbreviationLookup,
   type AbbreviationView,
   type EntryView,
   type LanguageView,
   type LeksisEntryRecord,
 } from "@leksis/types";
 import { EntryEditorDialog } from "../components/CreateEntryPanel";
-import { DefinitionList } from "../components/EntryPreview";
+import { DefinitionList, TagChips } from "../components/EntryPreview";
 import { endonym } from "../components/LanguageSelector";
 import { fetchAbbreviations, fetchEntry, searchEntries } from "../lib/api";
 import { fetchEntryRecord } from "../lib/atproto-record";
@@ -252,33 +251,29 @@ export function EntryPage({
               </button>
             </div>
             {record.categories.length > 0 && (
-              <ul className="mt-3 flex flex-wrap items-center gap-1.5" aria-label={t("entry.categoriesLabel")}>
-                {record.categories.map((category, i) => {
-                  const conflicts = annotationConflicts(category, abbreviations);
-                  const title =
-                    conflicts.length === 0
-                      ? category.long
-                      : `${category.long} — ${t("entry.conflictWarning", {
-                          pairs: conflicts.map(formatAbbreviationRef).join(", "),
-                        })}`;
-                  return (
-                    <li
-                      key={i}
-                      className={`rounded-full border bg-surface-muted/60 px-2.5 py-1 font-mono text-xs text-content ${
-                        conflicts.length > 0 ? "border-red-400" : ""
-                      }`}
-                    >
-                      {conflicts.length > 0 && <span aria-hidden="true">⚠ </span>}
-                      {category.short !== undefined ? (
-                        <abbr title={title} className="no-underline">
-                          {category.short}
-                        </abbr>
-                      ) : (
-                        category.long
-                      )}
-                    </li>
-                  );
-                })}
+              <ul
+                className="mt-3 flex flex-wrap items-center gap-1.5"
+                aria-label={t("entry.categoriesLabel")}
+              >
+                <TagChips tags={record.categories} lookup={abbreviationLookup(abbreviations)} />
+              </ul>
+            )}
+            {record.annotations !== undefined && record.annotations.length > 0 && (
+              <ul className="mt-2 flex flex-wrap items-center gap-1.5">
+                {record.annotations.map((annotation, i) => (
+                  <li
+                    key={i}
+                    className="rounded-full border bg-surface-muted/60 px-2.5 py-1 font-mono text-xs text-content-muted"
+                  >
+                    {annotation.short !== undefined ? (
+                      <abbr title={annotation.long} className="no-underline">
+                        {annotation.short}
+                      </abbr>
+                    ) : (
+                      annotation.long
+                    )}
+                  </li>
+                ))}
               </ul>
             )}
             {record.otherForms !== undefined && record.otherForms.length > 0 && (

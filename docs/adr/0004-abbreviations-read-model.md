@@ -4,6 +4,12 @@
 - **Date:** 2026-07-19
 - **Deciders:** Alan (with Claude)
 
+> **Amended by ADR-0006** (2026-08-02): decisions 1 and 2 are extended — the
+> model gains a second source (a language's grammar bindings), rows may carry a
+> tag, and a bound row survives at count 0. Decision 3 stands untouched. The
+> doctrine — one home for a language's labels, "a tagged abbreviation" rather
+> than "a labelled tag" — is unchanged.
+
 ## Context
 
 Loop 2 established the record-centric doctrine: records on users' PDSs hold

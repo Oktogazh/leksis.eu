@@ -1,7 +1,8 @@
 // Shared TypeScript types imported by both apps/web and apps/api.
 // Week 2: the API health contract and the PDS session shape.
 // Week 3 adds the eu.leksis.language contract and the shared BCP-47 validator;
-// week 4 adds the eu.leksis.entry contract.
+// week 4 adds the eu.leksis.entry contract; the grammar layer adds the tag
+// contract, UD's part-of-speech inventory and the language record's `grammar`.
 
 export * from "./language.js";
 export * from "./entry.js";
@@ -9,6 +10,9 @@ export * from "./abbreviation.js";
 export * from "./dashboard.js";
 export * from "./profile.js";
 export * from "./bcp47.js";
+export * from "./tag.js";
+export * from "./upos.js";
+export * from "./grammar.js";
 
 /** Response shape for the API health-check endpoint. */
 export interface HealthResponse {

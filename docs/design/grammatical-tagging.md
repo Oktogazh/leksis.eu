@@ -1,15 +1,23 @@
 # Design note: the Leksis grammar layer
 
-**Status:** Designed, not implemented. Supersedes into an ADR when layer 1 ships.
+**Status:** **Layer 1 is implemented and superseded by ADR-0006** — for anything layer 1 covers, the ADR
+and the code are authoritative and this note is history. Layers 2–6 are designed, not implemented, and
+this note remains their source.
 **Date:** 2026-07-30; rewritten 2026-08-01 around the layer model; layers renumbered 2026-08-01 (old layer 3
-merged into 1 + 2).
-**For:** The morphology arc (`leksis-evolution` skill). **The next build is layer 1.**
-**Related:** `lexicons/eu.leksis.entry.json`, `lexicons/eu.leksis.language.json`, ADR-0004 (abbreviations
-read model), ADR-0002 (the browser is the write path)
+merged into 1 + 2); layer 1 reconciled with what shipped 2026-08-02.
+**For:** The morphology arc (`leksis-evolution` skill). **The next build is layer 2.**
+**Related:** **ADR-0006 (layer 1, accepted)**, `lexicons/eu.leksis.entry.json`,
+`lexicons/eu.leksis.language.json`, ADR-0004 (abbreviations read model, amended by 0006), ADR-0002 (the
+browser is the write path)
 
 > **How to read this.** §0 is binding on every session. §1 is what has been **verified at source** — treat
 > anything absent from it as unknown, and §6 as the list of things nobody has checked. §§2–4 are the design.
 > Decisions are referred to **by name**, not by number, so references survive edits.
+>
+> **Where this note and the shipped layer 1 differ, the code wins** and the difference is marked
+> `[shipped]` inline. Two decisions changed during the build and are recorded in ADR-0006: the XOR rule
+> became a strict per-site type split (§2.3), and `grammar`'s shape became three arrays with a `values`
+> row naming its feature (§2.2).
 
 ---
 
@@ -80,6 +88,13 @@ judgement, not UD's.** ART is not really missing: it routes to `DET` + `PronType
 `Feature=Value`, `|`-separated, **features sorted alphabetically**; multivalue values also sorted
 alphabetically (`Case=Acc,Dat`, `Gender=Fem,Masc`); layered names `Number[psor]` matching
 `[A-Z][A-Za-z0-9]*(\[[a-z0-9]+\])?`; `_` means none.
+
+Two rules re-fetched during the layer-1 build that this section had not recorded, both load-bearing:
+**feature *values* match `[A-Z0-9][A-Za-z0-9]*`** — so a value may begin with a digit, which means a minted
+`Conjugation=1` is well-formed UD and needs no workaround — and the sort is **case-insensitive**
+("uppercase letters are considered identical to their lowercase counterparts"), which the canonical key
+follows, with an exact comparison behind it so the ordering stays total. `_` is excluded by the value
+pattern, so it is never a value.
 
 Groups: *lexical* (PronType, NumType, Poss, Reflex, Foreign) · *inflectional* (Gender, VerbForm, Animacy,
 Mood, NounClass, Tense, Number, Aspect, Case, Voice) · *other* (Abbr, Definite, Evident, Typo, Deixis,
@@ -155,15 +170,33 @@ sorted alphabetically, `upos` in its own slot, scheme included — or matching s
 
 ```
 eu.leksis.language.grammar = {
-  bindings: [ { tag: Tag, label: {long, short?}, references?: [{text, url}] } ],   // L1 atoms
-  features: [ { feature, scheme?, label: {long, short?}, references?: [{text, url}] } ],   // L1 feature names
-  values: [ { feature, value, scheme?, label: {long, short?}, references?: [{text, url}] } ],   // L1 feature value names
+  // ---- layer 1, AS SHIPPED (ADR-0006) ----
+  pos:      [ { value, scheme?, label: {long, short?}, references?: [{text, url}] } ],
+  features: [ { feature, scheme?, label: {long, short?}, references?: [{text, url}] } ],
+  values:   [ { feature, value, scheme?, label: {long, short?}, references?: [{text, url}] } ],
+
+  // ---- layers 2–4, still design ----
   inherent: [ { category: Tag, features: [{ feature, scheme? }] } ],   // L2 — declares inherence of a feature or several features on a category
-  bundles: [ { category: Tag, values: [{ feature, value, scheme? }], label: {long, short?} } ],    // L2 — declares bundles of inherent values on a category
+  bindings: [ { tag: Tag, label: {long, short?}, references?: [{text, url}] } ],   // L2 — labelled COMBINATIONS (≥2 items)
   axes:     [ { category: Tag, feature: { feature, scheme? } } ],                  // L3 — declares variation
   layout:   [ { category: Tag, ... } ]                                             // L4 — inner shape TBD
 }
 ```
+
+`[shipped]` **Layer 1 authors `pos` + `features` + `values`; `bindings` is layer 2's, and holds
+combinations only.** An earlier draft of this section put layer-1 atoms in `bindings` alongside layer-2
+combinations and listed `values` beside it, which made `bindings` span two layers and left a bare `{NOUN}`
+binding and a `pos`-style declaration as the same fact with no rule saying which to write.
+
+The reason `values` is not folded into bundles: a `values` row states **which feature the value is an
+option of**, which is a declaration a bundle cannot make. It is what turns "list this language's genders"
+into a lookup rather than a scan over every bound bundle — and the feature name is also the gate the value
+sits behind. A `features` row is likewise not a tag: a bare name has no value.
+
+`[shipped]` **Layer 2's rows are not in the lexicon yet.** A schema field nobody writes is an invitation to
+write into it, and adding them is additive and non-breaking. Layer 2 adds `inherent` and `bindings` when it
+builds them — and should carry a validator rule that a `bindings` tag has **≥2 items**, so every fact keeps
+exactly one home.
 
 One **self-contained `grammar` sub-object** holding layers 0–4. Layer 5's rules get their own
 `eu.leksis.paradigm` lexicon: they are large, per-class, and written at a different cadence.
@@ -184,17 +217,27 @@ being absent from a snapshot.
 
 ### 2.3 The four annotation sites
 
-| Site | Contents |
-|---|---|
-| `categories` | **tag only** |
-| entry-level annotations *(new)* | free pairs only — *open: should a whole-entry non-category tag be allowed?* |
-| `definition.notes` (leaf and group) | tag **XOR** free pair |
-| `otherForms[].annotation` | a bundle (layer 3) |
+`[shipped]` **Each site holds exactly one type, and the entry and the definition node carry the same three
+fields.** This *replaces* the XOR rule below.
 
-**The XOR rule:** an item is *either* a free `{long, short}` pair *or* a tag, never both — two sources of
-truth for one displayed string can only drift, and the language-level one has to win. **Encode the XOR
-structurally as a lexicon `union`**, not as two optional fields plus a documented rule, so the illegal state
-is unrepresentable rather than merely discouraged.
+| Field | entry | definition node (leaf and group) |
+|---|---|---|
+| `categories` | tags only | tags only |
+| `annotations` | free pairs only | free pairs only |
+| `notes` | free prose | free prose |
+
+`otherForms[].annotation` is untouched at layer 1 — one free pair. Under the strict split, **layer 3 adds a
+tag field beside it rather than converting it**, so there is no second break to plan for; and it must keep
+accepting a free pair, or a language whose grammar nobody has declared could not label a form at all.
+
+> **Superseded — the XOR rule.** The original design let one item be *either* a free pair *or* a tag, to be
+> encoded as a lexicon `union`. Splitting by field instead makes the illegal state unrepresentable with no
+> union at all, which is why §6's "confirm `union` validates for local object refs" is struck: the question
+> is moot, not answered. The *reasoning* survives unchanged and is what both designs protect — two sources
+> of truth for one displayed string can only drift, and the language-level one has to win.
+
+**Still open, and untouched by the split:** whether the entry-level site should also accept a *tag*.
+Recorded as free-pairs-only, which leaves a whole-entry non-grammatical tag with no home.
 
 **`categories` is tag-only, and the friction is deliberate.** Non-grammatical headword labels (`vulg.`,
 `arch.`, `fam.`) are not categories: they go to the entry-level site. The reasoning is a **forcing
@@ -204,11 +247,14 @@ not what is being optimised. Two corollaries: do **not** mint `Register=Vulg` to
 into the headword line, and do **not** relax `categories` to XOR later on the grounds that contributors find
 it hard — the difficulty is the mechanism working.
 
-**Sense-level tagging is why `definition.notes` is XOR.** A verb is `VERB` at the entry level and transitive
-on one sense group, intransitive on another — which is what the tree-shaped definitions of v0.8 were built to
-express. Declaring a feature inherent at layer 2 does **not** restrict its use at a definition node: a
-dictionary may legitimately print `v.t.` in the headword line *and* split senses by transitivity. Do not
-build a cross-check that forbids it.
+**Sense-level tagging is why the definition node gets its own `categories`.** A verb is `VERB` at the entry
+level and transitive on one sense group, intransitive on another — which is what the tree-shaped definitions
+of v0.8 were built to express. Declaring a feature inherent at layer 2 does **not** restrict its use at a
+definition node: a dictionary may legitimately print `v.t.` in the headword line *and* split senses by
+transitivity. Do not build a cross-check that forbids it.
+
+`[shipped]` The **shape** ships and the viewer renders it; the *editor* for sense-level tags is deferred to
+the first contributor who wants one.
 
 **`categories` order belongs to the entry author** (order-as-phrasing); `otherForms` order belongs to the
 language (order-as-table-geometry — it is the one-dimensional degenerate case of layer 4's layout).
@@ -248,14 +294,19 @@ Each layer draws its options from the layer below, and each must ship and be use
 | Layer | Declares | Home |
 |---|---|---|
 | **0 Abbreviations** | free homolingual pairs bound to nothing | entry records (shipped v0.8) |
-| **1 Primitives** | the atoms this language uses: 14 UPOS, feature *names*, feature *values*; minting | `grammar.bindings`, `grammar.features` |
-| **2 Inherent combinations** | which features are **inherent** to a category, and the resulting labelled headword categories | `grammar.inherent`, `grammar.bindings` |
+| **1 Primitives** ✅ | the atoms this language uses: 14 UPOS, feature *names*, feature *values*; minting | `grammar.pos/features/values` |
+| **2 Inherent combinations** ← next | which features are **inherent** to a category, and the resulting labelled headword categories | `grammar.inherent`, `grammar.bindings` |
 | **3 Axes** | which features **vary across the forms** of a category | `grammar.axes` |
 | **4 Layout** | table shape, order, default visibility; `otherForms` list order | `grammar.layout` |
 | **5 Rules** | Hunspell-like generation filling cells | `eu.leksis.paradigm` |
 | **6 Export** | Hunspell, UniMorph TSV, CoNLL-U, XPOS as derived output | — |
 
-### Layer 1 — Primitives
+### Layer 1 — Primitives ✅ shipped
+
+> **Implemented; see ADR-0006 for what was actually decided.** Kept here for the reasoning. Three
+> deltas from the text below: the arrays are `pos`/`features`/`values` (§2.2); annotation sites split by
+> type instead of XOR (§2.3); and §4.2's progressive narrowing was **cut**, because it derives from layer
+> 2 — layer 1 ships the flat multi-select this note itself names as its degradation, plus a manual field.
 
 *In:* the `Tag` type and canonical key in `packages/types`; `grammar.bindings` + `grammar.features`; the
 `abbreviations` read model widened to carry the tag and to surface **unbound tags in use** as a worklist; the
@@ -446,6 +497,12 @@ which breaks "design for the language that has nothing".
 
 ### 4.2 The entry editor — progressive narrowing by clicking abbreviations
 
+> **Requires layer 2 — not built.** The narrowing is *derived from* inherence declarations, so nothing of
+> it could ship at layer 1 without hardcoding inherence, which "no hardcoded language assumptions" forbids.
+> Layer 1 ships this section's own documented degradation: a flat multi-select over bound atoms, every
+> option showing its bound homolingual label, plus a manual field for an unbound tag. **This is layer 2's
+> to build**, and the four properties below are its acceptance criteria.
+
 The contributor never types a criterion. They are shown the language's bound **UPOS abbreviations**, and each
 click narrows what is offered next, drawn from layer 2's declarations:
 
@@ -558,16 +615,28 @@ compatibility claim honest.
 - **The remaining ~19 UD FEATS value inventories.** Under "store sparse" and the live-fetch editor this is
   **not a layer-1 blocker** — layer 1 validates shape, not vocabulary — but nothing in §1.5 may be extended
   from memory.
-- **`Subcat`'s value list.** Two reads disagreed (`Intr/Tran` vs `Intr/Indir/Tran/Ditr`) and the treebank
-  lists differed too. The live-fetch editor dissolves the need to settle it; do not hardcode either reading.
-- **The lexicon `union` encoding for annotation-XOR-tag.** It is the mechanism `app.bsky` embeds use, but
-  confirm it validates for local object refs before relying on it.
+- ~~**`Subcat`'s value list.**~~ **Dissolved as designed, not settled in code.** The live editor fetched the
+  page during the layer-1 build and it lists four values (`Intr Indir Tran Ditr`); nothing is hardcoded, and
+  nothing should be — the editor shows whatever the page currently offers.
+- ~~**The lexicon `union` encoding for annotation-XOR-tag.**~~ **Moot** — the strict per-site type split
+  (§2.3) needs no union. *Verified separately during the build:* the real `@atproto/lexicon` validator does
+  accept the nesting `grammar` needs (record → ref → object → array → ref → ref), and **no official
+  `app.bsky`/`com.atproto` lexicon uses an inline `type: "object"` property** — the convention is a named
+  def plus a ref, which is what shipped.
 - **The `layout` sub-object's inner shape** (layer 4) — deliberately undesigned until a real conjugation
   table has been drawn by hand.
 - **Whether the entry-level annotation site should also accept a tag.** Recorded as free-pairs-only, which
   leaves a whole-entry non-category tag with no home.
 - **Wikidata Lexemes.** Lexeme/Form/Sense split, plausible prior art. **Closed for now by decision** — do
   not spend a layer on it.
+- **Whether a PDS validates a third-party NSID against our lexicon before accepting a write.** The
+  data-validation guide does not say. Nothing depends on it — the AppView validates regardless — but do not
+  assume either way.
+- **Language-specific UD pages** (`/{lang}/feat/Gender.html`). Checked during the layer-1 build and
+  *not* used: they are a **subset** of the universal inventory (Czech documents three of UD's four genders)
+  and 404 for low-resource languages (`br/feat/index.html` does not exist), so they narrow rather than
+  extend. Note this also removes the "implied small piece of work" in §4.1: those pages are keyed by
+  **language code, not treebank code**, so no BCP 47 → `br_keb` mapping is needed for them.
 
 ---
 

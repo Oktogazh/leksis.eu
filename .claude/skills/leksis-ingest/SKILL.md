@@ -128,6 +128,8 @@ await agent.com.atproto.repo.applyWrites(
   `place` below — leaf/group text rule + sibling contiguity). `otherForms`,
   when present, must each be a well-formed annotation plus a non-empty `form`;
   `notes` an array of strings; `references` an array of `{ text, url? }`;
+  every `categories` item a well-formed `Tag` (shape only — vocabulary is
+  never judged, so a minted tag is fine);
   `todo` an array of strings; `transcription` a string — any wrong type
   rejects the whole record. Invalid → skipped, no error surfaces.
 - **Breaking lexicon changes are handled by reset-and-republish**: while the
@@ -144,7 +146,8 @@ Canonical JSON: `lexicons/eu.leksis.entry.json` in the leksis.eu repo.
   $type: "eu.leksis.entry",
   languageID: string,        // well-formed BCP 47 tag, LOWERCASE ("br", "br-gw"); max 64 chars
   orthography: string[],     // ≥1 spelling; [0] is the canonical form; each ≤128 graphemes
-  categories: Annotation[],  // ordered grammatical categories; may be empty
+  categories: Tag[],         // ordered grammatical categories, as TAGS; may be empty
+  annotations?: Annotation[], // entry-level free labels (register, domain): "vulg.", "arch."
   otherForms?: InflectedForm[], // other grammatical forms (plural, gerund…); INDEXED for search
   definitions: Definition[], // ≥1, FLAT list of tree nodes sorted by place (reading order)
   transcription?: string,    // IPA phonetic transcription ("[ˈbrɛːzɔ̃nɛk]"); ≤128 graphemes;
@@ -157,8 +160,24 @@ Canonical JSON: `lexicons/eu.leksis.entry.json` in the leksis.eu repo.
   createdAt: string,         // ISO datetime
 }
 
+Tag = { upos?: { value: string, scheme?: string },
+        feats?: { feature: string, value: string, scheme?: string }[] }
+// A grammatical tag, following Universal Dependencies: a BUNDLE of an optional
+// part of speech and any number of Feature=Value items, at least one present.
+// It carries NO reader-facing text — the language record binds it to a label,
+// and a bot should publish the tag, not a name. `scheme` is per item: absent
+// means UD documents it, otherwise it is the BCP 47 tag of the language that
+// minted it (e.g. { feature:"Number", value:"Sgv", scheme:"br" }).
+// Feature names match [A-Z][A-Za-z0-9]*(\[[a-z0-9]+\])?, values
+// [A-Z0-9][A-Za-z0-9]* — so a value may start with a digit. NEVER invent a UD
+// tag: use one you can cite, or mint it explicitly with `scheme`.
+// A tag no language has bound still renders (as the raw identifier) and shows
+// up on that language's dashboard as needing a name — publishing tags before
+// anyone has declared the grammar is expected, not an error.
+
 Annotation = { long: string, short?: string }
-// One shape for both categories and notes: the full form (REQUIRED) and its
+// A free label with NO grammatical meaning — register, domain, editorial
+// hedge. The full form (REQUIRED) and its
 // abbreviated display form (optional), e.g. { short: "n.", long: "noun" },
 // { short: "arch.", long: "archaic" }. If the source gives only one form,
 // put it in `long` — never publish a short without its long. Freeform — no
@@ -170,8 +189,9 @@ Annotation = { long: string, short?: string }
 
 Definition = {
   place: number[],           // tree address, 1–3 non-negative ints (see below)
-  notes: Annotation[],       // abbreviation notes before the node's content; may be empty
-  plainNotes?: string[],     // free-text notes before the content (not abbreviations, not text)
+  categories?: Tag[],        // grammatical tags of THIS SENSE (e.g. transitivity)
+  annotations: Annotation[], // free labels before the node's content; may be empty
+  notes?: string[],          // free-text remarks before the content (neither label nor text)
   text?: string,             // ≤2048 graphemes; REQUIRED on a leaf, FORBIDDEN on a group node
 }
 
@@ -189,7 +209,7 @@ Reference = { text: string, url?: string }  // text ≤256 graphemes; url ≤204
 address (up to 3 dimensions). The **last index is the node type**:
 
 - **non-zero → a leaf** — the definition proper: it MUST carry non-empty `text`.
-- **0 → a group node** — a heading that carries `notes`/`plainNotes` but MUST
+- **0 → a group node** — a heading that carries `annotations`/`notes` but MUST
   NOT carry `text` (e.g. state the "transitive" abbreviation once at `[1,0,0]`
   = A., and every sense under it inherits it without repeating).
 
@@ -201,7 +221,7 @@ displayed depth — 1 → `1.`; 2 → `I. 1.`; 3 → `A. I. 1.` (so `[1,2,0]` = 
 `[1,1,1]` = A. I. 1.).
 
 **Bare grouping is implicit:** a group node appears in the list ONLY when it
-carries notes. If a group has no notes, omit it — the AppView infers the
+carries labels or notes. If a group carries neither, omit it — the AppView infers the
 hierarchy from the leaves. So a simple two-level entry is just leaves at
 `[0,1,1]`, `[0,1,2]`… (I. 1., I. 2.) with no group item; add a `[0,1,0]`
 (= I., last index 0) only to annotate that heading.

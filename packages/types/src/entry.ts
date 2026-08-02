@@ -7,13 +7,21 @@
 // record reference). The frontend resolves the record itself from the
 // author's PDS to render an entry.
 
+import type { Tag } from "./tag.js";
+
 /** AT Proto collection NSID for dictionary entry records. */
 export const LEKSIS_ENTRY_COLLECTION = "eu.leksis.entry";
 
 /**
- * A short/long annotation pair, used both for an entry's grammatical
- * categories ("n." / "noun") and for a definition's lexicographic notes
- * ("arch." / "archaic"). Freeform, not an enforced vocabulary.
+ * A short/long annotation pair — a label with no grammatical meaning attached
+ * ("arch." / "archaic", "bot." / "botany", "vulg." / "vulgar"). Freeform, not
+ * an enforced vocabulary, and it stays that way: most of what a real
+ * dictionary prints has no Universal Dependencies equivalent and never will.
+ *
+ * Annotations and tags never share a field. Each annotation site holds
+ * exactly one type — `categories` for tags, `annotations` for these — because
+ * a field holding either would give one displayed string two sources of
+ * truth, and they can only drift.
  */
 export interface EntryAnnotation {
   /**
@@ -47,10 +55,18 @@ export interface EntryAnnotation {
  */
 export interface EntryDefinition {
   place: number[];
-  /** Ordered abbreviation notes shown before the node's content. */
-  notes: EntryAnnotation[];
-  /** Free-text notes shown before the node's content (neither abbreviation nor definition text). */
-  plainNotes?: string[];
+  /**
+   * Grammatical tags of this sense. A verb is VERB at the entry level and
+   * transitive on one sense group, intransitive on another — which is what
+   * the definition tree exists to express. Declaring a feature inherent to a
+   * category does not restrict its use here; a dictionary may legitimately
+   * print "v.t." in the headword line *and* split senses by transitivity.
+   */
+  categories?: Tag[];
+  /** Ordered abbreviation labels shown before the node's content. */
+  annotations: EntryAnnotation[];
+  /** Free-text remarks shown before the node's content (neither label nor definition text). */
+  notes?: string[];
   /** The definition text — present on and only on a leaf (place ending non-zero). */
   text?: string;
 }
@@ -107,6 +123,8 @@ export function isValidDefinitionPlace(value: unknown): value is number[] {
  * Rules, over the list in its given order:
  *  - a leaf (place ending non-zero) must carry non-empty text; a group node
  *    (place ending in 0) must not carry text ("text-rule");
+ *  (`categories`/`annotations`/`notes` are not inspected here — they are
+ *  well-formedness, checked where the record is parsed.)
  *  - places are strictly sorted in reading order ("order");
  *  - sibling indices are contiguous from 1 within each parent, and a group
  *    slot (a non-last index) that some node uses is opened by a matching
@@ -191,8 +209,24 @@ export interface LeksisEntryRecord {
    * Record-only content, never indexed. Absent when the entry has none.
    */
   transcription?: string;
-  /** Ordered grammatical categories of the entry. */
-  categories: EntryAnnotation[];
+  /**
+   * Ordered grammatical categories of the entry — **tags only**, never free
+   * labels. Requiring a tag makes a contributor settle the language's grammar
+   * declaration before authoring entries, so entries come out consistent
+   * across the system; the friction is the mechanism working, not a flaw to
+   * relax later. Non-grammatical headword labels (`vulg.`, `arch.`, `fam.`)
+   * are not categories — they belong in `annotations`.
+   *
+   * Order is the entry author's: it is phrasing, not table geometry.
+   * May be empty — a language whose grammar nobody has declared yet must
+   * stay fully authorable.
+   */
+  categories: Tag[];
+  /**
+   * Entry-level labels with no grammatical meaning: register, domain,
+   * editorial hedges. Freeform pairs, and permanently so.
+   */
+  annotations?: EntryAnnotation[];
   /**
    * Other grammatical forms (plural, gerund…), each an abbreviation from the
    * entry's pool plus the form's spelling. The AppView indexes each form for

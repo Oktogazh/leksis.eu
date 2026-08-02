@@ -6,6 +6,8 @@
 // The abbreviation section reuses GET /languages/:tag/abbreviations, and
 // the "named in this language" review list reuses GET /languages?locale=.
 
+import type { GrammarIssue } from "./grammar.js";
+
 /** The dashboard's language: the current eu.leksis.language record ref. */
 export interface DashboardLanguage {
   tag: string;
@@ -61,4 +63,12 @@ export interface LanguageDashboardResponse {
   feed: DashboardFeedItem[];
   /** Per-day version counts over the last year, oldest first. */
   activity: DashboardActivityDay[];
+  /**
+   * Defects in the current language record's grammar — the repair worklist.
+   * The AppView indexes such a version rather than rejecting it (rejecting
+   * would make it the arbiter of a language's grammar), so surfacing the
+   * defects here is how they get fixed. Empty when the grammar is coherent,
+   * or when the language declares none.
+   */
+  grammarIssues: GrammarIssue[];
 }

@@ -1,12 +1,18 @@
 import {
   compareDefinitionPlaces,
   isValidDefinitionPlace,
+  isValidGrammar,
+  isValidTag,
   isValidLanguageTag,
   normalizeLanguageTag,
   LEKSIS_ENTRY_COLLECTION,
   LEKSIS_LANGUAGE_COLLECTION,
   type EntryAnnotation,
   type EntryDefinition,
+  type EntryInflectedForm,
+  type EntryReference,
+  type Grammar,
+  type Tag,
   type LanguageTranslation,
   type LeksisEntryRecord,
   type LeksisLanguageRecord,
@@ -68,10 +74,32 @@ function parseAnnotations(value: unknown): EntryAnnotation[] {
   return annotations;
 }
 
+/** Lenient parse of a tag list; malformed tags are dropped, not fatal. */
+function parseTags(value: unknown): Tag[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is Tag => isValidTag(item));
+}
+
+/** Lenient parse of a free-text list; non-string and blank items are dropped. */
+function parseTextList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string" && item.trim() !== "");
+}
+
 /**
- * Lenient parse of the flat definitions list: each definition is
- * `{place, notes?, text}` with a well-formed place (1–3 non-negative
- * integers). Malformed definitions are dropped; survivors are sorted back
+ * Lenient parse of the flat definitions list: each node is
+ * `{place, notes?, plainNotes?, text?}` with a well-formed place (1–3
+ * non-negative integers). Both node kinds are kept — a leaf carries the
+ * definition text, a group node carries only its notes, and dropping the
+ * group nodes would lose every heading and the notes that hang on them.
+ *
+ * Which kind a node is, is decided by **whether it carries text, not by its
+ * place**. `isLeafPlace` is the strict rule the API enforces at ingest, but
+ * records indexed before the v0.8 tree convention use the older 0-based
+ * coordinates (`[0]`, `[1,0]`), so their leaves look like group nodes to it.
+ * The record's own content is the reliable signal, and honouring it is what
+ * "lenient where ingestion is strict" means here: a node that states its text
+ * gets it rendered. Malformed nodes are dropped; survivors are sorted back
  * into reading order so rendering never depends on the record's array order.
  */
 function parseDefinitions(value: unknown): EntryDefinition[] {
@@ -80,11 +108,60 @@ function parseDefinitions(value: unknown): EntryDefinition[] {
   for (const item of value) {
     const def = item as Record<string, unknown> | null;
     if (!def || typeof def !== "object") continue;
-    if (typeof def.text !== "string" || def.text.trim() === "") continue;
     if (!isValidDefinitionPlace(def.place)) continue;
-    definitions.push({ place: def.place, notes: parseAnnotations(def.notes), text: def.text });
+    const text = typeof def.text === "string" ? def.text : "";
+    const annotations = parseAnnotations(def.annotations);
+    const categories = parseTags(def.categories);
+    const notes = parseTextList(def.notes);
+    // A node with nothing to show is dropped: an empty leaf, or a bare group
+    // the tree re-derives from its children anyway.
+    if (
+      text.trim() === "" &&
+      annotations.length === 0 &&
+      categories.length === 0 &&
+      notes.length === 0
+    ) {
+      continue;
+    }
+    definitions.push({
+      place: def.place,
+      annotations,
+      ...(categories.length > 0 ? { categories } : {}),
+      ...(notes.length > 0 ? { notes } : {}),
+      ...(text.trim() !== "" ? { text } : {}),
+    });
   }
   return definitions.sort((a, b) => compareDefinitionPlaces(a.place, b.place));
+}
+
+/**
+ * Lenient parse of the entry's other grammatical forms: each is one
+ * abbreviation plus a non-empty spelling. Malformed items are dropped.
+ */
+function parseOtherForms(value: unknown): EntryInflectedForm[] {
+  if (!Array.isArray(value)) return [];
+  const forms: EntryInflectedForm[] = [];
+  for (const item of value) {
+    const f = item as Record<string, unknown> | null;
+    if (!f || typeof f.form !== "string" || f.form.trim() === "") continue;
+    const [annotation] = parseAnnotations([f.annotation]);
+    if (annotation === undefined) continue;
+    forms.push({ annotation, form: f.form });
+  }
+  return forms;
+}
+
+/** Lenient parse of the bibliographic references; items without text are dropped. */
+function parseReferences(value: unknown): EntryReference[] {
+  if (!Array.isArray(value)) return [];
+  const references: EntryReference[] = [];
+  for (const item of value) {
+    const ref = item as Record<string, unknown> | null;
+    if (!ref || typeof ref.text !== "string" || ref.text.trim() === "") continue;
+    const url = typeof ref.url === "string" && ref.url.trim() !== "" ? ref.url : undefined;
+    references.push(url === undefined ? { text: ref.text } : { text: ref.text, url });
+  }
+  return references;
 }
 
 /**
@@ -107,11 +184,13 @@ function parseEntryRecord(value: unknown): LeksisEntryRecord | null {
   const definitions = parseDefinitions(r.definitions);
   if (definitions.length === 0) return null;
 
+  const entryAnnotations = parseAnnotations(r.annotations);
+  const otherForms = parseOtherForms(r.otherForms);
+  const notes = parseTextList(r.notes);
+  const references = parseReferences(r.references);
   // Pending-task notes; malformed items are dropped rather than failing the
   // whole record.
-  const todo = Array.isArray(r.todo)
-    ? r.todo.filter((item): item is string => typeof item === "string" && item.trim() !== "")
-    : [];
+  const todo = parseTextList(r.todo);
 
   return {
     $type: LEKSIS_ENTRY_COLLECTION,
@@ -120,8 +199,12 @@ function parseEntryRecord(value: unknown): LeksisEntryRecord | null {
     ...(typeof r.transcription === "string" && r.transcription.trim() !== ""
       ? { transcription: r.transcription }
       : {}),
-    categories: parseAnnotations(r.categories),
+    categories: parseTags(r.categories),
+    ...(entryAnnotations.length > 0 ? { annotations: entryAnnotations } : {}),
+    ...(otherForms.length > 0 ? { otherForms } : {}),
     definitions,
+    ...(notes.length > 0 ? { notes } : {}),
+    ...(references.length > 0 ? { references } : {}),
     ...(typeof r.subject === "string" ? { subject: r.subject } : {}),
     ...(todo.length > 0 ? { todo } : {}),
     createdAt: typeof r.createdAt === "string" ? r.createdAt : "",
@@ -174,6 +257,17 @@ export async function fetchLanguageRecord(
   const tag = typeof r.tag === "string" ? normalizeLanguageTag(r.tag) : "";
   if (!isValidLanguageTag(tag)) return null;
 
+  // A malformed grammar makes the whole record unreadable rather than being
+  // dropped like a bad translation row. Every caller here loads a record in
+  // order to rewrite it, so silently discarding the grammar would delete a
+  // language's entire declaration on the next save — refusing to edit is the
+  // safe failure. (The AppView rejects such records at ingest, so an indexed
+  // record never hits this.)
+  if (r.grammar !== undefined && !isValidGrammar(r.grammar)) {
+    console.warn(`language record ${recordURI} has a malformed grammar; refusing to load it`);
+    return null;
+  }
+
   const translations: LanguageTranslation[] = [];
   if (Array.isArray(r.translations)) {
     for (const item of r.translations) {
@@ -191,6 +285,7 @@ export async function fetchLanguageRecord(
     $type: LEKSIS_LANGUAGE_COLLECTION,
     tag,
     translations,
+    ...(r.grammar !== undefined ? { grammar: r.grammar as Grammar } : {}),
     createdAt: typeof r.createdAt === "string" ? r.createdAt : "",
   };
 }

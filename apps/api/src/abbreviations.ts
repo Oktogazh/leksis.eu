@@ -13,7 +13,7 @@ export async function listAbbreviations(languageID: string): Promise<Abbreviatio
   const cursor = await db.query<AbbreviationView>(aql`
     FOR a IN abbreviations
       FILTER a.languageID == ${languageID}
-      SORT LENGTH(a.entries) DESC, a.long ASC
+      SORT LENGTH(a.entries) DESC, NOT_NULL(a.long, "") ASC
       LET conflictsWith = (
         FOR key IN a.conflictsWith
           LET other = DOCUMENT("abbreviations", key)
@@ -21,8 +21,10 @@ export async function listAbbreviations(languageID: string): Promise<Abbreviatio
           RETURN MERGE({ long: other.long }, other.short == null ? {} : { short: other.short })
       )
       RETURN MERGE(
-        { long: a.long, count: LENGTH(a.entries), conflictsWith },
-        a.short == null ? {} : { short: a.short }
+        { count: LENGTH(a.entries), bound: a.bindingKey != null, conflictsWith },
+        a.long == null ? {} : { long: a.long },
+        a.short == null ? {} : { short: a.short },
+        a.tag == null ? {} : { tag: a.tag }
       )
   `);
   return cursor.all();

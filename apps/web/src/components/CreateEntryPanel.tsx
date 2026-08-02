@@ -14,7 +14,11 @@ import {
   LEKSIS_ENTRY_COLLECTION,
   type AbbreviationRef,
   type AbbreviationView,
+  abbreviationLookup,
+  parseTagInput,
+  tagKey,
   type EntryAnnotation,
+  type Tag,
   type EntryInflectedForm,
   type EntryReference,
   type EntryView,
@@ -24,7 +28,7 @@ import {
 import { useSession } from "../auth/SessionProvider";
 import { fetchAbbreviations, searchEntries } from "../lib/api";
 import { DeleteEntryDialog } from "./DeleteEntryDialog";
-import { EntryPreview } from "./EntryPreview";
+import { EntryPreview, TagChips } from "./EntryPreview";
 import {
   checkRecordDefinitions,
   editTreeLabels,
@@ -595,15 +599,15 @@ function StringList({
 
 /** Editor leaf payload: one definition's note chips, plain notes and text. */
 interface DefinitionDraft {
-  notes: AnnotationTag[];
-  plainNotes: string[];
+  annotations: AnnotationTag[];
+  notes: string[];
   text: string;
 }
 
 /** Editor group-node payload: a heading's note chips and plain notes (no text). */
 interface GroupDraft {
-  notes: AnnotationTag[];
-  plainNotes: string[];
+  annotations: AnnotationTag[];
+  notes: string[];
 }
 
 /** Editor row for one other grammatical form: an abbreviation + the spelling. */
@@ -615,7 +619,114 @@ interface OtherFormDraft {
 
 let nextNodeId = 0;
 const mintNodeId = () => nextNodeId++;
-const emptyGroupDraft = (): GroupDraft => ({ notes: [], plainNotes: [] });
+const emptyGroupDraft = (): GroupDraft => ({ annotations: [], notes: [] });
+
+/**
+ * The entry's grammatical categories: tags, picked from what the language has
+ * bound rather than typed.
+ *
+ * Every option shows a **bound homolingual label**, never a raw identifier —
+ * which is only possible because `categories` is tag-only, so the grammar had
+ * to be declared before entries could use it. That is the payoff of the
+ * friction, and the reason the friction is deliberate.
+ *
+ * At layer 1 the options are a flat list: narrowing one click at a time
+ * ("n." → gender → declension) is derived from inherence declarations, which
+ * layer 2 introduces. Until then a contributor picks atoms independently, and
+ * the manual field stays as the escape hatch for a tag no one has bound —
+ * which is how a bot's tag, or a language with no declaration yet, remains
+ * authorable.
+ */
+function CategoryEditor({
+  tags,
+  onChange,
+  abbreviations,
+}: {
+  tags: Tag[];
+  onChange: (tags: Tag[]) => void;
+  abbreviations: AbbreviationView[];
+}) {
+  const { t } = useTranslation();
+  const [manual, setManual] = useState("");
+  const lookup = abbreviationLookup(abbreviations);
+  const chosen = new Set(tags.map(tagKey));
+  const options = abbreviations.filter(
+    (a) => a.tag !== undefined && a.long !== undefined && !chosen.has(tagKey(a.tag)),
+  );
+  const parsed = parseTagInput(manual);
+
+  return (
+    <div className="mt-2">
+      {tags.length > 0 && (
+        <ul className="flex flex-wrap items-center gap-1.5">
+          {tags.map((tag, i) => (
+            <li key={i} className="flex items-center gap-1">
+              <ul className="flex flex-wrap items-center gap-1">
+                <TagChips tags={[tag]} lookup={lookup} />
+              </ul>
+              <button
+                type="button"
+                onClick={() => onChange(tags.filter((_, j) => j !== i))}
+                aria-label={t("createEntry.removeCategory")}
+                title={t("createEntry.removeCategory")}
+                className="text-content-subtle hover:text-red-600"
+              >
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {options.length > 0 && (
+        <ul className="mt-2 flex flex-wrap gap-1.5">
+          {options.map((option, i) => (
+            <li key={i}>
+              <button
+                type="button"
+                onClick={() => onChange([...tags, option.tag!])}
+                title={option.long}
+                className="rounded-full border border-dashed px-2.5 py-1 font-mono text-xs text-content-muted hover:border-primary hover:text-primary"
+              >
+                + {option.short ?? option.long}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {options.length === 0 && tags.length === 0 && (
+        <p className="text-xs text-content-subtle">{t("createEntry.categoriesNoneBound")}</p>
+      )}
+
+      <div className="mt-2 flex gap-2">
+        <label className="sr-only" htmlFor="entry-category-manual">
+          {t("createEntry.categoryManualLabel")}
+        </label>
+        <input
+          id="entry-category-manual"
+          value={manual}
+          onChange={(e) => setManual(e.target.value)}
+          placeholder={t("createEntry.categoryManualPlaceholder")}
+          className="w-full min-w-0 rounded-lg border bg-surface px-3 py-2 text-sm text-content outline-none placeholder:text-content-subtle focus:ring-2"
+        />
+        <button
+          type="button"
+          disabled={parsed === null}
+          onClick={() => {
+            if (parsed === null) return;
+            if (!chosen.has(tagKey(parsed))) onChange([...tags, parsed]);
+            setManual("");
+          }}
+          className="shrink-0 rounded-lg border px-3 py-2 text-sm text-content hover:border-primary disabled:opacity-50"
+        >
+          {t("createEntry.addCategory")}
+        </button>
+      </div>
+      <p className="mt-1 text-xs text-content-subtle">{t("createEntry.categoryManualHelp")}</p>
+    </div>
+  );
+}
 
 export interface EntryEditorDialogProps {
   /** All known languages, for the in-dialog picker when none was preselected. */
@@ -669,8 +780,10 @@ export function EntryEditorDialog({
   const [pickedTag, setPickedTag] = useState(language?.tag ?? initial?.languageID ?? "");
   const [spellings, setSpellings] = useState<string[]>(initial?.orthography ?? [word]);
   const [transcription, setTranscription] = useState(initial?.transcription ?? "");
-  const [categories, setCategories] = useState<AnnotationTag[]>(() =>
-    toAnnotationTags(initial?.categories ?? []),
+  // `categories` is tag-only now; free labels moved to `annotations`.
+  const [categories, setCategories] = useState<Tag[]>(() => initial?.categories ?? []);
+  const [entryAnnotations, setEntryAnnotations] = useState<AnnotationTag[]>(() =>
+    toAnnotationTags(initial?.annotations ?? []),
   );
   const [otherForms, setOtherForms] = useState<OtherFormDraft[]>(() =>
     (initial?.otherForms ?? []).map((f) => ({
@@ -683,12 +796,16 @@ export function EntryEditorDialog({
     initial
       ? fromRecordDefinitions(
           initial.definitions,
-          (d) => ({ notes: toAnnotationTags(d.notes), plainNotes: d.plainNotes ?? [], text: d.text ?? "" }),
-          (d) => ({ notes: toAnnotationTags(d.notes), plainNotes: d.plainNotes ?? [] }),
+          (d) => ({
+            annotations: toAnnotationTags(d.annotations),
+            notes: d.notes ?? [],
+            text: d.text ?? "",
+          }),
+          (d) => ({ annotations: toAnnotationTags(d.annotations), notes: d.notes ?? [] }),
           emptyGroupDraft,
           mintNodeId,
         )
-      : [{ kind: "leaf", id: mintNodeId(), payload: { notes: [], plainNotes: [], text: "" } }],
+      : [{ kind: "leaf", id: mintNodeId(), payload: { annotations: [], notes: [], text: "" } }],
   );
   const [entryNotes, setEntryNotes] = useState<string[]>(initial?.notes ?? []);
   const [references, setReferences] = useState<EntryReference[]>(initial?.references ?? []);
@@ -765,7 +882,7 @@ export function EntryEditorDialog({
   const cleanOtherForms: EntryInflectedForm[] = otherForms
     .filter((f) => f.annotation !== null && f.form.trim() !== "")
     .map((f) => ({ annotation: toRecordAnnotation(f.annotation!), form: f.form.trim() }));
-  const cleanPlainNotes = (notes: string[]) => notes.map((s) => s.trim()).filter((s) => s !== "");
+  const cleanNodeNotes = (notes: string[]) => notes.map((s) => s.trim()).filter((s) => s !== "");
   // Serialize the editor tree to record definitions under the tree place
   // convention: leaves become definitions with text, annotated group nodes
   // become group items (notes only), bare groups stay implicit.
@@ -775,19 +892,19 @@ export function EntryEditorDialog({
       payload.text.trim() === ""
         ? null
         : {
-            notes: payload.notes.map(toRecordAnnotation),
-            ...(cleanPlainNotes(payload.plainNotes).length > 0
-              ? { plainNotes: cleanPlainNotes(payload.plainNotes) }
+            annotations: payload.annotations.map(toRecordAnnotation),
+            ...(cleanNodeNotes(payload.notes).length > 0
+              ? { notes: cleanNodeNotes(payload.notes) }
               : {}),
             text: payload.text.trim(),
           },
     (group) => {
-      const notes = group.notes.map(toRecordAnnotation);
-      const plainNotes = cleanPlainNotes(group.plainNotes);
+      const annotations = group.annotations.map(toRecordAnnotation);
+      const notes = cleanNodeNotes(group.notes);
       // A group is only worth an explicit record item when it carries content.
-      return notes.length === 0 && plainNotes.length === 0
+      return annotations.length === 0 && notes.length === 0
         ? null
-        : { notes, ...(plainNotes.length > 0 ? { plainNotes } : {}) };
+        : { annotations, ...(notes.length > 0 ? { notes } : {}) };
     },
   );
   // Last guard before writing: the tree must serialize to a strictly valid
@@ -806,7 +923,10 @@ export function EntryEditorDialog({
       languageID: target.tag,
       orthography: cleanSpellings,
       ...(transcription.trim() !== "" ? { transcription: transcription.trim() } : {}),
-      categories: categories.map(toRecordAnnotation),
+      categories,
+      ...(entryAnnotations.length > 0
+        ? { annotations: entryAnnotations.map(toRecordAnnotation) }
+        : {}),
       ...(cleanOtherForms.length > 0 ? { otherForms: cleanOtherForms } : {}),
       definitions: cleanDefinitions,
       ...(cleanNotes.length > 0 ? { notes: cleanNotes } : {}),
@@ -902,18 +1022,18 @@ export function EntryEditorDialog({
   // action until it is opened (or the node already carries abbreviations).
   function nodeNotes(
     idPrefix: string,
-    notes: AnnotationTag[],
-    plainNotes: string[],
-    setNotes: (notes: AnnotationTag[]) => void,
-    setPlainNotes: (plainNotes: string[]) => void,
+    annotations: AnnotationTag[],
+    notes: string[],
+    setAnnotations: (annotations: AnnotationTag[]) => void,
+    setNotes: (notes: string[]) => void,
     revealKey: number,
   ) {
-    const showAbbrev = notes.length > 0 || abbrevOpen.has(revealKey);
+    const showAbbrev = annotations.length > 0 || abbrevOpen.has(revealKey);
     return (
       <div className="mt-2">
         <StringList
-          items={plainNotes}
-          onChange={setPlainNotes}
+          items={notes}
+          onChange={setNotes}
           idPrefix={`${idPrefix}-plainnote`}
           itemLabel={t("createEntry.plainNoteLabel")}
           placeholder={t("createEntry.plainNotePlaceholder")}
@@ -925,8 +1045,8 @@ export function EntryEditorDialog({
             <p className="text-xs text-content-subtle">{t("createEntry.notesHelp")}</p>
             <AnnotationEditor
               idPrefix={`${idPrefix}-note`}
-              tags={notes}
-              onChange={setNotes}
+              tags={annotations}
+              onChange={setAnnotations}
               addLabel={t("createEntry.addNote")}
               suggestions={abbreviations}
             />
@@ -967,11 +1087,12 @@ export function EntryEditorDialog({
             <p className="mt-0.5 text-xs text-content-subtle">{t("createEntry.groupNotesHelp")}</p>
             {nodeNotes(
               `entry-group-${node.id}`,
+              node.group.annotations,
               node.group.notes,
-              node.group.plainNotes,
-              (notes) => setDefinitions((prev) => updateGroup(prev, node.id, (g) => ({ ...g, notes }))),
-              (plainNotes) =>
-                setDefinitions((prev) => updateGroup(prev, node.id, (g) => ({ ...g, plainNotes }))),
+              (annotations) =>
+                setDefinitions((prev) => updateGroup(prev, node.id, (g) => ({ ...g, annotations }))),
+              (notes) =>
+                setDefinitions((prev) => updateGroup(prev, node.id, (g) => ({ ...g, notes }))),
               node.id,
             )}
             {renderDefinitionNodes(node.children)}
@@ -1003,11 +1124,12 @@ export function EntryEditorDialog({
           />
           {nodeNotes(
             `entry-definition-${node.id}`,
+            node.payload.annotations,
             node.payload.notes,
-            node.payload.plainNotes,
-            (notes) => setDefinitions((prev) => updateLeaf(prev, node.id, (p) => ({ ...p, notes }))),
-            (plainNotes) =>
-              setDefinitions((prev) => updateLeaf(prev, node.id, (p) => ({ ...p, plainNotes }))),
+            (annotations) =>
+              setDefinitions((prev) => updateLeaf(prev, node.id, (p) => ({ ...p, annotations }))),
+            (notes) =>
+              setDefinitions((prev) => updateLeaf(prev, node.id, (p) => ({ ...p, notes }))),
             node.id,
           )}
         </div>
@@ -1143,11 +1265,25 @@ export function EntryEditorDialog({
             <p className="mt-1 text-xs text-content-subtle">
               {t("createEntry.categoriesHelp")}
             </p>
-            <AnnotationEditor
-              idPrefix="entry-category"
+            <CategoryEditor
               tags={categories}
               onChange={setCategories}
-              addLabel={t("createEntry.addCategory")}
+              abbreviations={abbreviations}
+            />
+          </fieldset>
+
+          <fieldset className="mt-5">
+            <legend className="text-sm font-medium text-content">
+              {t("createEntry.annotationsLegend")}
+            </legend>
+            <p className="mt-1 text-xs text-content-subtle">
+              {t("createEntry.annotationsHelp")}
+            </p>
+            <AnnotationEditor
+              idPrefix="entry-annotation"
+              tags={entryAnnotations}
+              onChange={setEntryAnnotations}
+              addLabel={t("createEntry.addAnnotation")}
               suggestions={abbreviations}
             />
           </fieldset>
@@ -1177,7 +1313,7 @@ export function EntryEditorDialog({
               onClick={() =>
                 setDefinitions((prev) => [
                   ...prev,
-                  { kind: "leaf", id: mintNodeId(), payload: { notes: [], plainNotes: [], text: "" } },
+                  { kind: "leaf", id: mintNodeId(), payload: { annotations: [], notes: [], text: "" } },
                 ])
               }
               className="mt-2 text-sm text-primary hover:text-primary-hover"

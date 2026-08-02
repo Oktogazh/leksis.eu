@@ -1,16 +1,71 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  abbreviationLookup,
   annotationConflicts,
   formatAbbreviationRef,
+  resolveTag,
   type AbbreviationView,
   type EntryAnnotation,
   type EntryDefinition,
   type EntryView,
+  type Tag,
 } from "@leksis/types";
 import { fetchAbbreviations } from "../lib/api";
 import { fetchEntryRecord } from "../lib/atproto-record";
 import { definitionsDepth, placeLabel } from "../lib/definition-tree";
+
+/**
+ * A tag's chips, resolved against what the language has bound:
+ * exact bundle match → decomposition into bound parts → the raw identifier.
+ *
+ * An unresolved chip is shown as the tag itself, visibly styled as unbound,
+ * and never as UD's English name: an untranslated identifier reads as "this
+ * needs binding", which is the signal wanted, whereas an English gloss would
+ * read as content and break the homolingual rule. Bots know the tag long
+ * before any label exists, so this is the common path, not an edge case.
+ */
+export function TagChips({
+  tags,
+  lookup,
+  className = "",
+}: {
+  tags: readonly Tag[];
+  lookup: ReadonlyMap<string, { long: string; short?: string }>;
+  className?: string;
+}): ReactNode {
+  const { t } = useTranslation();
+  return (
+    <>
+      {tags.flatMap((tag, i) =>
+        resolveTag(tag, lookup).map((part, j) =>
+          part.bound && part.label !== undefined ? (
+            <li
+              key={`${i}-${j}`}
+              className={`rounded-full border bg-surface-muted/60 px-2.5 py-1 font-mono text-xs text-content ${className}`}
+            >
+              {part.label.short !== undefined ? (
+                <abbr title={part.label.long} className="no-underline">
+                  {part.label.short}
+                </abbr>
+              ) : (
+                part.label.long
+              )}
+            </li>
+          ) : (
+            <li
+              key={`${i}-${j}`}
+              title={t("entry.unboundTag")}
+              className={`rounded-full border border-dashed border-amber-500/70 px-2.5 py-1 font-mono text-xs text-amber-700 dark:text-amber-400 ${className}`}
+            >
+              {part.verbatim}
+            </li>
+          ),
+        ),
+      )}
+    </>
+  );
+}
 
 /** Indentation per definition depth (its place's length, 1–3). */
 const DEPTH_INDENT = ["", "pl-5 sm:pl-6", "pl-10 sm:pl-12"];
@@ -31,6 +86,7 @@ export function DefinitionList({
 }): ReactNode {
   const { t } = useTranslation();
   const depth = definitionsDepth(definitions);
+  const lookup = abbreviationLookup(abbreviations);
 
   function noteTitle(note: EntryAnnotation): string {
     const conflicts = annotationConflicts(note, abbreviations);
@@ -48,8 +104,7 @@ export function DefinitionList({
   return (
     <ol className="space-y-4">
       {definitions.map((def, i) => {
-        const isGroup = def.place[def.place.length - 1] === 0;
-        const plainNotes = def.plainNotes ?? [];
+        const notes = def.notes ?? [];
         return (
           <li
             key={i}
@@ -59,9 +114,14 @@ export function DefinitionList({
               {placeLabel(depth, def.place)}
             </span>
             <div className="min-w-0">
-              {def.notes.length > 0 && (
+              {def.categories !== undefined && def.categories.length > 0 && (
+                <ul className="mr-2 inline-flex flex-wrap items-center gap-1 align-middle">
+                  <TagChips tags={def.categories} lookup={lookup} />
+                </ul>
+              )}
+              {def.annotations.length > 0 && (
                 <span className="mr-2">
-                  {def.notes.map((note, j) => {
+                  {def.annotations.map((note, j) => {
                     const conflicted = annotationConflicts(note, abbreviations).length > 0;
                     const chipClass = `mr-1 rounded border bg-surface-muted/60 px-1.5 py-0.5 font-mono text-xs text-content-muted ${
                       conflicted ? "border-red-400" : ""
@@ -82,14 +142,18 @@ export function DefinitionList({
                   })}
                 </span>
               )}
-              {plainNotes.length > 0 && (
+              {notes.length > 0 && (
                 <span className="mr-2 text-sm italic text-content-muted">
-                  {plainNotes.join(" · ")}
+                  {notes.join(" · ")}
                 </span>
               )}
-              {/* A group node (place ending in 0) is a heading: it carries
-                  notes but no definition text. */}
-              {!isGroup && <span className="text-sm text-content">{def.text}</span>}
+              {/* A group node is a heading: it carries notes but no text.
+                  Which kind a node is follows from the parsed record, not
+                  from its place — see parseDefinitions on the pre-v0.8
+                  coordinates still in the index. */}
+              {def.text !== undefined && (
+                <span className="text-sm text-content">{def.text}</span>
+              )}
             </div>
           </li>
         );
@@ -184,20 +248,7 @@ export function EntryPreview({ entry, onOpen }: EntryPreviewProps) {
           </div>
           {record.categories.length > 0 && (
             <ul className="mt-2 flex flex-wrap items-center gap-1.5">
-              {record.categories.map((category, i) => (
-                <li
-                  key={i}
-                  className="rounded-full border bg-surface-muted/60 px-2 py-0.5 font-mono text-xs text-content"
-                >
-                  {category.short !== undefined ? (
-                    <abbr title={category.long} className="no-underline">
-                      {category.short}
-                    </abbr>
-                  ) : (
-                    category.long
-                  )}
-                </li>
-              ))}
+              <TagChips tags={record.categories} lookup={abbreviationLookup(abbreviations)} />
             </ul>
           )}
           <div className="mt-2">

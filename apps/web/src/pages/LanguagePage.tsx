@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
   formatAbbreviationRef,
+  formatTagVerbatim,
   type AbbreviationView,
   type DashboardActivityDay,
   type DashboardFeedItem,
@@ -11,6 +12,7 @@ import {
 } from "@leksis/types";
 import { useSession } from "../auth/SessionProvider";
 import { endonym } from "../components/LanguageSelector";
+import { GrammarBindingDialog } from "../components/GrammarBindingDialog";
 import { LanguageRecordDialog, type LanguageRecordMode } from "../components/LanguageRecordDialog";
 import { LanguageSearchBar } from "../components/LanguageSearchBar";
 import { fetchAbbreviations, fetchLanguageDashboard, fetchLanguages } from "../lib/api";
@@ -141,6 +143,12 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
   const [dialog, setDialog] = useState<LanguageRecordMode | null>(null);
   /** True while the mode-B target picker (name a language in this one) is open. */
   const [codesOpen, setCodesOpen] = useState(false);
+  /** The binding editor — this language's own grammar declaration. */
+  const [grammarOpen, setGrammarOpen] = useState(false);
+  // A row with no `long` is a tag entries use that nothing has named here yet:
+  // the translation worklist, kept out of the abbreviation list proper.
+  const labelled = abbreviations.filter((a) => a.long !== undefined);
+  const unboundTags = abbreviations.filter((a) => a.long === undefined && a.tag !== undefined);
   /** True while the full flagged-for-review list dialog is open. */
   const [todoOpen, setTodoOpen] = useState(false);
   /** Record URI written to the PDS but not yet seen back from the AppView. */
@@ -332,19 +340,32 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
           </section>
 
           <section className="mt-8">
-            <h2 className="text-sm font-semibold text-content">
-              {t("languagePage.abbreviationsTitle")}
-            </h2>
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="text-sm font-semibold text-content">
+                {t("languagePage.abbreviationsTitle")}
+              </h2>
+              {/* Layer 0 (free abbreviations harvested from entries) and layer 1
+                  (the grammar a language declares) are the same shelf to a
+                  contributor, so the binding editor opens from here. */}
+              <button
+                type="button"
+                onClick={() => setGrammarOpen(true)}
+                disabled={record === null}
+                className="rounded-lg border px-3 py-1.5 text-xs text-content hover:border-primary disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {t("grammar.title")}
+              </button>
+            </div>
             <p className="mt-1 text-xs text-content-subtle">
               {t("languagePage.abbreviationsHint")}
             </p>
-            {abbreviations.length === 0 ? (
+            {labelled.length === 0 ? (
               <p className="mt-2 text-sm text-content-muted">
                 {t("languagePage.abbreviationsEmpty")}
               </p>
             ) : (
               <ul className="mt-2 space-y-1.5">
-                {abbreviations.map((abbreviation, i) => {
+                {labelled.map((abbreviation, i) => {
                   const conflicted = abbreviation.conflictsWith.length > 0;
                   return (
                     <li key={i} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
@@ -357,6 +378,23 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
                       </span>
                       {abbreviation.short !== undefined && (
                         <span className="text-sm text-content">{abbreviation.long}</span>
+                      )}
+                      {/* A bound pair is the language's own declaration, so it
+                          is listed even at ×0 — the count is usage, not
+                          existence. */}
+                      {abbreviation.bound && (
+                        <span
+                          className="rounded border border-primary/50 px-1.5 py-0.5 text-[0.65rem] uppercase tracking-wide text-primary"
+                          title={
+                            abbreviation.tag === undefined
+                              ? undefined
+                              : t("languagePage.abbreviationBound", {
+                                  tag: formatTagVerbatim(abbreviation.tag),
+                                })
+                          }
+                        >
+                          {t("languagePage.abbreviationBoundBadge")}
+                        </span>
                       )}
                       <span className="text-xs text-content-subtle">×{abbreviation.count}</span>
                       {conflicted && (
@@ -373,8 +411,68 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
                 })}
               </ul>
             )}
+
+            {unboundTags.length > 0 && (
+              <div className="mt-4 rounded-lg border border-dashed border-amber-500/60 p-3">
+                <h3 className="text-sm font-semibold text-content">
+                  {t("languagePage.unboundTagsTitle")}
+                </h3>
+                <p className="mt-1 text-xs text-content-subtle">
+                  {t("languagePage.unboundTagsHint")}
+                </p>
+                <ul className="mt-2 flex flex-wrap gap-1.5">
+                  {unboundTags.map((row, i) => (
+                    <li key={i}>
+                      <button
+                        type="button"
+                        onClick={() => setGrammarOpen(true)}
+                        disabled={record === null}
+                        className="rounded-full border border-dashed border-amber-500/70 px-2.5 py-1 font-mono text-xs text-amber-700 hover:border-primary hover:text-primary disabled:opacity-50 dark:text-amber-400"
+                      >
+                        {formatTagVerbatim(row.tag!)}
+                        <span className="ml-1 text-content-subtle">×{row.count}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* The AppView indexes an incoherent grammar rather than rejecting
+                it — so this is where those rows get found and fixed. */}
+            {dashboard.grammarIssues.length > 0 && (
+              <div className="mt-4 rounded-lg border border-amber-400/60 bg-amber-50/40 p-3 dark:bg-amber-500/5">
+                <h3 className="text-sm font-semibold text-content">
+                  <span aria-hidden="true">⚠ </span>
+                  {t("languagePage.grammarIssuesTitle")}
+                </h3>
+                <p className="mt-1 text-xs text-content-subtle">
+                  {t("languagePage.grammarIssuesHint")}
+                </p>
+                <ul className="mt-2 space-y-1">
+                  {dashboard.grammarIssues.map((issue, i) => (
+                    <li key={i} className="font-mono text-xs text-content">
+                      {issue.kind === "unbound-feature"
+                        ? t("languagePage.grammarIssueUnboundFeature", {
+                            key: issue.key,
+                            feature: issue.feature ?? "",
+                          })
+                        : t("languagePage.grammarIssueDuplicate", { key: issue.key })}
+                    </li>
+                  ))}
+                </ul>
+                <button
+                  type="button"
+                  onClick={() => setGrammarOpen(true)}
+                  disabled={record === null}
+                  className="mt-2 text-xs text-primary hover:text-primary-hover disabled:opacity-50"
+                >
+                  {t("languagePage.grammarIssuesOpen")}
+                </button>
+              </div>
+            )}
           </section>
-          
+
           <section className="mt-8">
             <h3 className="mt-4 text-sm font-semibold text-content">
               {t("languagePage.feedTitle")}
@@ -538,6 +636,17 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
           languages={languages}
           onClose={() => setDialog(null)}
           onPublished={onPublished}
+        />
+      )}
+
+      {grammarOpen && (
+        <GrammarBindingDialog
+          tag={tag}
+          onClose={() => setGrammarOpen(false)}
+          onPublished={(uri) => {
+            setGrammarOpen(false);
+            setSyncingURI(uri);
+          }}
         />
       )}
     </div>

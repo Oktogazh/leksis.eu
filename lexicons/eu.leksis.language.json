@@ -21,11 +21,148 @@
             "items": { "type": "ref", "ref": "#translation" },
             "description": "Names of this language in other languages. Must contain the endonym: an item whose languageID equals this record's tag, giving the language's name in itself."
           },
+          "grammar": {
+            "type": "ref",
+            "ref": "#grammar",
+            "description": "The grammatical vocabulary this language uses, each atom bound to a label written in this language. Optional: a language with nothing declared stays fully usable, and unbound tags on its entries still render."
+          },
           "createdAt": {
             "type": "string",
             "format": "datetime",
             "description": "Client-declared creation time of this record version."
           }
+        }
+      }
+    },
+    "grammar": {
+      "type": "object",
+      "description": "A language's declared grammatical inventory. Binding is how a language declares what it uses, so these arrays are its vocabulary: what is absent is simply not offered when authoring. Only authored rows are stored — there is no skeleton of unbound atoms, since absence already means unbound. Layer 2's declarations (which features are inherent to a category, and labels for multi-atom combinations) will be added here as further properties.",
+      "properties": {
+        "pos": {
+          "type": "array",
+          "maxLength": 64,
+          "items": { "type": "ref", "ref": "#posBinding" },
+          "description": "Parts of speech this language uses."
+        },
+        "features": {
+          "type": "array",
+          "maxLength": 256,
+          "items": { "type": "ref", "ref": "#featureBinding" },
+          "description": "Grammatical feature names this language uses. A feature name must be bound before any of its values can be."
+        },
+        "values": {
+          "type": "array",
+          "maxLength": 2048,
+          "items": { "type": "ref", "ref": "#valueBinding" },
+          "description": "Feature values this language uses, each stating which feature it is an option of."
+        }
+      }
+    },
+    "posBinding": {
+      "type": "object",
+      "required": ["value", "label"],
+      "properties": {
+        "value": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Part-of-speech name, e.g. \"NOUN\". One of Universal Dependencies' 17 tags, or a name this language minted when none of them fits."
+        },
+        "scheme": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Provenance. Absent means the item is documented by Universal Dependencies; otherwise the BCP 47 tag of the language that minted it."
+        },
+        "label": { "type": "ref", "ref": "#label" },
+        "references": {
+          "type": "array",
+          "maxLength": 16,
+          "items": { "type": "ref", "ref": "#reference" },
+          "description": "Where this binding's claim comes from. A UD item's documentation URL is derivable and is not stored; on a minted item the reference is what documents the addition, which is the condition UD's extension licence attaches to it."
+        }
+      }
+    },
+    "featureBinding": {
+      "type": "object",
+      "required": ["feature", "label"],
+      "properties": {
+        "feature": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Feature name, e.g. \"Gender\" or the layered \"Number[psor]\". Universal Dependencies requires the form [A-Z][A-Za-z0-9]*(\\[[a-z0-9]+\\])?."
+        },
+        "scheme": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Provenance. Absent means documented by Universal Dependencies; otherwise the BCP 47 tag of the minting language."
+        },
+        "label": { "type": "ref", "ref": "#label" },
+        "references": {
+          "type": "array",
+          "maxLength": 16,
+          "items": { "type": "ref", "ref": "#reference" }
+        }
+      }
+    },
+    "valueBinding": {
+      "type": "object",
+      "required": ["feature", "value", "label"],
+      "properties": {
+        "feature": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "The feature this value is an option of, e.g. \"Gender\". Must itself be bound in `features`."
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "The value, e.g. \"Fem\". Universal Dependencies requires the form [A-Z0-9][A-Za-z0-9]*, so a value may begin with a digit; several comma-separated values mean the item spans them all (\"Gender=Fem,Masc\")."
+        },
+        "scheme": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Provenance of the feature/value pair as a whole. Absent means documented by Universal Dependencies; otherwise the BCP 47 tag of the minting language — which is how a value minted on a UD feature is expressed (\"Number=Sgv\", scheme \"br\")."
+        },
+        "label": { "type": "ref", "ref": "#label" },
+        "references": {
+          "type": "array",
+          "maxLength": 16,
+          "items": { "type": "ref", "ref": "#reference" }
+        }
+      }
+    },
+    "label": {
+      "type": "object",
+      "required": ["long"],
+      "description": "How this language names the bound item, for a reader of this language — a Breton binding says \"anv-kadarn\", never \"noun\".",
+      "properties": {
+        "long": {
+          "type": "string",
+          "maxLength": 256,
+          "maxGraphemes": 128,
+          "description": "Full form — the only required half: a lone form is always the full one."
+        },
+        "short": {
+          "type": "string",
+          "maxLength": 64,
+          "maxGraphemes": 32,
+          "description": "Optional abbreviated display form; when present it is shown instead of the full form, which appears on hover."
+        }
+      }
+    },
+    "reference": {
+      "type": "object",
+      "required": ["text"],
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 512,
+          "maxGraphemes": 256,
+          "description": "The reference's display text (a citation, source name or note)."
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 2048,
+          "description": "Optional URL the reference links to."
         }
       }
     },

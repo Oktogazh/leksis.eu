@@ -3,6 +3,281 @@
 All notable changes to Leksis. This project follows the 8-week development
 timeline; each entry maps to a weekly milestone.
 
+## Grammar layer — layer 1: the entry break, and tags rendered
+
+The entry lexicon's breaking change, done once, plus the viewer chain that
+makes tags readable and the worklist that surfaces the ones nobody has named.
+
+> **Breaking, bots-only.** Old-shape records are rejected whole at ingest and
+> the bots reset-and-republish, as with `botSource` in v0.9.
+
+### Lexicon & types
+
+- **Every annotation site holds exactly one type**, at both altitudes — the
+  entry and the definition node now carry the same three fields:
+  `categories` (tags), `annotations` (free `{long, short}` labels) and `notes`
+  (free prose). `plainNotes` is gone; the definition's old `notes` (pairs) is
+  now `annotations`, and its old `plainNotes` is now `notes`. A field that
+  could hold either a tag or a label would give one displayed string two
+  sources of truth, and they can only drift.
+- **`categories` is tag-only, and the friction is deliberate.** Requiring a
+  tag makes a contributor settle the language's grammar declaration before
+  authoring entries, which is what lets every editor step show a bound
+  homolingual label instead of a raw identifier. Non-grammatical headword
+  labels (`vulg.`, `arch.`) move to the new entry-level `annotations`.
+- New `#tag`/`#tagUpos`/`#tagFeat` defs in the entry lexicon.
+
+### API (`apps/api`)
+
+- Ingest validates tags at both altitudes — **shape only**, never vocabulary,
+  so a language may use a tag no UD snapshot knows. Free labels are harvested
+  from `annotations` and `otherForms`; `categories` no longer contributes a
+  label, since a tag resolves to one through the language record.
+- Entry docs store their distinct `tags`, and `syncEntryAbbreviations` joins
+  them to the row that already carries that tag — so **usage counts land on
+  the bound label** rather than beside it. A tag nothing binds gets a row with
+  no label at all: that row *is* the worklist item. `db:init` rebuilds from
+  all three sources and reproduces the model exactly.
+
+### Web (`apps/web`)
+
+- **The viewer's resolution chain** (`resolveTag`, in `packages/types` so the
+  layer-6 exporters can share it): exact bundle match → greedy decomposition
+  into bound parts, in the bundle's own order → the raw identifier, styled as
+  unbound. A language that bound `nf.` shows `nf.`; one that bound `n.` and
+  `f.` separately shows `n. f.`, never a synthesised label nobody authored.
+  Partial decomposition still beats a raw tag. The lookup is built from the
+  abbreviations response both viewers already fetch — no extra request, no PDS
+  round trip.
+- The entry editor's categories become a **picker over what the language has
+  bound**, each option showing its homolingual label, plus a manual field for
+  a tag nobody has bound yet — which is how a bot's tag, or a language with no
+  declaration, stays authorable. Progressive narrowing is *not* here: it is
+  derived from layer 2's inherence declarations, so layer 1 offers the flat
+  multi-select the design note prescribes as its degradation.
+- Definition nodes render their sense-level tags; the **editor** for them is
+  deferred (the shape ships, ingest validates it, the viewer draws it).
+- The dashboard gains **"tags used here with no name yet"**, each opening the
+  binding editor.
+
+## Grammar layer — layer 1: bindings enter the abbreviations model
+
+The `abbreviations` read model gains a second source and **stays the single
+home** for a language's labels: the framing is "a tagged abbreviation", not "a
+labelled tag", so a binding does not create a parallel collection — a pair
+simply acquires a `tag`.
+
+### API (`apps/api`)
+
+- **`firehose/abbreviations.ts`** gains `syncLanguageBindings`, mirroring
+  `syncEntryAbbreviations`: a whole desired set is declared, so a new record
+  version, an added binding and a removed one are one call. Docs gain
+  `bindingKey` and `tag`.
+- **The deletion rule changes.** A doc is removed only when no entry uses it
+  *and* no binding declares it — so a bound pair survives at **count 0**, which
+  is the normal state of a label nobody has used yet and not something the
+  entries may delete. Conversely a pair the grammar stops binding keeps its
+  entries and merely loses its tag.
+- **Identity stays the label pair**, so a binding and an identical free pair
+  from an entry are one row: the reader's abbreviation list shows
+  `an. anv-kadarn` once, whatever put it there. (Two atoms bound to the same
+  label therefore collapse into one row — an authoring mistake, since a reader
+  could not tell them apart, and one the language owns.)
+- Language docs now store their `grammarIssues` and their harvested
+  `bindings`. The pairs are indexed for the same reason entry docs store
+  theirs: without them a `db:init` rebuild would have to resolve every record
+  from its PDS — or, worse, erase every binding in the model.
+- `db:init` rebuilds from **both** sources and ensures an index on
+  `bindingKey`. `GET /languages/:tag/abbreviations` serves `bound` and `tag`;
+  `GET /languages/:tag/dashboard` serves `grammarIssues`.
+
+### Web (`apps/web`)
+
+- The dashboard's abbreviation list marks bound pairs and shows them at ×0 —
+  the count is usage, not existence. A **repair worklist** appears beside it
+  when the current record's grammar is incoherent, since the AppView indexes
+  such a version rather than rejecting it; it opens the binding editor.
+
+## Grammar layer — layer 1: live UD candidate lists
+
+The binding editor now offers what Universal Dependencies currently documents,
+so a contributor picks a feature or a value instead of typing it.
+
+### New workspace (`packages/ud`)
+
+- Fetches and parses UD's documentation pages — the universal feature index
+  (27 features) and any feature's page (its values, each with UD's gloss). The
+  pages are `text/html`, not an API, so the parsing lives in a shared package:
+  if UD restructures, one file changes, and it can move behind an AppView cache
+  without touching a caller. Nothing is transcribed into code, so no inventory
+  in this repo can go stale — which is also what dissolves the question of what
+  `Subcat`'s value list "really" is: the page says, and the contributor picks.
+- **Every function fails soft.** A network error, a 404 or an unparseable page
+  yields no candidates and no exception. UD's uptime is never a precondition
+  for authoring, or "design for the language that has nothing" would be a
+  slogan rather than a property.
+
+### Web (`apps/web`)
+
+- The binding editor's feature and value levels show the documented candidates
+  not yet bound, each a click away from its binding form, above the manual
+  field — which stays exactly as it was. Candidates are fetched when a level
+  that shows them is opened, so editing a label never touches the network.
+
+> Two findings from checking at source. The `br` → `br_keb` treebank-code
+> mapping the design note anticipated is **not needed**: language-specific
+> feature pages are keyed by language code (`/cs/feat/Gender.html`), not by
+> treebank. And those pages are a *subset* of the universal inventory (Czech
+> documents three of UD's four genders) and 404 for low-resource languages
+> — `br/feat/index.html` does not exist — so they narrow rather than extend.
+> Deferred, with the trigger: a language whose contributors want the treebank's
+> narrowing as a filter.
+
+## Grammar layer — layer 1: ingest and the binding editor
+
+A language can now declare its grammatical vocabulary from its dashboard, and
+the AppView accepts records carrying that declaration.
+
+### API (`apps/api`)
+
+- **`firehose/ingest-language.ts` validates `grammar`.** Shape is strict — a
+  malformed grammar rejects the whole record, like any other field. Coherence
+  is **detected, never rejected**: a value whose feature name nobody bound, or
+  two rows keying the same, is logged as a warning and the version is still
+  indexed. Refusing it would discard everything else the version carries to
+  punish one row, and would make the AppView the arbiter of a language's
+  grammar — while an orphan already renders safely. Nothing from `grammar` is
+  indexed yet; that arrives with the read model.
+- `GET /languages/:tag/currentRecord` now returns the version's **`cid`**, the
+  baseline the editor's concurrency guard compares against.
+
+### Web (`apps/web`)
+
+- **New `components/GrammarBindingDialog.tsx`** — the binding editor, opened
+  from the abbreviations section of the language dashboard. A tab strip (one
+  tab today, so layer 2 slots in beside it), a sidebar holding the path, and a
+  main panel showing **exactly one level**: parts of speech or features → the
+  list → the binding form. The 14 headword-eligible parts of speech are listed
+  with UD's English gloss as contributor-facing chrome.
+  **The layer-1 gate is rendered as navigation, not as an error**: a feature's
+  values simply cannot be reached until the feature name is bound, so there is
+  no validation copy to write. Minting is offered where a contributor can see
+  nothing fits, behind an explicit "nothing in UD fits" toggle that asks for a
+  source — UD's extension licence is conditional on the addition being
+  documented. A label may be typed fresh; it need not be an abbreviation the
+  entry harvest already collected.
+- **Both guards ship with it.** The **no-orphan** rule refuses to publish a
+  version that would leave a value pointing at an unbound feature name — only
+  defects the edit *introduces*, so an already-incoherent record stays
+  repairable; unbinding a feature name deliberately does not cascade to its
+  values, since deleting a contributor's bindings as a side effect would be
+  worse than making them say so. The **concurrency** guard re-reads the current
+  record immediately before writing and refuses on a changed `recordURI`/`cid`:
+  last-write-wins can now drop a *reference*, not merely a label.
+- **New `lib/grammar-draft.ts`** — the draft edits as pure, keyed functions, so
+  what gets published is checkable without a browser.
+- **`lib/atproto-record.ts`** carries `grammar` through, and treats a malformed
+  one as an unreadable record rather than dropping it: every caller loads a
+  record in order to rewrite it, so discarding the grammar would delete a
+  language's declaration on the next save.
+- **`LanguageRecordDialog` no longer rebuilds the record from literals.** It
+  spread only four fields, so once `grammar` existed the first person to
+  correct a language's name would have wiped that language's entire
+  declaration — a blast radius of one language, silently.
+
+## Grammar layer — layer 1 (primitives): the contract
+
+The first slice of the morphology arc: the type a grammatical tag has, UD's
+part-of-speech inventory, and the `grammar` sub-object a language record uses
+to declare the vocabulary it actually uses. Contract only — nothing renders or
+is indexed yet; the ingest, the binding editor and the read model follow.
+
+Vocabulary comes from **Universal Dependencies, and only UD**, with minting
+(`scheme` = the minting language's BCP 47 tag) as the escape hatch UD's own
+extension licence provides. Everything below was checked against the published
+pages in the session that wrote it, never from recall.
+
+### Types (`packages/types`)
+
+- **New `tag.ts`** — `Tag`, a *bundle* of an optional part of speech plus
+  `Feature=Value` items, with **provenance on each item**: a bundle-level
+  scheme could not express `{NOUN (ud), Number=Sgv (br)}`, the normal shape of
+  a minted category. `tagKey` is the canonical key two tags are equal on — the
+  part of speech in its own slot (UPOS is its own CoNLL-U column, never a
+  feature), features sorted, multivalue values sorted, an absent `scheme`
+  written out as `ud` so it cannot key apart from an explicit one. Derived,
+  never stored on a record. Also `formatTagVerbatim` (the resolution chain's
+  last resort, deliberately not UD's English gloss, which would read as
+  content) and `parseTagInput`, the manual-entry path that keeps authoring
+  possible when UD cannot be reached — and which never infers provenance.
+  Shape rules are verified from `format.html`: feature names
+  `[A-Z][A-Za-z0-9]*(\[[a-z0-9]+\])?`, values `[A-Z0-9][A-Za-z0-9]*` (a value
+  may begin with a digit, so a minted `Conjugation=1` needs no workaround),
+  `_` never a value, and UD's case-insensitive sort.
+- **New `upos.ts`** — the 17 tags in UD's own three groups with its English
+  glosses, fetched from `u/pos/`. Embedded because the inventory is closed and
+  stable; the FEATS value inventories deliberately are **not**, since a stale
+  snapshot used as a validator would reject vocabulary UD has since added.
+  `HEADWORD_UPOS` is the 17 minus PUNCT/SYM/X — **a Leksis editorial
+  judgement, not UD's**, which states no eligibility policy. Doc URLs are
+  derived from an item, never stored.
+- **New `grammar.ts`** — the `grammar` object as **three arrays**: `pos`,
+  `features` (a feature *name*: the axis header, and the gate) and `values`
+  (a value, stating which feature it is an option of). Binding is how a
+  language declares its inventory, so only authored rows are stored — absence
+  already means unbound. `grammarIssues` reports the layer-1 gate (a value
+  whose feature name is unbound, matched by name so a minted value on a UD
+  feature passes) and duplicate keys; `grammarDiff` is the no-orphan rule as a
+  pure function over (old, new), reporting only what a proposal **introduces**
+  so an already-orphaned record stays editable; `grammarLookup` is the single
+  derived map the viewer will resolve tags against.
+- `LeksisLanguageRecord` gains optional `grammar`.
+
+### Lexicon (`lexicons/eu.leksis.language.json`)
+
+- New optional `grammar` property and the defs behind it (`#grammar`,
+  `#posBinding`, `#featureBinding`, `#valueBinding`, `#label`, `#reference`).
+  Written as a named def plus a ref rather than an inline object, which is the
+  convention every official `app.bsky`/`com.atproto` lexicon follows. Layer 2's
+  declarations will be added here as further properties — additive, so nothing
+  reserves a slot nobody writes to yet.
+
+> The cascade governs **authoring, never rendering**: a tag arriving unbound
+> still renders. A viewer that rejected unbound tags would make the AppView the
+> arbiter of a language's grammar.
+
+## Fixes — entry record round-trip fidelity
+
+Groundwork for the grammar layer: the browser's record parser was discarding
+most of what v0.8 added, so several shipped features were rendering nothing and
+one path was destroying content on save. No lexicon or API change.
+
+### Web (`apps/web`)
+
+- **`lib/atproto-record.ts` — the parser kept only leaves with text.** Group
+  nodes were dropped outright (losing every heading and the notes hanging on
+  them), and `plainNotes`, `otherForms`, entry-level `notes` and `references`
+  were never carried onto the parsed record at all — so the entry page's
+  other-forms, notes and references sections, all shipped in v0.8, were dead
+  code that could never render. All are now parsed, leniently: malformed items
+  are dropped rather than failing the record.
+- **A node's kind now follows from whether it carries text, not from its
+  place.** `isLeafPlace` is the strict rule the API enforces at ingest, but
+  every entry indexed before the v0.8 tree convention uses the older 0-based
+  coordinates (`[0]`, `[1,0]`), so its leaves read as group nodes. Two
+  consequences were live: `EntryPreview`'s definition list hid the text of any
+  node whose place ended in 0 — `br-zoo-587e` rendered with no definition at
+  all, `br-torpez-32bd` with one of three — and `fromRecordDefinitions` loaded
+  those nodes into the editor as groups, dropping their text, which a full
+  rewrite on save would have made permanent. Parser, viewer and editor now
+  share the one rule; saving such an entry re-derives correct places, so an
+  edit migrates it to the v0.8 convention (its old sub-sense nesting is not
+  recoverable and flattens — the bots' republish is the real repair).
+- **`DeleteEntryDialog` carried only `orthography`/`categories`/`definitions`
+  forward**, so withdrawing an entry silently dropped its transcription, other
+  forms, notes and references from the new version. The whole content is now
+  carried; `todo` deliberately is not, since a withdrawn entry is not a task.
+
 ## Entries — IPA transcription, botSource removed
 
 The entry gains a **phonetic transcription** and drops the bot-only source field.

@@ -169,7 +169,13 @@ export function LanguageRecordDialog({
     setSubmitting(true);
     setError(null);
     try {
+      // Everything the record carries beyond the names is passed through. This
+      // dialog edits translations and nothing else, so rebuilding the record
+      // from literals would mean the first person to correct a spelling wiped
+      // that language's whole grammar declaration — a blast radius of one
+      // language, silently.
       const updated: LeksisLanguageRecord = {
+        ...record,
         $type: LEKSIS_LANGUAGE_COLLECTION,
         tag: recordTag,
         translations: merged,

@@ -10,7 +10,7 @@ const DUPLICATE_SEARCH_DEBOUNCE_MS = 300;
 export interface DeleteEntryDialogProps {
   /** The entry version being withdrawn. */
   view: EntryView;
-  /** Its current record content — carried forward onto the deletion version, since the lexicon still requires orthography/categories/definitions. */
+  /** Its current record content — carried forward onto the deletion version, so withdrawing an entry never doubles as a content edit. */
   record: LeksisEntryRecord;
   onClose: () => void;
   /** Called with the new (deletion) record's AT URI after it was written to the PDS. */
@@ -65,12 +65,21 @@ export function DeleteEntryDialog({ view, record, onClose, onDeleted }: DeleteEn
   async function onSubmit() {
     if (!canSubmit || !agent || !did) return;
 
+    // The whole content is carried forward: a deletion is a version like any
+    // other, and one that dropped the transcription, other forms, notes or
+    // references would silently destroy them for whoever contests it later.
+    // `todo` is deliberately not carried — a withdrawn entry is not a task.
     const deletion: LeksisEntryRecord = {
       $type: LEKSIS_ENTRY_COLLECTION,
       languageID: record.languageID,
       orthography: record.orthography,
+      ...(record.transcription !== undefined ? { transcription: record.transcription } : {}),
       categories: record.categories,
+      ...(record.annotations !== undefined ? { annotations: record.annotations } : {}),
+      ...(record.otherForms !== undefined ? { otherForms: record.otherForms } : {}),
       definitions: record.definitions,
+      ...(record.notes !== undefined ? { notes: record.notes } : {}),
+      ...(record.references !== undefined ? { references: record.references } : {}),
       subject: view.recordURI,
       deleted: true,
       deletionReason: reason.trim(),

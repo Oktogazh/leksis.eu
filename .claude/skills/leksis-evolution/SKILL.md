@@ -178,7 +178,7 @@ its home:
 
 *Alignment context, not a plan. Detailed planning is deliberately deferred to the top of each layer. This
 section exists so that (a) every loop picks shapes this arc can grow into, and (b) no session invents tagset
-details nobody has actually verified. **The next thing to build is layer 1.***
+details nobody has actually verified. **Layer 1 shipped (ADR-0006); the next thing to build is layer 2.***
 
 ### Where it ends up
 
@@ -260,7 +260,7 @@ what it has closed. The closed set, named so a session recognises them on sight:
 **follow UD and only UD** · **UD supplies the vocabulary, Leksis defines its lexicographic use** ·
 **`scheme: "ud"` means documented anywhere on universaldependencies.org** · **per-item provenance** ·
 **one bundle, one chip** · **exact → decomposition → verbatim** · **the canonical key** ·
-**tag-only `categories`, and the friction is deliberate** · **the XOR rule** ·
+**tag-only `categories`, and the friction is deliberate** · **strict per-site type separation** (replaced the XOR rule at layer 1 — ADR-0006) ·
 **binding is declaring (the cascade)** · **store sparse, display complete** ·
 **harvest-first, "a tagged abbreviation"** · **bindings and layout on the language record, rules in their
 own lexicon** · **no XPOS as storage** · **`VerbForm=` on a VERB** · **the triage gate before minting** ·
@@ -271,14 +271,22 @@ axis** · **live UD candidate lists with degrade-to-manual** · **sense-level ta
 **`categories` order is the author's, `otherForms` order is the language's** ·
 **index expansion at ingest for inflected-form search** (leaning, priced at layer 5).
 
+**Settled by the layer-1 build (ADR-0006), do not re-derive:** `grammar` is `pos` + `features` + `values`,
+with `bindings` reserved for layer-2 *combinations* (≥2 items) — a `values` row names its feature, which is
+the declaration a bundle cannot make. Annotation sites separate **by field, not by union**: `categories`
+(tags) · `annotations` (free pairs) · `notes` (prose), identically on the entry and the definition node.
+The `abbreviations` read model is dual-sourced and keyed on the **label pair**, a tag being an attribute a
+pair acquires. §4.2's progressive narrowing was **cut from layer 1 and is layer 2's to build** — it derives
+from inherence, so it could not ship before the thing it derives from.
+
 ### Still genuinely open — do not answer these by guessing
 
 - **Should the entry-level annotation site also accept a *tag*, or free pairs only?** Recorded as
   free-pairs-only, which leaves a whole-entry tag that is not a grammatical category with no home.
 - **The `layout` sub-object's inner shape** (layer 5) — deliberately undesigned until a real conjugation
   table has been drawn by hand.
-- **The lexicon `union` encoding for annotation-XOR-tag.** It is the mechanism `app.bsky` embeds use, but
-  confirm it validates for local object refs before relying on it.
+- ~~**The lexicon `union` encoding for annotation-XOR-tag.**~~ **Moot** — sites separate by field, so no
+  union is needed (ADR-0006).
 - **The remaining ~19 UD FEATS value inventories.** *Not* a layer-1 blocker — layer 1 validates shape, not
   vocabulary, and the editor fetches candidates live — but nothing in the table below may be extended from
   memory.
@@ -330,9 +338,9 @@ layer at its top; the scope says *what is in and out*, not *how*.
 
 | Layer | What it declares | Status |
 |---|---|---|
-| **0 — Abbreviations** | free homolingual `{long, short}` pairs bound to nothing: definition notes, register, domain | **shipped** (v0.8) — gains an **entry-level** site at layer 1, since tag-only `categories` evicts `vulg.`/`arch.` |
-| **1 — Primitives** | the atoms this language uses: 14 headword-eligible UPOS, feature *names*, feature *values*. **Minting lives here**, including inflection-class features and their values | next |
-| **2 — Inherent combinations** | which features are **inherent** to a category, then the labelled headword categories that follow: masculine noun, first-declension feminine noun, transitive imperfective verb | |
+| **0 — Abbreviations** | free homolingual `{long, short}` pairs bound to nothing: definition notes, register, domain | **shipped** (v0.8); gained its **entry-level** site with layer 1 |
+| **1 — Primitives** | the atoms this language uses: 14 headword-eligible UPOS, feature *names*, feature *values*. **Minting lives here**, including inflection-class features and their values | **shipped** — see **ADR-0006**, which is authoritative over the design note for this layer |
+| **2 — Inherent combinations** | which features are **inherent** to a category, then the labelled headword categories that follow: masculine noun, first-declension feminine noun, transitive imperfective verb | **next** |
 | **3 — Axes** | per category, which features **vary across its forms** — the option set of the `otherForms` editor | |
 | **4 — Layout** | the *shape* of the inflection tables: which axis sits where, one table or several, their order, what is shown by default, and the order of the flat `otherForms` list — **not** chip order | |
 | **5 — Rules** | Hunspell-shaped rules populating cells, overridden by the entry's own `otherForms`; its own lexicon | |

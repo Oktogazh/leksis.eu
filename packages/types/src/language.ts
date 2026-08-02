@@ -2,6 +2,8 @@
 // and the API's languages endpoint. Types are the contract: the lexicon JSON,
 // these shapes, and the ArangoDB `languages` collection move together.
 
+import type { Grammar } from "./grammar.js";
+
 /** AT Proto collection NSID for language records. */
 export const LEKSIS_LANGUAGE_COLLECTION = "eu.leksis.language";
 
@@ -24,6 +26,18 @@ export interface LeksisLanguageRecord {
   /** Well-formed BCP 47 tag, normalized lowercase (e.g. "br", "br-gw"). */
   tag: string;
   translations: LanguageTranslation[];
+  /**
+   * The language's declared grammatical inventory (layer 1 of the grammar
+   * layer). Absent until someone binds something — and a language with no
+   * grammar declared stays fully authorable, since the cascade governs what
+   * the editors *offer*, never what the viewers render.
+   *
+   * It lives on this record, rather than in a lexicon of its own, because the
+   * layers reference each other: unbinding an atom orphans every higher row
+   * that uses it, and one self-contained object means a single write keeps
+   * the whole cascade consistent.
+   */
+  grammar?: Grammar;
   createdAt: string;
 }
 
@@ -57,5 +71,12 @@ export interface CurrentLanguageRecordResponse {
   tag: string;
   /** at:// URI of the current language record (resolved client-side). */
   recordURI: string;
+  /**
+   * CID of that version. An editor re-reads this immediately before
+   * publishing: last-write-wins can now drop a *reference* (a binding some
+   * higher layer depends on), not merely a label, so a write made against a
+   * stale copy has to be refused rather than merged.
+   */
+  cid: string;
   authorDID: string;
 }

@@ -4,10 +4,13 @@ import {
   isLeafPlace,
   isValidDefinitionPlace,
   isValidLanguageTag,
+  isValidTag,
   normalizeLanguageTag,
+  tagKey,
   validateDefinitions,
   type EntryAnnotation,
   type EntryDefinition,
+  type Tag,
 } from "@leksis/types";
 import { db } from "../db";
 import { syncEntryAbbreviations, type AbbreviationPair } from "./abbreviations";
@@ -40,11 +43,18 @@ interface EntryDoc {
   deletionReason: string | null;
   redirectTo: string | null;
   /**
-   * Distinct annotation pairs (categories + definition notes) of this
-   * version, kept so the abbreviations read model can be maintained across
-   * version transitions and deletions without re-fetching records.
+   * Distinct free-label pairs (entry annotations + other forms + definition
+   * annotations) of this version, kept so the abbreviations read model can be
+   * maintained across version transitions and deletions without re-fetching
+   * records.
    */
   abbreviations: AbbreviationPair[];
+  /**
+   * Distinct grammatical tags this version uses, at both altitudes. Kept for
+   * the same reason as the pairs — and it is what lets the read model show a
+   * tag in use that no language binding has given a label yet.
+   */
+  tags: Tag[];
   createdAt: string;
   indexedAt: string;
   current: boolean;
@@ -61,6 +71,7 @@ interface ParsedEntry {
   deletionReason: string | null;
   redirectTo: string | null;
   abbreviations: AbbreviationPair[];
+  tags: Tag[];
   createdAt: string;
 }
 
@@ -97,25 +108,47 @@ function parsePlainNotes(value: unknown): string[] | null {
 }
 
 /**
- * Validate the definitions tree and harvest every node's abbreviation notes
- * (they feed the abbreviations read model). A node whose place ends non-zero
- * is a leaf (text required); a node ending in 0 is a group (no text). The
- * whole-tree invariants are checked by `validateDefinitions`. Returns the
- * harvested notes, or null when the list is invalid.
+ * Validate a tag-only annotation site. Shape only: a tag naming vocabulary no
+ * UD snapshot knows is perfectly legal — that is the whole point of letting a
+ * language declare its own.
  */
-function collectDefinitionNotes(value: unknown): EntryAnnotation[] | null {
+function parseTags(value: unknown): Tag[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) return null;
+  const tags: Tag[] = [];
+  for (const item of value) {
+    if (!isValidTag(item)) return null;
+    tags.push(item);
+  }
+  return tags;
+}
+
+/**
+ * Validate the definitions tree and harvest what the read models need: every
+ * node's free-pair `annotations`, and its `categories` tags. A node whose
+ * place ends non-zero is a leaf (text required); a node ending in 0 is a
+ * group (no text). The whole-tree invariants are checked by
+ * `validateDefinitions`. Returns null when the list is invalid.
+ */
+function collectDefinitionAnnotations(
+  value: unknown,
+): { annotations: EntryAnnotation[]; tags: Tag[] } | null {
   if (!Array.isArray(value) || value.length === 0) return null;
   const definitions: EntryDefinition[] = [];
-  const notes: EntryAnnotation[] = [];
+  const annotations: EntryAnnotation[] = [];
+  const tags: Tag[] = [];
   for (const item of value) {
     if (typeof item !== "object" || item === null) return null;
     const def = item as Record<string, unknown>;
     if (!isValidDefinitionPlace(def.place)) return null;
-    const defNotes = parseAnnotations(def.notes);
-    if (defNotes === null) return null;
-    notes.push(...defNotes);
-    const plainNotes = parsePlainNotes(def.plainNotes);
-    if (plainNotes === null) return null;
+    const defAnnotations = parseAnnotations(def.annotations);
+    if (defAnnotations === null) return null;
+    annotations.push(...defAnnotations);
+    const defTags = parseTags(def.categories);
+    if (defTags === null) return null;
+    tags.push(...defTags);
+    const notes = parsePlainNotes(def.notes);
+    if (notes === null) return null;
     // `text` must be a string when present; the leaf/group text rule is
     // enforced by validateDefinitions below.
     let text: string | undefined;
@@ -124,9 +157,14 @@ function collectDefinitionNotes(value: unknown): EntryAnnotation[] | null {
       text = def.text.trim();
     }
     const leaf = isLeafPlace(def.place);
-    definitions.push({ place: def.place, notes: defNotes, plainNotes, ...(leaf ? { text } : {}) });
+    definitions.push({
+      place: def.place,
+      annotations: defAnnotations,
+      notes,
+      ...(leaf ? { text } : {}),
+    });
   }
-  return validateDefinitions(definitions) === "ok" ? notes : null;
+  return validateDefinitions(definitions) === "ok" ? { annotations, tags } : null;
 }
 
 /**
@@ -178,14 +216,21 @@ function parseRecord(record: unknown): ParsedEntry | null {
     orthography.push(form);
   }
 
-  const categories = parseAnnotations(r.categories);
+  // `categories` is tag-only at both altitudes; free labels live in
+  // `annotations`. A record written to the older shape — categories as
+  // {short, long} pairs, definition `notes` holding objects — fails here and
+  // is rejected whole, which is the wanted loud failure: it never half-loads.
+  const categories = parseTags(r.categories);
   if (categories === null) return null;
+
+  const annotations = parseAnnotations(r.annotations);
+  if (annotations === null) return null;
 
   const otherForms = parseOtherForms(r.otherForms);
   if (otherForms === null) return null;
 
-  const notes = collectDefinitionNotes(r.definitions);
-  if (notes === null) return null;
+  const definitions = collectDefinitionAnnotations(r.definitions);
+  if (definitions === null) return null;
 
   // Entry-level free-text notes and references are record-only content: they
   // are validated for well-formedness (so a malformed record is rejected
@@ -201,10 +246,22 @@ function parseRecord(record: unknown): ParsedEntry | null {
     }
   }
 
-  // The version's distinct annotation pairs — grammatical categories, other
-  // forms' labels and definition notes alike — for the abbreviations model.
+  // The version's distinct tags, at both altitudes. Stored so the read model
+  // can count usage against a bound label — and so a tag nobody has bound yet
+  // surfaces as a worklist item instead of vanishing.
+  const tags = new Map<string, Tag>();
+  for (const tag of [...categories, ...definitions.tags]) tags.set(tagKey(tag), tag);
+
+  // The version's distinct free-label pairs — entry-level annotations, other
+  // forms' labels and definition annotations alike — for the abbreviations
+  // model. `categories` no longer contributes: it holds tags, which resolve
+  // to labels through the language record rather than carrying their own.
   const pairs = new Map<string, AbbreviationPair>();
-  for (const { short, long } of [...categories, ...otherForms.annotations, ...notes]) {
+  for (const { short, long } of [
+    ...annotations,
+    ...otherForms.annotations,
+    ...definitions.annotations,
+  ]) {
     const pair = { short: short ?? null, long };
     pairs.set(`${pair.short ?? ""}\u0000${pair.long}`, pair);
   }
@@ -262,6 +319,7 @@ function parseRecord(record: unknown): ParsedEntry | null {
     deletionReason,
     redirectTo,
     abbreviations: [...pairs.values()],
+    tags: [...tags.values()],
     createdAt,
   };
 }
@@ -365,6 +423,7 @@ export async function ingestEntry(
     deletionReason: parsed.deletionReason,
     redirectTo: parsed.redirectTo,
     abbreviations: parsed.abbreviations,
+    tags: parsed.tags,
     createdAt: parsed.createdAt,
     indexedAt: new Date().toISOString(),
     current: true,
@@ -385,6 +444,7 @@ export async function ingestEntry(
     entryKey,
     doc.languageID,
     parsed.deleted ? [] : doc.abbreviations,
+    parsed.deleted ? [] : doc.tags,
   );
   console.log(
     `firehose: indexed entry "${doc.orthography[0]}" [${doc.entryKey}] (${current ? "new version" : "new entry"}) from ${authorDID}`,
@@ -421,13 +481,19 @@ export async function ingestEntryDelete(recordURI: string): Promise<void> {
     recordURI: string;
     languageID: string;
     abbreviations: AbbreviationPair[] | null;
+    tags: Tag[] | null;
   }>(aql`
     FOR e IN entries
       FILTER e.entryKey == ${entryKey}
       SORT e.indexedAt DESC
       LIMIT 1
       UPDATE e WITH { current: true } IN entries
-      RETURN { recordURI: NEW.recordURI, languageID: NEW.languageID, abbreviations: NEW.abbreviations }
+      RETURN {
+        recordURI: NEW.recordURI,
+        languageID: NEW.languageID,
+        abbreviations: NEW.abbreviations,
+        tags: NEW.tags
+      }
   `);
   const promoted = await promotedCursor.next();
 
@@ -435,9 +501,15 @@ export async function ingestEntryDelete(recordURI: string): Promise<void> {
   // current version — or vanishes with the entry. Versions indexed before
   // pairs were stored carry none and contribute again once re-published.
   if (promoted) {
-    await syncEntryAbbreviations(db, entryKey, promoted.languageID, promoted.abbreviations ?? []);
+    await syncEntryAbbreviations(
+      db,
+      entryKey,
+      promoted.languageID,
+      promoted.abbreviations ?? [],
+      promoted.tags ?? [],
+    );
   } else {
-    await syncEntryAbbreviations(db, entryKey, null, []);
+    await syncEntryAbbreviations(db, entryKey, null, [], []);
   }
   console.log(
     promoted
