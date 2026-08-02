@@ -1,12 +1,16 @@
 import {
   featureKey,
+  inherentKey,
   posTag,
   tagKey,
   valueTag,
   type Grammar,
+  type GrammarCombination,
   type GrammarFeature,
+  type GrammarInherent,
   type GrammarPos,
   type GrammarValue,
+  type Tag,
 } from "@leksis/types";
 
 // Pure edits on a draft `grammar` object, for the binding editor.
@@ -77,6 +81,8 @@ function tidy(grammar: Grammar): Grammar {
   if ((grammar.pos ?? []).length > 0) out.pos = grammar.pos;
   if ((grammar.features ?? []).length > 0) out.features = grammar.features;
   if ((grammar.values ?? []).length > 0) out.values = grammar.values;
+  if ((grammar.inherent ?? []).length > 0) out.inherent = grammar.inherent;
+  if ((grammar.bindings ?? []).length > 0) out.bindings = grammar.bindings;
   return out;
 }
 
@@ -138,5 +144,59 @@ export function removeValue(
   return tidy({
     ...grammar,
     values: (grammar.values ?? []).filter((r) => tagKey(valueTag(r)) !== key),
+  });
+}
+
+// ---- layer 2 -------------------------------------------------------------
+
+/** The inherence declarations made on exactly this category, in record order. */
+export function inherentRows(grammar: Grammar, category: Tag): GrammarInherent[] {
+  const key = tagKey(category);
+  return (grammar.inherent ?? []).filter((row) => tagKey(row.category) === key);
+}
+
+/** Declare a feature inherent to a category (a no-op when already declared). */
+export function addInherent(grammar: Grammar, row: GrammarInherent): Grammar {
+  const key = inherentKey(row);
+  if ((grammar.inherent ?? []).some((r) => inherentKey(r) === key)) return grammar;
+  return tidy({ ...grammar, inherent: [...(grammar.inherent ?? []), row] });
+}
+
+/**
+ * Withdraw an inherence declaration. Deliberately does **not** cascade to the
+ * combinations standing on it — the same reasoning as `removeFeature`: the
+ * result may be ungrounded, `grammarDiff` reports it, and the editor refuses
+ * to publish. Deleting labelled rows as a side effect would be worse than
+ * making the contributor say so first.
+ */
+export function removeInherent(grammar: Grammar, row: GrammarInherent): Grammar {
+  const key = inherentKey(row);
+  return tidy({
+    ...grammar,
+    inherent: (grammar.inherent ?? []).filter((r) => inherentKey(r) !== key),
+  });
+}
+
+/** The named combination matching this tag, if any. */
+export function findCombination(grammar: Grammar, tag: Tag): GrammarCombination | undefined {
+  const key = tagKey(tag);
+  return (grammar.bindings ?? []).find((row) => tagKey(row.tag) === key);
+}
+
+/** Name a combination, replacing any existing label for the same tag. */
+export function upsertCombination(grammar: Grammar, row: GrammarCombination): Grammar {
+  const key = tagKey(row.tag);
+  const rows = grammar.bindings ?? [];
+  const at = rows.findIndex((r) => tagKey(r.tag) === key);
+  const bindings = at === -1 ? [...rows, row] : rows.map((r, i) => (i === at ? row : r));
+  return tidy({ ...grammar, bindings });
+}
+
+/** Remove a combination's label. Its parts stay bound; decomposition renders it. */
+export function removeCombination(grammar: Grammar, tag: Tag): Grammar {
+  const key = tagKey(tag);
+  return tidy({
+    ...grammar,
+    bindings: (grammar.bindings ?? []).filter((r) => tagKey(r.tag) !== key),
   });
 }

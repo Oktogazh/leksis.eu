@@ -10,10 +10,13 @@ import {
 import { useTranslation } from "react-i18next";
 import {
   annotationConflicts,
+  categoryRefinements,
+  categoryRoots,
   formatAbbreviationRef,
   LEKSIS_ENTRY_COLLECTION,
   type AbbreviationRef,
   type AbbreviationView,
+  type Grammar,
   abbreviationLookup,
   parseTagInput,
   tagKey,
@@ -26,7 +29,8 @@ import {
   type LeksisEntryRecord,
 } from "@leksis/types";
 import { useSession } from "../auth/SessionProvider";
-import { fetchAbbreviations, searchEntries } from "../lib/api";
+import { fetchAbbreviations, fetchCurrentLanguageRecord, searchEntries } from "../lib/api";
+import { fetchLanguageRecord } from "../lib/atproto-record";
 import { DeleteEntryDialog } from "./DeleteEntryDialog";
 import { EntryPreview, TagChips } from "./EntryPreview";
 import {
@@ -641,19 +645,50 @@ function CategoryEditor({
   tags,
   onChange,
   abbreviations,
+  grammar,
 }: {
   tags: Tag[];
   onChange: (tags: Tag[]) => void;
   abbreviations: AbbreviationView[];
+  grammar: Grammar | null;
 }) {
   const { t } = useTranslation();
   const [manual, setManual] = useState("");
+  /**
+   * The narrowing path being walked: the bundle built so far, refined one
+   * click at a time. A refinement REPLACES this — the path produces one
+   * bundle, never an accumulation — and committing pushes it into `tags`.
+   */
+  const [path, setPath] = useState<Tag | null>(null);
   const lookup = abbreviationLookup(abbreviations);
   const chosen = new Set(tags.map(tagKey));
   const options = abbreviations.filter(
     (a) => a.tag !== undefined && a.long !== undefined && !chosen.has(tagKey(a.tag)),
   );
   const parsed = parseTagInput(manual);
+
+  // The narrowing is a derived view of layers 1–2: roots are the bound parts
+  // of speech, each step offers the values of the features declared inherent
+  // to the bundle built so far. A language that declared no inherence offers
+  // no next step, so the walk collapses to picking one bound atom — and with
+  // no grammar at all, the flat picker below is all there is: the documented
+  // degradation, not a special case.
+  const roots = grammar === null ? [] : categoryRoots(grammar);
+  const refinements = grammar === null || path === null ? [] : categoryRefinements(grammar, path);
+
+  function commitPath(tag: Tag) {
+    if (!chosen.has(tagKey(tag))) onChange([...tags, tag]);
+    setPath(null);
+  }
+
+  /** Take one narrowing step; commit directly when nothing deeper is offered. */
+  function refineTo(tag: Tag) {
+    if (grammar === null || categoryRefinements(grammar, tag).length === 0) {
+      commitPath(tag);
+      return;
+    }
+    setPath(tag);
+  }
 
   return (
     <div className="mt-2">
@@ -678,7 +713,71 @@ function CategoryEditor({
         </ul>
       )}
 
-      {options.length > 0 && (
+      {path === null ? (
+        roots.length > 0 && (
+          <ul className="mt-2 flex flex-wrap gap-1.5">
+            {roots.map((root) => (
+              <li key={tagKey(root.tag)}>
+                <button
+                  type="button"
+                  onClick={() => refineTo(root.tag)}
+                  title={root.label.long}
+                  className="rounded-full border border-dashed px-2.5 py-1 font-mono text-xs text-content-muted hover:border-primary hover:text-primary"
+                >
+                  + {root.label.short ?? root.label.long}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )
+      ) : (
+        <div className="mt-2 rounded-lg border bg-surface-muted/40 p-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <ul className="flex flex-wrap items-center gap-1">
+              <TagChips tags={[path]} lookup={lookup} />
+            </ul>
+            <button
+              type="button"
+              onClick={() => commitPath(path)}
+              className="rounded-full border border-primary px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary hover:text-primary-fg"
+            >
+              {t("createEntry.categoryKeep")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setPath(null)}
+              aria-label={t("createEntry.categoryAbandon")}
+              title={t("createEntry.categoryAbandon")}
+              className="text-content-subtle hover:text-red-600"
+            >
+              ×
+            </button>
+          </div>
+          {refinements.map((refinement) => (
+            <div key={refinement.feature.feature} className="mt-2">
+              <p className="text-xs text-content-subtle">
+                {refinement.feature.label.long}
+              </p>
+              <ul className="mt-1 flex flex-wrap gap-1.5">
+                {refinement.options.map((option) => (
+                  <li key={tagKey(option.tag)}>
+                    <button
+                      type="button"
+                      onClick={() => refineTo(option.tag)}
+                      title={option.label.long}
+                      className="rounded-full border border-dashed px-2.5 py-1 font-mono text-xs text-content-muted hover:border-primary hover:text-primary"
+                    >
+                      {option.label.short ?? option.label.long}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {path === null && roots.length === 0 && options.length > 0 && (
         <ul className="mt-2 flex flex-wrap gap-1.5">
           {options.map((option, i) => (
             <li key={i}>
@@ -814,6 +913,14 @@ export function EntryEditorDialog({
   const [error, setError] = useState<string | null>(null);
   /** The target language's abbreviation pairs — suggestions + conflict flags. */
   const [abbreviations, setAbbreviations] = useState<AbbreviationView[]>([]);
+  /**
+   * The target language's grammar, resolved from its current record — what
+   * drives the category editor's progressive narrowing (a derived view of
+   * layers 1–2, never a separate declaration). Null while loading or when
+   * the record cannot be resolved, in which case the editor degrades to the
+   * flat picker over bound abbreviations, exactly as at layer 1.
+   */
+  const [grammar, setGrammar] = useState<Grammar | null>(null);
   /** Current entries in the target language sharing a spelling with a fresh entry, for the duplicate warning. */
   const [duplicates, setDuplicates] = useState<EntryView[]>([]);
 
@@ -829,6 +936,25 @@ export function EntryEditorDialog({
     fetchAbbreviations(targetTag)
       .then((list) => {
         if (!cancelled) setAbbreviations(list);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [targetTag]);
+
+  // The grammar rides the language's own record, so one PDS round trip at
+  // editor-open resolves it — an authoring surface may pay that, where the
+  // viewers deliberately never do. Failure is silent: no grammar means the
+  // category editor degrades to the flat picker.
+  useEffect(() => {
+    setGrammar(null);
+    if (targetTag === null) return;
+    let cancelled = false;
+    fetchCurrentLanguageRecord(targetTag)
+      .then((ref) => (ref === null ? null : fetchLanguageRecord(ref.recordURI)))
+      .then((record) => {
+        if (!cancelled) setGrammar(record?.grammar ?? null);
       })
       .catch(() => {});
     return () => {
@@ -1269,6 +1395,7 @@ export function EntryEditorDialog({
               tags={categories}
               onChange={setCategories}
               abbreviations={abbreviations}
+              grammar={grammar}
             />
           </fieldset>
 

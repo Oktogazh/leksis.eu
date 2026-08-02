@@ -3,6 +3,76 @@
 All notable changes to Leksis. This project follows the 8-week development
 timeline; each entry maps to a weekly milestone.
 
+## Grammar layer — layer 2: inherence, and the editor that narrows
+
+A language can now say how its atoms go together — that gender is part of what
+a French noun *is*, while number is something its forms vary by — and the entry
+editor derives its whole narrowing flow from that one statement. See
+**ADR-0007**.
+
+> **Additive.** No entry record changes and no bot republish: a language that
+> declares nothing behaves exactly as before.
+
+### Lexicon & types
+
+- **`grammar.inherent`** — `{category, feature}`, "for this category, this
+  feature is inherent". Both halves are variables and no category is
+  privileged: `VERB × Aspect`, `ADJ × Degree` and `ADP × Conjugation` (Breton
+  conjugates its prepositions) are as ordinary as `NOUN × Gender`. Since the
+  category is itself a tag, inherence can be declared on a *combination*, which
+  is what sets the depth of the editor's narrowing.
+- **`grammar.bindings`** — a label for a combination of **two or more** atoms:
+  French `nf.` for NOUN + Gender=Fem, where a language that prints `n. f.`
+  simply binds the two atoms separately and never adds a row. A one-atom row
+  already has a home in `pos`/`values`.
+- **New `eu.leksis.defs` lexicon** holds `tag`/`tagUpos`/`tagFeat`, referenced
+  by both the entry and language lexicons — the AT Proto convention, and the
+  shape layer 5's paradigms will want too. Def names are not record content, so
+  nothing republishes.
+- **Grounding, the gate.** A named combination must be reachable by removing
+  one feature at a time, each removal licensed by an inherence declaration, down
+  to a bound atom — layer 1's value-behind-name rule one level up, and the exact
+  inverse of the walk the editor takes forwards. Three new issue kinds
+  (`unbound-atom`, `ungrounded-combination`, `single-item-binding`), browser-
+  refused when *introduced*, AppView-detected and never rejected.
+- `categoryRoots`/`categoryRefinements`/`inherentFeatures` — the narrowing tree
+  as a **derived view** of layers 1–2, in `packages/types` so later layers and
+  the layer-6 exporters share it.
+
+### API (`apps/api`)
+
+- **No changes were needed.** Combinations reach the `abbreviations` read model
+  through `grammarRows` alone, so a new version, the firehose sync and the
+  wholesale `db:init` rebuild all carried them unmodified — verified against a
+  live stack, rebuild byte-identical. The layer's API cost was zero, which is
+  the strongest evidence layer 1's shapes were right.
+
+### Web (`apps/web`)
+
+- **The binding editor gains its second tab.** Same path-scoped tree one level
+  up: pick a category → declare which features are inherent → name the
+  combinations it prompts for. Named combinations appear as categories
+  themselves, so a language walks deeper one step at a time. The gate is
+  navigation, not validation — and withdrawing an inherence declaration is
+  refused while a named combination stands on it.
+- The enumeration is a **prompt, not a constraint**: "1 of 2 named" is a
+  counter, and an incomplete set never blocks a save — a language may bind a
+  value for another category's sake entirely.
+- **The entry editor narrows.** `n.` → gender → declension, three clicks and no
+  typing, every step showing a bound homolingual label. A refinement path
+  produces **one bundle**, not an accumulation; an unnamed combination is still
+  offered, since layer 2 is a menu and not a whitelist; and with no grammar
+  declared it degrades to layer 1's flat picker on the same code path.
+- The grammar comes from the language's own record, resolved once at
+  editor-open — an authoring surface may pay a PDS round trip where the viewers
+  deliberately never do.
+- **`resolveTag`'s exact-match branch fires for multi-item bundles** for the
+  first time: it shipped at layer 1 and could only ever match single atoms until
+  a language had a way to name a combination.
+- The dashboard's repair worklist takes one copy string per issue kind, rather
+  than a two-branch test that would have silently shown a new kind under an old
+  kind's wording.
+
 ## Grammar layer — layer 1: the entry break, and tags rendered
 
 The entry lexicon's breaking change, done once, plus the viewer chain that

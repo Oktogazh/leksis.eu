@@ -178,7 +178,8 @@ its home:
 
 *Alignment context, not a plan. Detailed planning is deliberately deferred to the top of each layer. This
 section exists so that (a) every loop picks shapes this arc can grow into, and (b) no session invents tagset
-details nobody has actually verified. **Layer 1 shipped (ADR-0006); the next thing to build is layer 2.***
+details nobody has actually verified. **Layers 1 and 2 shipped (ADR-0006, ADR-0007); the next thing to
+build is layer 3.***
 
 ### Where it ends up
 
@@ -340,8 +341,8 @@ layer at its top; the scope says *what is in and out*, not *how*.
 |---|---|---|
 | **0 — Abbreviations** | free homolingual `{long, short}` pairs bound to nothing: definition notes, register, domain | **shipped** (v0.8); gained its **entry-level** site with layer 1 |
 | **1 — Primitives** | the atoms this language uses: 14 headword-eligible UPOS, feature *names*, feature *values*. **Minting lives here**, including inflection-class features and their values | **shipped** — see **ADR-0006**, which is authoritative over the design note for this layer |
-| **2 — Inherent combinations** | which features are **inherent** to a category, then the labelled headword categories that follow: masculine noun, first-declension feminine noun, transitive imperfective verb | **next** |
-| **3 — Axes** | per category, which features **vary across its forms** — the option set of the `otherForms` editor | |
+| **2 — Inherent combinations** | which features are **inherent** to a category, then the labelled headword categories that follow: masculine noun, first-declension feminine noun, transitive imperfective verb | **shipped** — see **ADR-0007**, authoritative over the design note for this layer |
+| **3 — Axes** | per category, which features **vary across its forms** — the option set of the `otherForms` editor | **next** |
 | **4 — Layout** | the *shape* of the inflection tables: which axis sits where, one table or several, their order, what is shown by default, and the order of the flat `otherForms` list — **not** chip order | |
 | **5 — Rules** | Hunspell-shaped rules populating cells, overridden by the entry's own `otherForms`; its own lexicon | |
 | **6 — Export** | Hunspell `.aff`/`.dic`, UniMorph TSV, CoNLL-U — and XPOS as a *derived* output | |
@@ -376,7 +377,8 @@ Note layer 1 also binds **form-level vocabulary** (Tense and Case values, for ta
 print), so it applies **no altitude filter**: altitude emerges from which higher layer references an item.
 *Out:* inherence, axes, layout, rules, export.
 
-**Layer 2 — Inherent combinations.** Two steps, and the first is the one no earlier design had:
+**Layer 2 — Inherent combinations. ✅ shipped (ADR-0007).** Two steps, and the first is the one no earlier
+design had:
 **declare that a feature is inherent to a category at all** *before* any of its value-combinations can be
 bound. Previously inherence was only *implied* by which combinations happened to exist, so the system could
 not distinguish "aspect is inherent to verbs" from "somebody bound one aspectual verb category". The editor
@@ -394,6 +396,17 @@ Note the **gate symmetry** — layer 1 gates value-behind-name, layer 2 gates
 value-combination-behind-inherence. One rule at two levels, which is why both render as navigation rather
 than as validation errors. *Never a whitelist:* an unenumerated combination stays authorable and renders by
 decomposition. *Out:* anything concerning forms.
+
+**What layer 2 settled, and layer 3 inherits (ADR-0007), do not re-derive:** `inherent` rows are singular
+`(category, feature)` with a **bare feature name** — which is exactly how layer 3's `axes` should key, so
+the two read as one relation at two altitudes. **Grounding** is the gate's name: a named combination must be
+reachable by removing one feature at a time, each removal licensed by an inherence declaration, down to a
+bound atom. Completeness ("2 of 3 named") is a **counter and never a constraint**. Combinations reach the
+`abbreviations` model through `grammarRows` alone, so **the API cost of the layer was zero** — expect the
+same of layer 3 if its shapes are right, and treat any need for new indexing as a signal to re-check the
+design. The entry editor resolves the grammar from the **language record via its PDS**, not from an index:
+an authoring surface may pay that round trip where the viewers never do. `Tag` now lives in a shared
+**`eu.leksis.defs`** lexicon, which is where layer 5's paradigms should get it too.
 
 **Layer 3 — Axes.** Per category, which features **vary across its forms** — the `otherForms` editor's
 option set, filtered by the cascade to bound tags only. With layer 2 this completes invariant 1's

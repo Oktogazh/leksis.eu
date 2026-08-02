@@ -36,7 +36,7 @@
     },
     "grammar": {
       "type": "object",
-      "description": "A language's declared grammatical inventory. Binding is how a language declares what it uses, so these arrays are its vocabulary: what is absent is simply not offered when authoring. Only authored rows are stored — there is no skeleton of unbound atoms, since absence already means unbound. Layer 2's declarations (which features are inherent to a category, and labels for multi-atom combinations) will be added here as further properties.",
+      "description": "A language's declared grammatical inventory. Binding is how a language declares what it uses, so these arrays are its vocabulary: what is absent is simply not offered when authoring. Only authored rows are stored — there is no skeleton of unbound atoms, since absence already means unbound. Layer 1 declares the atoms (`pos`, `features`, `values`); layer 2 declares what they combine into (`inherent`, `bindings`). Later layers (axes, layout) will be added here as further properties, and they all share one object because they reference each other: unbinding an atom orphans every higher row that uses it, and one self-contained object means a single write keeps the whole cascade consistent.",
       "properties": {
         "pos": {
           "type": "array",
@@ -55,6 +55,52 @@
           "maxLength": 2048,
           "items": { "type": "ref", "ref": "#valueBinding" },
           "description": "Feature values this language uses, each stating which feature it is an option of."
+        },
+        "inherent": {
+          "type": "array",
+          "maxLength": 512,
+          "items": { "type": "ref", "ref": "#inherentDeclaration" },
+          "description": "Which features are inherent to which category — a property of the word itself, not of one of its forms: aspect is inherent to a Slavic verb, gender to a French noun, while number varies across a noun's forms and is therefore not declared here. This is what a headword can be tagged with, and what the entry editor offers one step at a time."
+        },
+        "bindings": {
+          "type": "array",
+          "maxLength": 1024,
+          "items": { "type": "ref", "ref": "#combinationBinding" },
+          "description": "Labels for combinations of two or more atoms — French \"nf.\" for NOUN + Gender=Fem, where a language that prints \"n. f.\" simply binds the two atoms separately and never adds a row here. A one-atom label belongs in `pos` or `values`, so that every fact has exactly one home. A combination must be reachable through the `inherent` declarations that build it up."
+        }
+      }
+    },
+    "inherentDeclaration": {
+      "type": "object",
+      "required": ["category", "feature"],
+      "description": "\"For this category, this feature is inherent.\" Both halves are variables and no category is privileged: VERB × Aspect, ADJ × Degree, ADP × Conjugation (Breton conjugates its prepositions) are as ordinary as NOUN × Gender. Since the category is itself a tag, inherence can be declared on a combination — declaring a declension inherent to {NOUN, Gender=Fem} rather than to {NOUN} is what makes the entry editor ask for the gender first. That ordering is a lexicographic judgement, and it is the language's to make.",
+      "properties": {
+        "category": {
+          "type": "ref",
+          "ref": "eu.leksis.defs#tag",
+          "description": "The category the feature is inherent to: a single atom this language has bound (a part of speech, or a feature value), or a combination of them."
+        },
+        "feature": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Name of the inherent feature, e.g. \"Gender\". Must itself be bound in `features`; matched by name, as a value is matched to its feature, so a value minted on a Universal Dependencies feature needs no special case."
+        }
+      }
+    },
+    "combinationBinding": {
+      "type": "object",
+      "required": ["tag", "label"],
+      "properties": {
+        "tag": {
+          "type": "ref",
+          "ref": "eu.leksis.defs#tag",
+          "description": "The combination being named, e.g. NOUN + Gender=Fem. Two or more items: a single one is an atom, and atoms are named in `pos` and `values`."
+        },
+        "label": { "type": "ref", "ref": "#label" },
+        "references": {
+          "type": "array",
+          "maxLength": 16,
+          "items": { "type": "ref", "ref": "#reference" }
         }
       }
     },

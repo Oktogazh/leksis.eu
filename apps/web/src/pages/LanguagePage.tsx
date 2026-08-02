@@ -452,12 +452,14 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
                 <ul className="mt-2 space-y-1">
                   {dashboard.grammarIssues.map((issue, i) => (
                     <li key={i} className="font-mono text-xs text-content">
-                      {issue.kind === "unbound-feature"
-                        ? t("languagePage.grammarIssueUnboundFeature", {
-                            key: issue.key,
-                            feature: issue.feature ?? "",
-                          })
-                        : t("languagePage.grammarIssueDuplicate", { key: issue.key })}
+                      {/* One case per kind, rather than a two-branch test: a
+                          later layer adding a kind must produce copy of its
+                          own, not silently inherit another kind's. */}
+                      {t(`languagePage.grammarIssue.${issue.kind}`, {
+                        key: issue.key,
+                        feature: issue.feature ?? "",
+                        atom: issue.atom ?? "",
+                      })}
                     </li>
                   ))}
                 </ul>

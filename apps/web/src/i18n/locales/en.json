@@ -236,7 +236,9 @@
     "moveUp": "Move up",
     "moveDown": "Move down",
     "moveDeeper": "Move one level deeper",
-    "moveShallower": "Move one level up"
+    "moveShallower": "Move one level up",
+    "categoryKeep": "Keep as is",
+    "categoryAbandon": "Abandon this category"
   },
   "languagePage": {
     "loading": "Loading the language…",
@@ -262,8 +264,13 @@
     "unboundTagsHint": "Entries use these grammatical tags, but this language has not said what to call them — so readers see the raw identifier. Pick one to name it.",
     "grammarIssuesTitle": "Grammar declarations needing repair",
     "grammarIssuesHint": "These rows in the language record point at something that is no longer declared. They still render, but nothing downstream will offer them until they are fixed.",
-    "grammarIssueUnboundFeature": "{{key}} — the feature “{{feature}}” is not bound",
-    "grammarIssueDuplicate": "{{key}} — bound twice, so which label applies is undefined",
+    "grammarIssue": {
+      "unbound-feature": "{{key}} — the feature “{{feature}}” is not bound",
+      "duplicate": "{{key}} — bound twice, so which label applies is undefined",
+      "unbound-atom": "{{key}} — built on “{{atom}}”, which this language has not bound",
+      "ungrounded-combination": "{{key}} — no feature is declared inherent to the category it refines, so nothing leads to it",
+      "single-item-binding": "{{key}} — a single tag, which belongs with the parts of speech or the values"
+    },
     "grammarIssuesOpen": "Open the grammar editor",
     "activityTitle": "Activity",
     "gridLegendLess": "Less",
@@ -380,6 +387,21 @@
       "orphans": "These would be left pointing at nothing: {{rows}}. Bind what they need, or unbind them too.",
       "stale": "Someone published a new version of this record while you were editing. Reopen this dialog to start from theirs — publishing now would silently drop their changes.",
       "writeFailed": "The record could not be written to your PDS. Nothing was changed."
-    }
+    },
+    "tabCombinations": "Categories",
+    "crumbL2Root": "Categories",
+    "l2RootHint": "Pick a category, then declare which features are part of what it is — its gender, its conjugation group — rather than something that varies across its forms. Named combinations appear here too, so you can go one step deeper.",
+    "l2NoPos": "Bind a part of speech under Primitives first — a category is made of what this language has declared.",
+    "l2InherentCount": "{{count}} inherent",
+    "l2CategoryHint": "The features declared inherent here are what the entry editor offers next, one step at a time, after a contributor picks this category.",
+    "l2NoInherent": "Nothing declared inherent yet.",
+    "l2CombinedCount": "{{bound}} of {{total}} named",
+    "l2Withdraw": "Withdraw {{feature}}",
+    "l2WithdrawBlocked": "Named combinations stand on this declaration — remove their names first.",
+    "l2DeclareTitle": "Declare a feature inherent",
+    "l2DeclareHint": "Only bound features are offered; bind a feature under Primitives first.",
+    "l2FeatureHint": "One combination per bound value of {{feature}} — {{bound}} of {{total}} named. Naming is optional: where your tradition prints one label (“nf.”), name the combination; where it prints two (“n. f.”), leave it and the parts render on their own.",
+    "l2NoValues": "No value of {{feature}} is bound yet — bind them under Primitives first.",
+    "l2Decomposed": "Rendered from its parts"
   }
 }

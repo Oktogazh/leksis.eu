@@ -1,0 +1,55 @@
+{
+  "lexicon": 1,
+  "id": "eu.leksis.defs",
+  "defs": {
+    "tag": {
+      "type": "object",
+      "description": "A grammatical tag: a bundle of an optional part of speech and any number of Feature=Value items, following Universal Dependencies. At least one of `upos`/`feats` must be present. A bundle, not an atom, because languages abbreviate at different granularities — French \"nf.\" is one label for NOUN + Gender=Fem where Breton uses two. The tag carries no reader-facing text: the language record binds it to a label. Shared rather than defined per lexicon, because the same bundle is written by an entry (as a category), by a language (as the thing a label is bound to, and as the category a feature is inherent to) and later by a paradigm (as a cell address) — one shape, one home.",
+      "properties": {
+        "upos": { "type": "ref", "ref": "#tagUpos" },
+        "feats": {
+          "type": "array",
+          "maxLength": 32,
+          "items": { "type": "ref", "ref": "#tagFeat" }
+        }
+      }
+    },
+    "tagUpos": {
+      "type": "object",
+      "required": ["value"],
+      "properties": {
+        "value": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Part-of-speech name, e.g. \"NOUN\" — one of Universal Dependencies' 17 tags, or one a language minted."
+        },
+        "scheme": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Provenance. Absent means documented by Universal Dependencies; otherwise the BCP 47 tag of the language that minted it."
+        }
+      }
+    },
+    "tagFeat": {
+      "type": "object",
+      "required": ["feature", "value"],
+      "properties": {
+        "feature": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Feature name, e.g. \"Gender\" or the layered \"Number[psor]\"."
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "The value, e.g. \"Fem\". Several comma-separated values mean the item spans them all (\"Gender=Fem,Masc\")."
+        },
+        "scheme": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Provenance of the feature/value pair as a whole — which is how a value minted on a UD feature is expressed (\"Number=Sgv\", scheme \"br\"). Per item, never per bundle: a bundle-level scheme could not describe a minted value sitting beside a UD part of speech."
+        }
+      }
+    }
+  }
+}

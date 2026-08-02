@@ -1,23 +1,25 @@
 # Design note: the Leksis grammar layer
 
-**Status:** **Layer 1 is implemented and superseded by ADR-0006** — for anything layer 1 covers, the ADR
-and the code are authoritative and this note is history. Layers 2–6 are designed, not implemented, and
-this note remains their source.
+**Status:** **Layers 1 and 2 are implemented and superseded by ADR-0006 and ADR-0007** — for anything they
+cover, the ADRs and the code are authoritative and this note is history. Layers 3–6 are designed, not
+implemented, and this note remains their source.
 **Date:** 2026-07-30; rewritten 2026-08-01 around the layer model; layers renumbered 2026-08-01 (old layer 3
-merged into 1 + 2); layer 1 reconciled with what shipped 2026-08-02.
-**For:** The morphology arc (`leksis-evolution` skill). **The next build is layer 2.**
-**Related:** **ADR-0006 (layer 1, accepted)**, `lexicons/eu.leksis.entry.json`,
-`lexicons/eu.leksis.language.json`, ADR-0004 (abbreviations read model, amended by 0006), ADR-0002 (the
-browser is the write path)
+merged into 1 + 2); layer 1 reconciled with what shipped 2026-08-02; layer 2 reconciled 2026-08-02.
+**For:** The morphology arc (`leksis-evolution` skill). **The next build is layer 3.**
+**Related:** **ADR-0006 (layer 1, accepted)**, **ADR-0007 (layer 2, accepted)**,
+`lexicons/eu.leksis.entry.json`, `lexicons/eu.leksis.language.json`, `lexicons/eu.leksis.defs.json`,
+ADR-0004 (abbreviations read model, amended by 0006), ADR-0002 (the browser is the write path)
 
 > **How to read this.** §0 is binding on every session. §1 is what has been **verified at source** — treat
 > anything absent from it as unknown, and §6 as the list of things nobody has checked. §§2–4 are the design.
 > Decisions are referred to **by name**, not by number, so references survive edits.
 >
-> **Where this note and the shipped layer 1 differ, the code wins** and the difference is marked
-> `[shipped]` inline. Two decisions changed during the build and are recorded in ADR-0006: the XOR rule
-> became a strict per-site type split (§2.3), and `grammar`'s shape became three arrays with a `values`
-> row naming its feature (§2.2).
+> **Where this note and the shipped layers 1–2 differ, the code wins** and the difference is marked
+> `[shipped]` inline. Two decisions changed during the layer-1 build and are recorded in ADR-0006: the XOR
+> rule became a strict per-site type split (§2.3), and `grammar`'s shape became three arrays with a
+> `values` row naming its feature (§2.2). Two more changed at layer 2 and are recorded in ADR-0007:
+> `inherent` rows are singular `(category, feature)` with a bare feature name, and the `Tag` shape moved to
+> a shared `eu.leksis.defs` lexicon.
 
 ---
 
@@ -175,9 +177,11 @@ eu.leksis.language.grammar = {
   features: [ { feature, scheme?, label: {long, short?}, references?: [{text, url}] } ],
   values:   [ { feature, value, scheme?, label: {long, short?}, references?: [{text, url}] } ],
 
-  // ---- layers 2–4, still design ----
-  inherent: [ { category: Tag, features: [{ feature, scheme? }] } ],   // L2 — declares inherence of a feature or several features on a category
+  // ---- layer 2, AS SHIPPED (ADR-0007) ----
+  inherent: [ { category: Tag, feature: string } ],                                // L2 — one row per (category, feature)
   bindings: [ { tag: Tag, label: {long, short?}, references?: [{text, url}] } ],   // L2 — labelled COMBINATIONS (≥2 items)
+
+  // ---- layers 3–4, still design ----
   axes:     [ { category: Tag, feature: { feature, scheme? } } ],                  // L3 — declares variation
   layout:   [ { category: Tag, ... } ]                                             // L4 — inner shape TBD
 }
@@ -193,10 +197,11 @@ option of**, which is a declaration a bundle cannot make. It is what turns "list
 into a lookup rather than a scan over every bound bundle — and the feature name is also the gate the value
 sits behind. A `features` row is likewise not a tag: a bare name has no value.
 
-`[shipped]` **Layer 2's rows are not in the lexicon yet.** A schema field nobody writes is an invitation to
-write into it, and adding them is additive and non-breaking. Layer 2 adds `inherent` and `bindings` when it
-builds them — and should carry a validator rule that a `bindings` tag has **≥2 items**, so every fact keeps
-exactly one home.
+`[shipped]` **Layer 2's rows landed additively**, as predicted — no entry change and no republish. The
+`bindings` ≥2-items rule ships as a `single-item-binding` *issue* rather than a shape rejection: the row is
+well-formed and merely says something true in the wrong place, and rejecting would discard a whole
+language's declaration over it. `inherent` rows carry no label, so they never enter the abbreviations model;
+`bindings` rows do, through `grammarRows`, with no plumbing of their own.
 
 One **self-contained `grammar` sub-object** holding layers 0–4. Layer 5's rules get their own
 `eu.leksis.paradigm` lexicon: they are large, per-class, and written at a different cadence.
@@ -295,8 +300,8 @@ Each layer draws its options from the layer below, and each must ship and be use
 |---|---|---|
 | **0 Abbreviations** | free homolingual pairs bound to nothing | entry records (shipped v0.8) |
 | **1 Primitives** ✅ | the atoms this language uses: 14 UPOS, feature *names*, feature *values*; minting | `grammar.pos/features/values` |
-| **2 Inherent combinations** ← next | which features are **inherent** to a category, and the resulting labelled headword categories | `grammar.inherent`, `grammar.bindings` |
-| **3 Axes** | which features **vary across the forms** of a category | `grammar.axes` |
+| **2 Inherent combinations** ✅ | which features are **inherent** to a category, and the resulting labelled headword categories | `grammar.inherent`, `grammar.bindings` |
+| **3 Axes** ← next | which features **vary across the forms** of a category | `grammar.axes` |
 | **4 Layout** | table shape, order, default visibility; `otherForms` list order | `grammar.layout` |
 | **5 Rules** | Hunspell-like generation filling cells | `eu.leksis.paradigm` |
 | **6 Export** | Hunspell, UniMorph TSV, CoNLL-U, XPOS as derived output | — |
@@ -340,7 +345,14 @@ right now.
 
 *Out:* inherence, axes, layout, rules, export.
 
-### Layer 2 — Inherent combinations
+### Layer 2 — Inherent combinations ✅ shipped
+
+> **Implemented; see ADR-0007 for what was actually decided.** Kept here for the reasoning. Three deltas
+> from the text below: `inherent` rows are **singular `(category, feature)`**, not a plural `features[]`
+> per category (§2.2's sketch), matching this section's own prose and layer 3's `axes`; the `feature` is a
+> **bare name with no `scheme`**, matched by name as a value is matched to its feature; and **grounding**
+> is the name given here to the gate — a named combination must be reachable by removing one feature at a
+> time, each removal licensed by an inherence declaration, down to a bound atom.
 
 Two steps, and the first is the one that was missing: **before any value-combination can be bound, the
 language must declare that the feature is inherent to the category at all.**
@@ -497,11 +509,10 @@ which breaks "design for the language that has nothing".
 
 ### 4.2 The entry editor — progressive narrowing by clicking abbreviations
 
-> **Requires layer 2 — not built.** The narrowing is *derived from* inherence declarations, so nothing of
-> it could ship at layer 1 without hardcoding inherence, which "no hardcoded language assumptions" forbids.
-> Layer 1 ships this section's own documented degradation: a flat multi-select over bound atoms, every
-> option showing its bound homolingual label, plus a manual field for an unbound tag. **This is layer 2's
-> to build**, and the four properties below are its acceptance criteria.
+> `[shipped]` **Built at layer 2** (ADR-0007), and all four properties below hold. The grammar is
+> resolved from the language's own record at editor-open — an authoring surface may pay a PDS round trip
+> where the viewers deliberately never do — and a failure lands on this section's own documented
+> degradation (the flat multi-select) along the same code path, not a special case.
 
 The contributor never types a criterion. They are shown the language's bound **UPOS abbreviations**, and each
 click narrows what is offered next, drawn from layer 2's declarations:
