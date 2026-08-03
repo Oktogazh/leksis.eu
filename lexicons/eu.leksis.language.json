@@ -72,7 +72,110 @@
           "type": "array",
           "maxLength": 512,
           "items": { "type": "ref", "ref": "#axisDeclaration" },
-          "description": "Which features vary across a category's forms, and which values they vary over — the other half of what `inherent` declares, and together with it the coordinate system of this category's paradigm. Gender is inherent to a French noun while number varies across its forms, so number is declared here. This is what the entry editor offers when labelling another form of a word, and what a later layer will lay out as a table."
+          "description": "Which features vary across a category's forms, and which values they vary over — the other half of what `inherent` declares, and together with it the coordinate system of this category's paradigm. Gender is inherent to a French noun while number varies across its forms, so number is declared here. This is what the entry editor offers when labelling another form of a word, and what `layout` arranges as a table."
+        },
+        "layout": {
+          "type": "array",
+          "maxLength": 256,
+          "items": { "type": "ref", "ref": "#layoutDeclaration" },
+          "description": "The shape of a category's inflection tables: which axis sits on which dimension, one table or several, in what order, and what is shown without asking. Axes alone underdetermine this — four axes could be one grid with nested headers or four separate tables — and where no layout is declared an entry's forms are shown as a flat list, which is the fallback this layer must never break."
+        }
+      }
+    },
+    "layoutDeclaration": {
+      "type": "object",
+      "required": ["category", "blocks"],
+      "description": "How one category's forms are laid out. The category is a tag and is matched the way an axis's is — the entry's own categories or any part of them — so a layout declared on {NOUN} serves an entry declared a feminine noun, and where several match, the most specific wins. A layout carries no labels and no values of its own: everything a reader sees is resolved through the rows its axes and coordinates point at.",
+      "properties": {
+        "category": {
+          "type": "ref",
+          "ref": "eu.leksis.defs#tag",
+          "description": "The category whose forms are laid out: a single atom this language has bound (a part of speech, or a feature value), or a combination of them."
+        },
+        "blocks": {
+          "type": "array",
+          "minLength": 1,
+          "maxLength": 64,
+          "items": { "type": "ref", "ref": "#layoutBlock" },
+          "description": "The tables and lists this category's forms are shown in, in the order they are shown. Several blocks is how a paradigm stops being rectangular: a Latin conjugation is one table per mood and tense, plus a list for the infinitive, gerund and supine that no cell of the finite grid reaches."
+        }
+      }
+    },
+    "layoutBlock": {
+      "type": "object",
+      "required": ["kind"],
+      "description": "One table or list of a layout. A table assigns axes to its dimensions and derives its cells from the values those axes declared — the cells are never stored, or they could drift from the axes they came from. A list names its cells explicitly, which is what prints \"rosa, rosae\" beside a headword and what fixes the order of the flat list of forms.",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "maxLength": 16,
+          "knownValues": ["table", "list"],
+          "description": "\"table\" for a grid derived from axes, \"list\" for explicitly named cells in order."
+        },
+        "summary": {
+          "type": "boolean",
+          "description": "Show this block beside the headword rather than behind the expander — a Latin dictionary prints the genitive and expects the reader to derive the rest. When no block of a layout is marked, all of them are shown: a language that has said nothing about summarising is not asking for anything to be hidden."
+        },
+        "fixed": {
+          "type": "array",
+          "maxLength": 16,
+          "items": { "type": "ref", "ref": "#layoutCoord" },
+          "description": "Coordinates constant across the whole block — \"Mood=Ind|Tense=Pres\" for one table of a conjugation. They are part of every cell's address, and they are what the block is captioned with, so a language that named the combination gets its own label for it rather than a synthesised one. Each must be bound in `values`, but need not be an axis: pinning a constant outside the paradigm's coordinate system is a legitimate thing for a table to do."
+        },
+        "rows": {
+          "type": "array",
+          "maxLength": 8,
+          "items": { "type": "string", "maxLength": 64 },
+          "description": "Feature names on the vertical dimension, outermost first — nesting is what makes a header span, and a paradigm's dimensions are not always two. Each must be an axis of this layout's category. May be empty: one axis on `columns` alone is a single-line table."
+        },
+        "columns": {
+          "type": "array",
+          "maxLength": 8,
+          "items": { "type": "string", "maxLength": 64 },
+          "description": "Feature names on the horizontal dimension, outermost first. The same feature must not appear on both dimensions, or one cell would need two of its values at once."
+        },
+        "exclude": {
+          "type": "array",
+          "maxLength": 256,
+          "items": { "type": "ref", "ref": "#layoutCell" },
+          "description": "Cells this paradigm does not have. A complete address removes one cell; an incomplete one removes every cell containing it, so a defective plural is one row rather than one per cell. A line or column left entirely excluded is dropped rather than printed empty — \"these forms do not exist\" and \"nobody has entered these forms yet\" must not look the same to a reader. Each coordinate must name a value of one of this block's own dimensions, since one that does not removes nothing at all."
+        },
+        "items": {
+          "type": "array",
+          "minLength": 1,
+          "maxLength": 256,
+          "items": { "type": "ref", "ref": "#layoutCell" },
+          "description": "For a list, the addresses to print, in the order they are printed. Each coordinate must be bound in `values`; unlike a table's dimensions they need not be axes, so a language can print a form it has never declared as varying."
+        }
+      }
+    },
+    "layoutCell": {
+      "type": "object",
+      "required": ["coords"],
+      "description": "An addressed cell. A list's item is a full address — the cell it prints — while an exclusion may be partial, and then it names a whole row, column or slice.",
+      "properties": {
+        "coords": {
+          "type": "array",
+          "minLength": 1,
+          "maxLength": 16,
+          "items": { "type": "ref", "ref": "#layoutCoord" }
+        }
+      }
+    },
+    "layoutCoord": {
+      "type": "object",
+      "required": ["feature", "value"],
+      "description": "One coordinate: a bare feature and value, carrying no provenance and no label. A layout is a selection from what this language has already declared, never a second place to declare it, so provenance is read back from the `values` row the pair names — which is how a cell of a minted value addresses the same tag a form authored through this language's own editor carries.",
+      "properties": {
+        "feature": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "The feature, e.g. \"Case\". Matched by name, as everywhere else in this record."
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "The value, e.g. \"Gen\". Several comma-separated values mean one form spanning them all (\"Fem,Masc\")."
         }
       }
     },

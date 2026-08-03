@@ -260,7 +260,12 @@
       "ungrounded-combination": "{{key}} — no feature is declared inherent to the category it refines, so nothing leads to it",
       "single-item-binding": "{{key}} — a single tag, which belongs with the parts of speech or the values",
       "inherent-axis-conflict": "{{key}} — “{{feature}}” is declared both inherent to this category and an axis of it, so it is at once what the word is and what varies across its forms",
-      "empty-axis": "{{key}} — “{{feature}}” is declared as varying, but no values say what it varies over"
+      "empty-axis": "{{key}} — “{{feature}}” is declared as varying, but no values say what it varies over",
+      "layout-unknown-axis": "{{key}} — this table is laid out along “{{feature}}”, which is not declared as varying across this category's forms",
+      "layout-repeated-axis": "{{key}} — “{{feature}}” is on two dimensions of one table, so a single cell would need two of its values at once",
+      "layout-foreign-coordinate": "{{key}} — leaves out “{{atom}}”, which is not a coordinate of this table, so nothing is left out",
+      "empty-layout-block": "{{key}} — a block with nothing in it: no axis to lay out, and no form to print",
+      "layout-too-large": "{{key}} — its axes multiply out to more cells than a table can show, so it is not drawn at all"
     },
     "grammarIssuesOpen": "Open the grammar editor",
     "activityTitle": "Activity",

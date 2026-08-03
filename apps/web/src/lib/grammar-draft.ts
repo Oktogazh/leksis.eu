@@ -86,6 +86,7 @@ function tidy(grammar: Grammar): Grammar {
   if ((grammar.inherent ?? []).length > 0) out.inherent = grammar.inherent;
   if ((grammar.bindings ?? []).length > 0) out.bindings = grammar.bindings;
   if ((grammar.axes ?? []).length > 0) out.axes = grammar.axes;
+  if ((grammar.layout ?? []).length > 0) out.layout = grammar.layout;
   return out;
 }
 
