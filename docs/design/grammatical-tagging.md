@@ -1,12 +1,14 @@
 # Design note: the Leksis grammar layer
 
-**Status:** **Layers 1 and 2 are implemented and superseded by ADR-0006 and ADR-0007** — for anything they
-cover, the ADRs and the code are authoritative and this note is history. Layers 3–6 are designed, not
-implemented, and this note remains their source.
+**Status:** **Layers 1, 2 and 3 are implemented and superseded by ADR-0006, ADR-0007 and ADR-0008** — for
+anything they cover, the ADRs and the code are authoritative and this note is history. Layers 4–6 are
+designed, not implemented, and this note remains their source.
 **Date:** 2026-07-30; rewritten 2026-08-01 around the layer model; layers renumbered 2026-08-01 (old layer 3
-merged into 1 + 2); layer 1 reconciled with what shipped 2026-08-02; layer 2 reconciled 2026-08-02.
-**For:** The morphology arc (`leksis-evolution` skill). **The next build is layer 3.**
+merged into 1 + 2); layer 1 reconciled with what shipped 2026-08-02; layer 2 reconciled 2026-08-02; layer 3
+reconciled 2026-08-03.
+**For:** The morphology arc (`leksis-evolution` skill). **The next build is layer 4.**
 **Related:** **ADR-0006 (layer 1, accepted)**, **ADR-0007 (layer 2, accepted)**,
+**ADR-0008 (layer 3 + the label inversion, accepted)**,
 `lexicons/eu.leksis.entry.json`, `lexicons/eu.leksis.language.json`, `lexicons/eu.leksis.defs.json`,
 ADR-0004 (abbreviations read model, amended by 0006), ADR-0002 (the browser is the write path)
 
@@ -14,12 +16,15 @@ ADR-0004 (abbreviations read model, amended by 0006), ADR-0002 (the browser is t
 > anything absent from it as unknown, and §6 as the list of things nobody has checked. §§2–4 are the design.
 > Decisions are referred to **by name**, not by number, so references survive edits.
 >
-> **Where this note and the shipped layers 1–2 differ, the code wins** and the difference is marked
+> **Where this note and the shipped layers 1–3 differ, the code wins** and the difference is marked
 > `[shipped]` inline. Two decisions changed during the layer-1 build and are recorded in ADR-0006: the XOR
 > rule became a strict per-site type split (§2.3), and `grammar`'s shape became three arrays with a
 > `values` row naming its feature (§2.2). Two more changed at layer 2 and are recorded in ADR-0007:
 > `inherent` rows are singular `(category, feature)` with a bare feature name, and the `Tag` shape moved to
-> a shared `eu.leksis.defs` lexicon.
+> a shared `eu.leksis.defs` lexicon. **Two more changed at layer 3 and are recorded in ADR-0008: an `axes`
+> row names its values in order and keys on a bare feature name; and invariant 3's "free annotation never
+> disappears" is REVERSED as to storage — the free pair is gone from the entry record, so §2.3's
+> `annotations` column and §5's second bullet are history.**
 
 ---
 
@@ -181,8 +186,10 @@ eu.leksis.language.grammar = {
   inherent: [ { category: Tag, feature: string } ],                                // L2 — one row per (category, feature)
   bindings: [ { tag: Tag, label: {long, short?}, references?: [{text, url}] } ],   // L2 — labelled COMBINATIONS (≥2 items)
 
-  // ---- layers 3–4, still design ----
-  axes:     [ { category: Tag, feature: { feature, scheme? } } ],                  // L3 — declares variation
+  // ---- layer 3, AS SHIPPED (ADR-0008) ----
+  axes:     [ { category: Tag, feature: string, values: string[] } ],              // L3 — what varies, over what, in order
+
+  // ---- layer 4, still design ----
   layout:   [ { category: Tag, ... } ]                                             // L4 — inner shape TBD
 }
 ```
@@ -228,12 +235,15 @@ fields.** This *replaces* the XOR rule below.
 | Field | entry | definition node (leaf and group) |
 |---|---|---|
 | `categories` | tags only | tags only |
-| `annotations` | free pairs only | free pairs only |
 | `notes` | free prose | free prose |
 
-`otherForms[].annotation` is untouched at layer 1 — one free pair. Under the strict split, **layer 3 adds a
-tag field beside it rather than converting it**, so there is no second break to plan for; and it must keep
-accepting a free pair, or a language whose grammar nobody has declared could not label a form at all.
+`[shipped, ADR-0008]` **The `annotations` row is gone from this table.** Layer 3 removed the free pair from
+both sites and converted `otherForms[].annotation` into `otherForms[].tag` — a single `Tag`, because a
+form's label is its address in the paradigm. Two predictions in the sentence this replaces proved wrong:
+that layer 3 would *add* a tag field beside the pair, and that a pair had to survive for a language with no
+declaration. What keeps such a language authorable is the form editor's flat picker and manual tag entry,
+not a second storage shape. An evicted editorial label goes to `notes`, or becomes a minted feature bound
+on the language record.
 
 > **Superseded — the XOR rule.** The original design let one item be *either* a free pair *or* a tag, to be
 > encoded as a lexicon `union`. Splitting by field instead makes the illegal state unrepresentable with no
@@ -301,8 +311,8 @@ Each layer draws its options from the layer below, and each must ship and be use
 | **0 Abbreviations** | free homolingual pairs bound to nothing | entry records (shipped v0.8) |
 | **1 Primitives** ✅ | the atoms this language uses: 14 UPOS, feature *names*, feature *values*; minting | `grammar.pos/features/values` |
 | **2 Inherent combinations** ✅ | which features are **inherent** to a category, and the resulting labelled headword categories | `grammar.inherent`, `grammar.bindings` |
-| **3 Axes** ← next | which features **vary across the forms** of a category | `grammar.axes` |
-| **4 Layout** | table shape, order, default visibility; `otherForms` list order | `grammar.layout` |
+| **3 Axes** ✅ | which features **vary across the forms** of a category, over which values, in order | `grammar.axes` |
+| **4 Layout** ← next | table shape, order, default visibility; `otherForms` list order | `grammar.layout` |
 | **5 Rules** | Hunspell-like generation filling cells | `eu.leksis.paradigm` |
 | **6 Export** | Hunspell, UniMorph TSV, CoNLL-U, XPOS as derived output | — |
 
@@ -393,7 +403,15 @@ decomposition, or a missing row blocks a contributor.
 
 *Out:* anything concerning forms.
 
-### Layer 3 — Axes
+### Layer 3 — Axes ✅ shipped
+
+> **Implemented; see ADR-0008 for what was actually decided.** Kept here for the reasoning. Three deltas
+> from the text below: a row **names its values, in order** (`{category, feature, values[]}`), because a
+> language's inventory and one category's paradigm are not the same set and because that order is what
+> layer 4 prints; the `feature` is a **bare name** as `inherent`'s is, not a `{feature, scheme?}`; and an
+> axis category is checked for **bound atoms only, never grounding**, which is what lets a paradigm be
+> non-rectangular (`{VERB, VerbForm=Fin}` takes a Person axis, `{VERB, VerbForm=Inf}` simply never
+> declares one). The layer also carried the **entry-lexicon break** that removed free pairs entirely.
 
 Per category, which features **vary across its forms** — the `otherForms` editor's option set, filtered by
 the cascade to bound tags only. Together with layer 2 this completes invariant 1's declaration: layer 2 is
@@ -590,14 +608,17 @@ compatibility claim honest.
 
 ## 5. Consequences to design for
 
-- **The `abbreviations` read model inverts, and stays the single home.** The framing is **"a tagged
-  abbreviation", not "a labelled tag"**: the abbreviation is the primary object and the tag an attribute it
-  may acquire, so binding does not create a second kind of thing and there is no parallel tag collection. The
-  dashboard's question becomes *"which tags are in use with no label yet?"* — the language dashboard becomes
-  a **translation worklist**, and the model must tolerate a row with a tag and no label, a row with a label
-  and no tag, and now an orphaned reference.
-- **Most labels a real dictionary uses stay free pairs forever** (`bot.`, `arch.`, `fam.`, register,
-  dialect). An entry in a language whose tagset nobody has declared must stay fully editable.
+- `[shipped, ADR-0008]` **The `abbreviations` read model inverts, and stays the single home.** The framing
+  is **"a tagged abbreviation", not "a labelled tag"**. It is now **single-sourced**: a *language* supplies
+  the label, an *entry* supplies only usage, joined on the canonical tag key. The dashboard's question
+  becomes *"which tags are in use with no label yet?"* — a **translation worklist** — and the model must
+  tolerate a bound row at count 0 and a used row carrying no label at all.
+- ~~**Most labels a real dictionary uses stay free pairs forever.**~~ **Reversed by ADR-0008 as to
+  storage.** The *freedom* stands — a language may name anything, minting a feature where UD has no term —
+  but the label lives on the language record, never on an entry. A label written on an entry is one the
+  language cannot govern: invisible to the worklist, uncorrectable in one place, free to drift between two
+  entries. An entry in a language whose tagset nobody has declared stays editable through the form editor's
+  flat picker and manual tag entry.
 - **Four different things live at annotation sites — do not let them collapse.** (a) a taggable grammatical
   feature; (b) an untaggable editorial/domain/register label — a free pair; (c) a free prose remark —
   `plainNotes`; (d) a **collocation or example phrase**, which is *content*, not annotation, and needs its
@@ -636,8 +657,9 @@ compatibility claim honest.
   def plus a ref, which is what shipped.
 - **The `layout` sub-object's inner shape** (layer 4) — deliberately undesigned until a real conjugation
   table has been drawn by hand.
-- **Whether the entry-level annotation site should also accept a tag.** Recorded as free-pairs-only, which
-  leaves a whole-entry non-category tag with no home.
+- ~~**Whether the entry-level annotation site should also accept a tag.**~~ **Dissolved by ADR-0008** — the
+  site is gone. What remains open: a whole-entry label that is not a grammatical category has only prose
+  `notes` or a minted feature.
 - **Wikidata Lexemes.** Lexeme/Form/Sense split, plausible prior art. **Closed for now by decision** — do
   not spend a layer on it.
 - **Whether a PDS validates a third-party NSID against our lexicon before accepting a write.** The

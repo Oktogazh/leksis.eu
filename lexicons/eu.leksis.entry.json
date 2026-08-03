@@ -4,7 +4,7 @@
   "defs": {
     "main": {
       "type": "record",
-      "description": "A dictionary entry of the Leksis dictionary. Records prove authorship, not ownership: any user may publish an entry record, and a record carrying a `subject` reference is a proposed new version of the entry that record belongs to — the AppView treats the latest version as current and archives previous ones. The record is the source of truth for its content; the AppView indexes only what search needs. The entry is homolingual: every piece of text it carries — definitions, notes, abbreviations, references — is written in the entry's own language (`languageID`), for a reader of that language.",
+      "description": "A dictionary entry of the Leksis dictionary. Records prove authorship, not ownership: any user may publish an entry record, and a record carrying a `subject` reference is a proposed new version of the entry that record belongs to — the AppView treats the latest version as current and archives previous ones. The record is the source of truth for its content; the AppView indexes only what search needs. The entry is homolingual: every piece of text it carries — definitions, notes, references — is written in the entry's own language (`languageID`), for a reader of that language. It carries no reader-facing labels of its own: those are tags, and the language record binds each one to a name in that language.",
       "key": "tid",
       "record": {
         "type": "object",
@@ -30,17 +30,12 @@
           "categories": {
             "type": "array",
             "items": { "type": "ref", "ref": "eu.leksis.defs#tag" },
-            "description": "Ordered grammatical categories of the entry, as tags — machine identifiers, never reader-facing text. The label a reader sees comes from the language record, which binds each tag to a name in that language. Non-grammatical headword labels (\"vulg.\", \"arch.\", \"fam.\") are not categories and belong in `annotations`. Order is the entry author's. May be empty: a language whose grammar nobody has declared yet stays fully authorable."
-          },
-          "annotations": {
-            "type": "array",
-            "items": { "type": "ref", "ref": "#annotation" },
-            "description": "Entry-level labels with no grammatical meaning: register, domain, editorial hedges (e.g. \"vulg.\"/\"vulgar\"). Freeform pairs written in the entry's own language."
+            "description": "Ordered grammatical categories of the entry, as tags — machine identifiers, never reader-facing text. The label a reader sees comes from the language record, which binds each tag to a name in that language. Non-grammatical headword labels (\"vulg.\", \"arch.\", \"fam.\") are not categories: they go in `notes` as prose, or become tags in their own right once the language mints and binds a feature for them. Order is the entry author's. May be empty: a language whose grammar nobody has declared yet stays fully authorable."
           },
           "otherForms": {
             "type": "array",
             "items": { "type": "ref", "ref": "#inflectedForm" },
-            "description": "Other grammatical forms of the word (plural, gerund, construct state…), each an abbreviation-tagged form (e.g. \"pl.\"/\"plural\" + \"bugale\"). The abbreviations are drawn from the same per-language pool as the entry's categories and definition notes; the AppView indexes each form's spelling for search so an inflected form leads back to its entry."
+            "description": "Other grammatical forms of the word (plural, gerund, construct state…), each a tag saying which form it is plus its spelling (e.g. Number=Plur + \"bugale\"). The label a reader sees comes from the language record, as it does for the entry's categories. The AppView indexes each form's spelling for search, so an inflected form leads back to its entry."
           },
           "definitions": {
             "type": "array",
@@ -92,24 +87,6 @@
         }
       }
     },
-    "annotation": {
-      "type": "object",
-      "required": ["long"],
-      "properties": {
-        "long": {
-          "type": "string",
-          "maxLength": 256,
-          "maxGraphemes": 128,
-          "description": "Full form (e.g. \"noun\", \"botany\") — the only required half: a lone form is always the full one, displayed directly with nothing revealed on hover."
-        },
-        "short": {
-          "type": "string",
-          "maxLength": 64,
-          "maxGraphemes": 32,
-          "description": "Optional abbreviated display form (e.g. \"n.\", \"bot.\"); when present it is shown instead of the full form, which appears on hover."
-        }
-      }
-    },
     "definition": {
       "type": "object",
       "required": ["place"],
@@ -126,11 +103,6 @@
           "items": { "type": "ref", "ref": "eu.leksis.defs#tag" },
           "description": "Grammatical tags of this sense — a verb is VERB at the entry level and transitive on one sense group, intransitive on another. Same type as the entry's `categories`, at a different altitude. Allowed on leaves and group nodes alike."
         },
-        "annotations": {
-          "type": "array",
-          "items": { "type": "ref", "ref": "#annotation" },
-          "description": "Ordered labels shown before the node's content (e.g. \"by ext.\"/\"by extension\", \"arch.\"/\"archaic\"). Freeform pairs, no grammatical meaning. Allowed on leaves and group nodes alike. May be empty."
-        },
         "notes": {
           "type": "array",
           "items": { "type": "string", "maxLength": 2048, "maxGraphemes": 1024 },
@@ -146,12 +118,13 @@
     },
     "inflectedForm": {
       "type": "object",
-      "required": ["annotation", "form"],
+      "required": ["tag", "form"],
+      "description": "One other grammatical form of the word: which form it is, and how it is spelled.",
       "properties": {
-        "annotation": {
+        "tag": {
           "type": "ref",
-          "ref": "#annotation",
-          "description": "The abbreviation labelling this form (e.g. \"pl.\"/\"plural\"), from the same per-language pool as categories and notes."
+          "ref": "eu.leksis.defs#tag",
+          "description": "Which form this is, as a tag — one bundle, because the tag is the form's address in the paradigm: a dictionary's \"gen. pl.\" is one coordinate in two dimensions, so it carries Case=Gen and Number=Plur together. The values are the ones the language declares as `axes` of the entry's category, though nothing requires it: an axis declaration is a menu and never a whitelist, and a form matching no declared axis simply stays in the flat list."
         },
         "form": {
           "type": "string",

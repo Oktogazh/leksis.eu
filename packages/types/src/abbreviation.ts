@@ -1,12 +1,13 @@
 // Contract for the abbreviations read model and its API endpoint
-// (GET /languages/:tag/abbreviations). The model harvests every distinct
-// short/long annotation pair used by a language's current entry versions —
-// grammatical categories and definition notes alike: the front-matter
-// "abbreviations" section of a printed dictionary. The API exposes the
-// pairs, their usage counts and their conflicts; the entries behind each
-// pair stay in the database only.
+// (GET /languages/:tag/abbreviations) — the front-matter "abbreviations"
+// section of a printed dictionary. The API exposes each label, its usage count
+// and its conflicts; the entries behind a label stay in the database only.
+//
+// Every label now comes from one place: a binding on the language record. An
+// abbreviation is no longer harvested from entries, because an entry no longer
+// carries one — it carries tags, and the label a reader sees is what the
+// language bound that tag to. One displayed string, one source of truth.
 
-import type { EntryAnnotation } from "./entry.js";
 import type { GrammarLabel } from "./grammar.js";
 import { tagKey, type Tag } from "./tag.js";
 
@@ -82,17 +83,19 @@ export function formatAbbreviationRef(ref: AbbreviationRef): string {
 }
 
 /**
- * The conflict partners of one annotation, according to a language's
- * abbreviation list — shared by the entry editor and the entry page to flag
- * clashing pairs in both edit and view mode.
+ * The conflict partners of one label, according to a language's abbreviation
+ * list — shared by the entry editor and the entry page to flag a clash in both
+ * edit and view mode. Two bindings can still collide even though a label now
+ * has a single source: a language may bind two different tags to the same
+ * short form, and that is exactly what this surfaces.
  */
-export function annotationConflicts(
-  annotation: EntryAnnotation,
+export function labelConflicts(
+  label: GrammarLabel,
   abbreviations: readonly AbbreviationView[],
 ): AbbreviationRef[] {
-  if (annotation.short === undefined) return [];
+  if (label.short === undefined) return [];
   const match = abbreviations.find(
-    (view) => view.short === annotation.short && view.long === annotation.long,
+    (view) => view.short === label.short && view.long === label.long,
   );
   return match?.conflictsWith ?? [];
 }

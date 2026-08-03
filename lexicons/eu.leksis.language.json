@@ -36,7 +36,7 @@
     },
     "grammar": {
       "type": "object",
-      "description": "A language's declared grammatical inventory. Binding is how a language declares what it uses, so these arrays are its vocabulary: what is absent is simply not offered when authoring. Only authored rows are stored — there is no skeleton of unbound atoms, since absence already means unbound. Layer 1 declares the atoms (`pos`, `features`, `values`); layer 2 declares what they combine into (`inherent`, `bindings`). Later layers (axes, layout) will be added here as further properties, and they all share one object because they reference each other: unbinding an atom orphans every higher row that uses it, and one self-contained object means a single write keeps the whole cascade consistent.",
+      "description": "A language's declared grammatical inventory. Binding is how a language declares what it uses, so these arrays are its vocabulary: what is absent is simply not offered when authoring. Only authored rows are stored — there is no skeleton of unbound atoms, since absence already means unbound. Layer 1 declares the atoms (`pos`, `features`, `values`); layer 2 declares what they combine into (`inherent`, `bindings`); layer 3 declares what a category's forms vary over (`axes`). The remaining layer (layout) will be added here as a further property, and they all share one object because they reference each other: unbinding an atom orphans every higher row that uses it, and one self-contained object means a single write keeps the whole cascade consistent.",
       "properties": {
         "pos": {
           "type": "array",
@@ -67,6 +67,36 @@
           "maxLength": 1024,
           "items": { "type": "ref", "ref": "#combinationBinding" },
           "description": "Labels for combinations of two or more atoms — French \"nf.\" for NOUN + Gender=Fem, where a language that prints \"n. f.\" simply binds the two atoms separately and never adds a row here. A one-atom label belongs in `pos` or `values`, so that every fact has exactly one home. A combination must be reachable through the `inherent` declarations that build it up."
+        },
+        "axes": {
+          "type": "array",
+          "maxLength": 512,
+          "items": { "type": "ref", "ref": "#axisDeclaration" },
+          "description": "Which features vary across a category's forms, and which values they vary over — the other half of what `inherent` declares, and together with it the coordinate system of this category's paradigm. Gender is inherent to a French noun while number varies across its forms, so number is declared here. This is what the entry editor offers when labelling another form of a word, and what a later layer will lay out as a table."
+        }
+      }
+    },
+    "axisDeclaration": {
+      "type": "object",
+      "required": ["category", "feature", "values"],
+      "description": "\"For this category, this feature varies across its forms, over these values, in this order.\" The values are named rather than inherited from everything the language has bound, because a language's inventory and one category's paradigm are not the same set: a language may distinguish three genders in its adjectives while splitting the masculine of its nouns in two, personal and non-personal. Naming them also fixes the order they are shown in — the alphabetical order of an identifier is not a grammatical order. Since the category is itself a tag, an axis can be declared on a combination, which is how a paradigm stops being rectangular: declaring person an axis of a finite verb and never of an infinitive leaves the infinitive with no person cells rather than with empty ones.",
+      "properties": {
+        "category": {
+          "type": "ref",
+          "ref": "eu.leksis.defs#tag",
+          "description": "The category whose forms vary: a single atom this language has bound (a part of speech, or a feature value), or a combination of them."
+        },
+        "feature": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Name of the varying feature, e.g. \"Number\". Must itself be bound in `features`; matched by name, exactly as an `inherent` declaration matches its own feature. The same feature must not be declared both inherent to a category and an axis of it — a paradigm cannot be built from a coordinate that is also a constant."
+        },
+        "values": {
+          "type": "array",
+          "minLength": 1,
+          "maxLength": 256,
+          "items": { "type": "string", "maxLength": 64 },
+          "description": "The values this category's forms range over, in the order they are shown. Each must be bound in `values` under this row's feature; matched by name, so a value minted on a Universal Dependencies feature needs no special case. Several comma-separated values in one item mean a form spanning them all (\"Fem,Masc\")."
         }
       }
     },

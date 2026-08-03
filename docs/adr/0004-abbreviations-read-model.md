@@ -9,6 +9,12 @@
 > tag, and a bound row survives at count 0. Decision 3 stands untouched. The
 > doctrine — one home for a language's labels, "a tagged abbreviation" rather
 > than "a labelled tag" — is unchanged.
+>
+> **Amended again by ADR-0008** (2026-08-03): decision 1 is narrowed and
+> decision 2's *dual* sourcing superseded — entries no longer carry labels at
+> all, so the model is **single-sourced from a language's bindings**, with
+> entries contributing only usage joined on the canonical tag key. Decision 3
+> still stands. The doctrine is unchanged and sharpened.
 
 ## Context
 

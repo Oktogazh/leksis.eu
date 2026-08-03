@@ -8,12 +8,11 @@ import {
   normalizeLanguageTag,
   tagKey,
   validateDefinitions,
-  type EntryAnnotation,
   type EntryDefinition,
   type Tag,
 } from "@leksis/types";
 import { db } from "../db";
-import { syncEntryAbbreviations, type AbbreviationPair } from "./abbreviations";
+import { syncEntryTags } from "./abbreviations";
 import type { IngestResult } from "./ingest-language";
 
 // Decomposition of eu.leksis.entry records into the `entries` collection.
@@ -43,16 +42,12 @@ interface EntryDoc {
   deletionReason: string | null;
   redirectTo: string | null;
   /**
-   * Distinct free-label pairs (entry annotations + other forms + definition
-   * annotations) of this version, kept so the abbreviations read model can be
+   * Distinct grammatical tags this version uses, at all three altitudes —
+   * lexeme (`categories`), sense (a definition node's `categories`) and form
+   * (an `otherForms` tag). Kept so the abbreviations read model can be
    * maintained across version transitions and deletions without re-fetching
-   * records.
-   */
-  abbreviations: AbbreviationPair[];
-  /**
-   * Distinct grammatical tags this version uses, at both altitudes. Kept for
-   * the same reason as the pairs — and it is what lets the read model show a
-   * tag in use that no language binding has given a label yet.
+   * records, and it is what lets that model show a tag in use which no
+   * language binding has given a label yet.
    */
   tags: Tag[];
   createdAt: string;
@@ -70,28 +65,8 @@ interface ParsedEntry {
   deleted: boolean;
   deletionReason: string | null;
   redirectTo: string | null;
-  abbreviations: AbbreviationPair[];
   tags: Tag[];
   createdAt: string;
-}
-
-function parseAnnotations(value: unknown): EntryAnnotation[] | null {
-  if (value === undefined) return [];
-  if (!Array.isArray(value)) return null;
-  const annotations: EntryAnnotation[] = [];
-  for (const item of value) {
-    if (typeof item !== "object" || item === null) return null;
-    const a = item as Record<string, unknown>;
-    // `long` is the only required half; a `short` that is present must be a
-    // string, and an empty one counts as absent.
-    if (typeof a.long !== "string") return null;
-    const long = a.long.trim();
-    if (long === "") return null;
-    if (a.short !== undefined && typeof a.short !== "string") return null;
-    const short = typeof a.short === "string" ? a.short.trim() : "";
-    annotations.push(short === "" ? { long } : { short, long });
-  }
-  return annotations;
 }
 
 /** Validate a `string[]` field; empty items are dropped, others trimmed. */
@@ -124,26 +99,20 @@ function parseTags(value: unknown): Tag[] | null {
 }
 
 /**
- * Validate the definitions tree and harvest what the read models need: every
- * node's free-pair `annotations`, and its `categories` tags. A node whose
- * place ends non-zero is a leaf (text required); a node ending in 0 is a
- * group (no text). The whole-tree invariants are checked by
- * `validateDefinitions`. Returns null when the list is invalid.
+ * Validate the definitions tree and harvest what the read model needs: each
+ * node's sense-level `categories` tags. A node whose place ends non-zero is a
+ * leaf (text required); a node ending in 0 is a group (no text). The
+ * whole-tree invariants are checked by `validateDefinitions`. Returns null
+ * when the list is invalid.
  */
-function collectDefinitionAnnotations(
-  value: unknown,
-): { annotations: EntryAnnotation[]; tags: Tag[] } | null {
+function collectDefinitionTags(value: unknown): Tag[] | null {
   if (!Array.isArray(value) || value.length === 0) return null;
   const definitions: EntryDefinition[] = [];
-  const annotations: EntryAnnotation[] = [];
   const tags: Tag[] = [];
   for (const item of value) {
     if (typeof item !== "object" || item === null) return null;
     const def = item as Record<string, unknown>;
     if (!isValidDefinitionPlace(def.place)) return null;
-    const defAnnotations = parseAnnotations(def.annotations);
-    if (defAnnotations === null) return null;
-    annotations.push(...defAnnotations);
     const defTags = parseTags(def.categories);
     if (defTags === null) return null;
     tags.push(...defTags);
@@ -159,25 +128,27 @@ function collectDefinitionAnnotations(
     const leaf = isLeafPlace(def.place);
     definitions.push({
       place: def.place,
-      annotations: defAnnotations,
       notes,
       ...(leaf ? { text } : {}),
     });
   }
-  return validateDefinitions(definitions) === "ok" ? { annotations, tags } : null;
+  return validateDefinitions(definitions) === "ok" ? tags : null;
 }
 
 /**
- * Validate the entry's other grammatical forms and return them: each is an
- * abbreviation (harvested into the abbreviations pool) plus a non-empty form
- * spelling (indexed for search). Returns null when the list is malformed.
+ * Validate the entry's other grammatical forms: each is the tag saying which
+ * form it is, plus a non-empty spelling (indexed for search). Returns null
+ * when the list is malformed.
+ *
+ * A form written to the older shape — a `{short, long}` pair under
+ * `annotation` — has no `tag` and is rejected here, taking the whole record
+ * with it. That is the wanted loud failure: a record whose forms are labelled
+ * in a way this AppView can no longer resolve should not half-load.
  */
-function parseOtherForms(
-  value: unknown,
-): { annotations: EntryAnnotation[]; forms: string[] } | null {
-  if (value === undefined) return { annotations: [], forms: [] };
+function parseOtherForms(value: unknown): { tags: Tag[]; forms: string[] } | null {
+  if (value === undefined) return { tags: [], forms: [] };
   if (!Array.isArray(value)) return null;
-  const annotations: EntryAnnotation[] = [];
+  const tags: Tag[] = [];
   const forms: string[] = [];
   for (const item of value) {
     if (typeof item !== "object" || item === null) return null;
@@ -185,12 +156,11 @@ function parseOtherForms(
     if (typeof f.form !== "string") return null;
     const form = f.form.trim();
     if (form === "") return null;
-    const annotation = parseAnnotations([f.annotation]);
-    if (annotation === null || annotation.length !== 1) return null;
-    annotations.push(annotation[0]!);
+    if (!isValidTag(f.tag)) return null;
+    tags.push(f.tag);
     forms.push(form);
   }
-  return { annotations, forms };
+  return { tags, forms };
 }
 
 /**
@@ -216,21 +186,24 @@ function parseRecord(record: unknown): ParsedEntry | null {
     orthography.push(form);
   }
 
-  // `categories` is tag-only at both altitudes; free labels live in
-  // `annotations`. A record written to the older shape — categories as
-  // {short, long} pairs, definition `notes` holding objects — fails here and
-  // is rejected whole, which is the wanted loud failure: it never half-loads.
+  // Every annotation site is tag-only now: an entry carries no reader-facing
+  // labels at all. A record written to the older shape — categories as
+  // {short, long} pairs — fails here and is rejected whole, which is the
+  // wanted loud failure: it never half-loads.
+  //
+  // The retired free-pair fields (`annotations`, at entry and definition
+  // level) are simply not read. Ignoring a field a lexicon no longer defines
+  // is how AT Proto records stay extensible, and refusing the record over one
+  // would be worse for a reader than the label's absence: the entry would
+  // vanish from search entirely until someone republished it.
   const categories = parseTags(r.categories);
   if (categories === null) return null;
-
-  const annotations = parseAnnotations(r.annotations);
-  if (annotations === null) return null;
 
   const otherForms = parseOtherForms(r.otherForms);
   if (otherForms === null) return null;
 
-  const definitions = collectDefinitionAnnotations(r.definitions);
-  if (definitions === null) return null;
+  const definitionTags = collectDefinitionTags(r.definitions);
+  if (definitionTags === null) return null;
 
   // Entry-level free-text notes and references are record-only content: they
   // are validated for well-formedness (so a malformed record is rejected
@@ -246,24 +219,15 @@ function parseRecord(record: unknown): ParsedEntry | null {
     }
   }
 
-  // The version's distinct tags, at both altitudes. Stored so the read model
-  // can count usage against a bound label — and so a tag nobody has bound yet
-  // surfaces as a worklist item instead of vanishing.
+  // The version's distinct tags, at all three altitudes — lexeme, sense and
+  // form. Stored so the read model can count usage against a bound label, and
+  // so a tag nobody has bound yet surfaces as a worklist item instead of
+  // vanishing. Form tags belong here for exactly that reason: an unnamed
+  // `Number=Plur` on a plural is as much a gap in a language's declaration as
+  // an unnamed `NOUN` on a headword.
   const tags = new Map<string, Tag>();
-  for (const tag of [...categories, ...definitions.tags]) tags.set(tagKey(tag), tag);
-
-  // The version's distinct free-label pairs — entry-level annotations, other
-  // forms' labels and definition annotations alike — for the abbreviations
-  // model. `categories` no longer contributes: it holds tags, which resolve
-  // to labels through the language record rather than carrying their own.
-  const pairs = new Map<string, AbbreviationPair>();
-  for (const { short, long } of [
-    ...annotations,
-    ...otherForms.annotations,
-    ...definitions.annotations,
-  ]) {
-    const pair = { short: short ?? null, long };
-    pairs.set(`${pair.short ?? ""}\u0000${pair.long}`, pair);
+  for (const tag of [...categories, ...definitionTags, ...otherForms.tags]) {
+    tags.set(tagKey(tag), tag);
   }
 
   let subject: string | null = null;
@@ -318,7 +282,6 @@ function parseRecord(record: unknown): ParsedEntry | null {
     deleted,
     deletionReason,
     redirectTo,
-    abbreviations: [...pairs.values()],
     tags: [...tags.values()],
     createdAt,
   };
@@ -422,7 +385,6 @@ export async function ingestEntry(
     deleted: parsed.deleted,
     deletionReason: parsed.deletionReason,
     redirectTo: parsed.redirectTo,
-    abbreviations: parsed.abbreviations,
     tags: parsed.tags,
     createdAt: parsed.createdAt,
     indexedAt: new Date().toISOString(),
@@ -436,16 +398,10 @@ export async function ingestEntry(
   }
   await db.query(aql`INSERT ${doc} INTO entries`);
   // The read model tracks current, non-withdrawn versions only: declaring
-  // the new version's pairs also retires the archived version's
-  // contribution. A deleted version contributes none, even though its own
-  // `abbreviations` stays stored on the doc in case the entry is restored.
-  await syncEntryAbbreviations(
-    db,
-    entryKey,
-    doc.languageID,
-    parsed.deleted ? [] : doc.abbreviations,
-    parsed.deleted ? [] : doc.tags,
-  );
+  // the new version's tags also retires the archived version's usage. A
+  // deleted version declares none, even though its own `tags` stay stored on
+  // the doc in case the entry is restored.
+  await syncEntryTags(db, entryKey, doc.languageID, parsed.deleted ? [] : doc.tags);
   console.log(
     `firehose: indexed entry "${doc.orthography[0]}" [${doc.entryKey}] (${current ? "new version" : "new entry"}) from ${authorDID}`,
   );
@@ -480,7 +436,6 @@ export async function ingestEntryDelete(recordURI: string): Promise<void> {
   const promotedCursor = await db.query<{
     recordURI: string;
     languageID: string;
-    abbreviations: AbbreviationPair[] | null;
     tags: Tag[] | null;
   }>(aql`
     FOR e IN entries
@@ -491,25 +446,18 @@ export async function ingestEntryDelete(recordURI: string): Promise<void> {
       RETURN {
         recordURI: NEW.recordURI,
         languageID: NEW.languageID,
-        abbreviations: NEW.abbreviations,
         tags: NEW.tags
       }
   `);
   const promoted = await promotedCursor.next();
 
-  // The entry's contribution to the abbreviations model follows its new
-  // current version — or vanishes with the entry. Versions indexed before
-  // pairs were stored carry none and contribute again once re-published.
+  // The entry's usage follows its new current version — or vanishes with the
+  // entry. Versions indexed before tags were stored carry none and contribute
+  // again once re-published.
   if (promoted) {
-    await syncEntryAbbreviations(
-      db,
-      entryKey,
-      promoted.languageID,
-      promoted.abbreviations ?? [],
-      promoted.tags ?? [],
-    );
+    await syncEntryTags(db, entryKey, promoted.languageID, promoted.tags ?? []);
   } else {
-    await syncEntryAbbreviations(db, entryKey, null, [], []);
+    await syncEntryTags(db, entryKey, null, []);
   }
   console.log(
     promoted

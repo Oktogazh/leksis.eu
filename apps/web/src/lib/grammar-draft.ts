@@ -1,10 +1,12 @@
 import {
+  axisKey,
   featureKey,
   inherentKey,
   posTag,
   tagKey,
   valueTag,
   type Grammar,
+  type GrammarAxis,
   type GrammarCombination,
   type GrammarFeature,
   type GrammarInherent,
@@ -83,6 +85,7 @@ function tidy(grammar: Grammar): Grammar {
   if ((grammar.values ?? []).length > 0) out.values = grammar.values;
   if ((grammar.inherent ?? []).length > 0) out.inherent = grammar.inherent;
   if ((grammar.bindings ?? []).length > 0) out.bindings = grammar.bindings;
+  if ((grammar.axes ?? []).length > 0) out.axes = grammar.axes;
   return out;
 }
 
@@ -199,4 +202,92 @@ export function removeCombination(grammar: Grammar, tag: Tag): Grammar {
     ...grammar,
     bindings: (grammar.bindings ?? []).filter((r) => tagKey(r.tag) !== key),
   });
+}
+
+// ---- layer 3 -------------------------------------------------------------
+
+/** The axes declared on exactly this category, in record order. */
+export function axisRows(grammar: Grammar, category: Tag): GrammarAxis[] {
+  const key = tagKey(category);
+  return (grammar.axes ?? []).filter((row) => tagKey(row.category) === key);
+}
+
+/** The axis declared for this (category, feature), if any. */
+export function findAxis(
+  grammar: Grammar,
+  category: Tag,
+  feature: string,
+): GrammarAxis | undefined {
+  const key = axisKey({ category, feature });
+  return (grammar.axes ?? []).find((row) => axisKey(row) === key);
+}
+
+/**
+ * Declare a feature an axis of a category, with no values yet — the
+ * contributor picks them next. A row with no values is deliberately
+ * publishable-blocking rather than impossible: it is reported as `empty-axis`,
+ * which says "you declared this varies but not what over", and that is more
+ * useful than silently refusing the declaration halfway through making it.
+ */
+export function addAxis(grammar: Grammar, category: Tag, feature: string): Grammar {
+  if (findAxis(grammar, category, feature) !== undefined) return grammar;
+  return tidy({ ...grammar, axes: [...(grammar.axes ?? []), { category, feature, values: [] }] });
+}
+
+/** Withdraw an axis declaration entirely, values and all. */
+export function removeAxis(grammar: Grammar, category: Tag, feature: string): Grammar {
+  const key = axisKey({ category, feature });
+  return tidy({ ...grammar, axes: (grammar.axes ?? []).filter((r) => axisKey(r) !== key) });
+}
+
+/** Replace an axis's value list, keeping the row's position in the record. */
+function withAxisValues(
+  grammar: Grammar,
+  category: Tag,
+  feature: string,
+  values: string[],
+): Grammar {
+  const key = axisKey({ category, feature });
+  return tidy({
+    ...grammar,
+    axes: (grammar.axes ?? []).map((r) => (axisKey(r) === key ? { ...r, values } : r)),
+  });
+}
+
+/**
+ * Add or remove one value of an axis. A newly ticked value is **appended**,
+ * never inserted in the language's `values` order: an axis's order is a
+ * grammatical claim the contributor makes here, so it starts as the order they
+ * ticked them in and is theirs to rearrange.
+ */
+export function toggleAxisValue(
+  grammar: Grammar,
+  category: Tag,
+  feature: string,
+  value: string,
+): Grammar {
+  const axis = findAxis(grammar, category, feature);
+  if (axis === undefined) return grammar;
+  const values = axis.values.includes(value)
+    ? axis.values.filter((v) => v !== value)
+    : [...axis.values, value];
+  return withAxisValues(grammar, category, feature, values);
+}
+
+/** Move one of an axis's values one place earlier or later. */
+export function moveAxisValue(
+  grammar: Grammar,
+  category: Tag,
+  feature: string,
+  value: string,
+  direction: -1 | 1,
+): Grammar {
+  const axis = findAxis(grammar, category, feature);
+  if (axis === undefined) return grammar;
+  const at = axis.values.indexOf(value);
+  const to = at + direction;
+  if (at === -1 || to < 0 || to >= axis.values.length) return grammar;
+  const values = [...axis.values];
+  [values[at], values[to]] = [values[to]!, values[at]!];
+  return withAxisValues(grammar, category, feature, values);
 }

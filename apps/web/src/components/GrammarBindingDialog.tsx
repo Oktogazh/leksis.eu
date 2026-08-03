@@ -27,8 +27,14 @@ import { useSession } from "../auth/SessionProvider";
 import { fetchCurrentLanguageRecord } from "../lib/api";
 import { fetchLanguageRecord } from "../lib/atproto-record";
 import {
+  addAxis,
   addInherent,
+  axisRows,
   featureRows,
+  findAxis,
+  moveAxisValue,
+  removeAxis,
+  toggleAxisValue,
   findCombination,
   findFeature,
   findPos,
@@ -80,10 +86,17 @@ type Path =
   | { at: "l2root" }
   | { at: "l2category"; category: Tag }
   | { at: "l2feature"; category: Tag; feature: string }
-  | { at: "l2combinationForm"; category: Tag; feature: string; tag: Tag };
+  | { at: "l2combinationForm"; category: Tag; feature: string; tag: Tag }
+  // Layer 3 — the same three levels again, one altitude across: pick a
+  // category, declare which features vary across its forms, then pick and
+  // order the values each varies over.
+  | { at: "l3root" }
+  | { at: "l3category"; category: Tag }
+  | { at: "l3feature"; category: Tag; feature: string };
 
 /** Which tab a path belongs to — the tab strip is derived, never stored. */
-function pathTab(path: Path): "primitives" | "combinations" {
+function pathTab(path: Path): "primitives" | "combinations" | "axes" {
+  if (path.at.startsWith("l3")) return "axes";
   return path.at.startsWith("l2") ? "combinations" : "primitives";
 }
 
@@ -334,7 +347,9 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
   const crumbs: { label: string; go: Path }[] =
     tab === "combinations"
       ? [{ label: t("grammar.crumbL2Root"), go: { at: "l2root" } }]
-      : [{ label: t("grammar.crumbRoot"), go: { at: "root" } }];
+      : tab === "axes"
+        ? [{ label: t("grammar.crumbL3Root"), go: { at: "l3root" } }]
+        : [{ label: t("grammar.crumbRoot"), go: { at: "root" } }];
   if (path.at === "pos" || path.at === "posForm") {
     crumbs.push({ label: t("grammar.posLevel"), go: { at: "pos" } });
     if (path.at === "posForm") crumbs.push({ label: path.value, go: path });
@@ -352,7 +367,18 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
         crumbs.push({ label: categoryText(path.tag), go: path });
       }
     }
-  } else if (path.at !== "root" && path.at !== "l2root") {
+  } else if (path.at === "l3category" || path.at === "l3feature") {
+    crumbs.push({
+      label: categoryText(path.category),
+      go: { at: "l3category", category: path.category },
+    });
+    if (path.at === "l3feature") {
+      crumbs.push({
+        label: path.feature,
+        go: { at: "l3feature", category: path.category, feature: path.feature },
+      });
+    }
+  } else if (path.at !== "root" && path.at !== "l2root" && path.at !== "l3root") {
     crumbs.push({ label: t("grammar.featuresLevel"), go: { at: "features" } });
     if (path.at !== "features") {
       crumbs.push({ label: path.feature, go: { at: "feature", feature: path.feature } });
@@ -676,7 +702,13 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
   function renderL2Category(category: Tag) {
     const declared = inherentRows(draft, category);
     const declaredNames = new Set(declared.map((row) => row.feature));
-    const available = featureRows(draft).filter((row) => !declaredNames.has(row.feature));
+    // The mirror of layer 3's gate: a feature already declared an *axis* of
+    // this category is not offered as inherent either. One rule, enforced from
+    // whichever side the contributor arrives at it.
+    const axisNames = new Set(axisRows(draft, category).map((row) => row.feature));
+    const available = featureRows(draft).filter(
+      (row) => !declaredNames.has(row.feature) && !axisNames.has(row.feature),
+    );
     return (
       <>
         <div className="mb-3">
@@ -812,6 +844,236 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
               );
             })}
           </ul>
+        )}
+      </>
+    );
+  }
+
+  // ---- layer 3 ----------------------------------------------------------
+
+  /** Pick a category, exactly as layer 2 does — the same things are offered. */
+  function renderL3Root() {
+    const pos = posRows(draft);
+    const combinations = draft.bindings ?? [];
+    const categories: { tag: Tag; label: GrammarLabel }[] = [
+      ...pos.map((row) => ({ tag: posTag(row), label: row.label })),
+      ...combinations.map((row) => ({ tag: row.tag, label: row.label })),
+    ];
+    return (
+      <>
+        <p className="mb-3 text-xs text-content-subtle">{t("grammar.l3RootHint")}</p>
+        {categories.length === 0 ? (
+          <p className="text-sm text-content-muted">{t("grammar.l2NoPos")}</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {categories.map((category) => (
+              <li key={tagKey(category.tag)}>
+                <button
+                  type="button"
+                  onClick={() => setPath({ at: "l3category", category: category.tag })}
+                  className={levelButton}
+                >
+                  <span className="text-sm text-content">
+                    {category.label.short ?? category.label.long}
+                  </span>
+                  <span className="text-xs text-content-subtle">
+                    {t("grammar.l3AxisCount", { count: axisRows(draft, category.tag).length })}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </>
+    );
+  }
+
+  /**
+   * One category: the features that vary across its forms, and the bound ones
+   * left to declare.
+   *
+   * A feature already declared *inherent* to this category is not offered —
+   * the layer-3 gate rendered as navigation, like every other gate here. A
+   * feature cannot both identify the word and vary across its forms, and the
+   * apparent counterexample resolves one level down: `Number` is an axis of
+   * `{NOUN}` and inherent to `{NOUN, Number=Ptan}`, which are different
+   * categories and never meet on this screen.
+   */
+  function renderL3Category(category: Tag) {
+    const declared = axisRows(draft, category);
+    const declaredNames = new Set(declared.map((row) => row.feature));
+    const inherentNames = new Set(inherentRows(draft, category).map((row) => row.feature));
+    const available = featureRows(draft).filter(
+      (row) => !declaredNames.has(row.feature) && !inherentNames.has(row.feature),
+    );
+    return (
+      <>
+        <div className="mb-3">
+          <p className="text-sm font-medium text-content">{categoryText(category)}</p>
+          <p className="mt-1 text-xs text-content-subtle">{t("grammar.l3CategoryHint")}</p>
+        </div>
+        {declared.length === 0 ? (
+          <p className="text-sm text-content-muted">{t("grammar.l3NoAxes")}</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {declared.map((row) => (
+              <li key={row.feature} className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPath({ at: "l3feature", category, feature: row.feature })}
+                  className={`${levelButton} flex-1`}
+                >
+                  <span className="flex min-w-0 items-baseline gap-2">
+                    <span className="font-mono text-sm text-content">{row.feature}</span>
+                    <span className="truncate text-xs text-content-subtle">
+                      {findFeature(draft, row.feature)?.label.long}
+                    </span>
+                  </span>
+                  <span
+                    className={
+                      row.values.length === 0
+                        ? "text-xs text-red-600"
+                        : "text-xs text-content-subtle"
+                    }
+                  >
+                    {row.values.length === 0
+                      ? t("grammar.l3NoValuesPicked")
+                      : t("grammar.l3ValueCount", { count: row.values.length })}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDraft(removeAxis(draft, category, row.feature))}
+                  aria-label={t("grammar.l3Withdraw", { feature: row.feature })}
+                  className="text-content-subtle hover:text-red-600"
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {available.length > 0 && (
+          <div className="mt-4 border-t pt-3">
+            <p className="text-xs font-medium text-content">{t("grammar.l3DeclareTitle")}</p>
+            <ul className="mt-2 flex flex-wrap gap-1.5">
+              {available.map((row) => (
+                <li key={row.feature}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDraft(addAxis(draft, category, row.feature));
+                      setPath({ at: "l3feature", category, feature: row.feature });
+                    }}
+                    title={row.label.long}
+                    className="rounded-full border bg-surface-muted/60 px-2.5 py-1 font-mono text-xs text-content hover:border-primary hover:text-primary"
+                  >
+                    + {row.feature}
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1 text-xs text-content-subtle">{t("grammar.l3DeclareHint")}</p>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  /**
+   * Pick and order the values an axis ranges over. The order is the point:
+   * it is what a table's headers will print and what the flat list of other
+   * forms is sorted by, and the alphabetical order of an identifier is not a
+   * grammatical order — nobody prints the accusative first.
+   */
+  function renderL3Feature(category: Tag, feature: string) {
+    const axis = findAxis(draft, category, feature);
+    if (axis === undefined) return null;
+    const bound = valueRows(draft, feature);
+    const chosen = axis.values;
+    const rest = bound.filter((row) => !chosen.includes(row.value));
+    return (
+      <>
+        <p className="mb-3 text-xs text-content-subtle">
+          {t("grammar.l3FeatureHint", { feature, category: categoryText(category) })}
+        </p>
+        {bound.length === 0 ? (
+          <p className="text-sm text-content-muted">{t("grammar.l2NoValues", { feature })}</p>
+        ) : (
+          <>
+            <ol className="space-y-1.5">
+              {chosen.map((value, i) => {
+                const row = bound.find((r) => r.value === value);
+                return (
+                  <li
+                    key={value}
+                    className="flex items-center gap-2 rounded-lg border bg-surface px-3 py-2"
+                  >
+                    <span className="w-5 text-xs text-content-subtle">{i + 1}.</span>
+                    <span className="flex min-w-0 flex-1 items-baseline gap-2">
+                      <span className="text-sm text-content">
+                        {row?.label.short ?? row?.label.long ?? value}
+                      </span>
+                      <span className="truncate font-mono text-xs text-content-subtle">
+                        {feature}={value}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      disabled={i === 0}
+                      onClick={() => setDraft(moveAxisValue(draft, category, feature, value, -1))}
+                      aria-label={t("grammar.l3MoveUp", { value })}
+                      className="px-1 text-content-subtle hover:text-primary disabled:opacity-30"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      disabled={i === chosen.length - 1}
+                      onClick={() => setDraft(moveAxisValue(draft, category, feature, value, 1))}
+                      aria-label={t("grammar.l3MoveDown", { value })}
+                      className="px-1 text-content-subtle hover:text-primary disabled:opacity-30"
+                    >
+                      ↓
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDraft(toggleAxisValue(draft, category, feature, value))}
+                      aria-label={t("grammar.l3Remove", { value })}
+                      className="px-1 text-content-subtle hover:text-red-600"
+                    >
+                      ×
+                    </button>
+                  </li>
+                );
+              })}
+            </ol>
+            {chosen.length === 0 && (
+              <p className="text-sm text-content-muted">{t("grammar.l3PickSomething")}</p>
+            )}
+            {rest.length > 0 && (
+              <div className="mt-4 border-t pt-3">
+                <p className="text-xs font-medium text-content">{t("grammar.l3AddValueTitle")}</p>
+                <ul className="mt-2 flex flex-wrap gap-1.5">
+                  {rest.map((row) => (
+                    <li key={row.value}>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDraft(toggleAxisValue(draft, category, feature, row.value))
+                        }
+                        title={row.label.long}
+                        className="rounded-full border bg-surface-muted/60 px-2.5 py-1 text-xs text-content hover:border-primary hover:text-primary"
+                      >
+                        + {row.label.short ?? row.label.long}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-1 text-xs text-content-subtle">{t("grammar.l3AddValueHint")}</p>
+              </div>
+            )}
+          </>
         )}
       </>
     );
@@ -1013,6 +1275,12 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
         return renderL2Category(path.category);
       case "l2feature":
         return renderL2Feature(path.category, path.feature);
+      case "l3root":
+        return renderL3Root();
+      case "l3category":
+        return renderL3Category(path.category);
+      case "l3feature":
+        return renderL3Feature(path.category, path.feature);
       default:
         return renderForm();
     }
@@ -1059,6 +1327,19 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
               }
             >
               {t("grammar.tabCombinations")}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "axes"}
+              onClick={() => setPath({ at: "l3root" })}
+              className={
+                tab === "axes"
+                  ? "rounded-full border border-primary bg-surface px-3 py-1 text-xs font-medium text-primary"
+                  : "rounded-full border px-3 py-1 text-xs text-content-subtle hover:border-primary hover:text-primary"
+              }
+            >
+              {t("grammar.tabAxes")}
             </button>
           </div>
         </header>

@@ -2,11 +2,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
   abbreviationLookup,
-  annotationConflicts,
-  formatAbbreviationRef,
   resolveTag,
   type AbbreviationView,
-  type EntryAnnotation,
   type EntryDefinition,
   type EntryView,
   type Tag,
@@ -67,6 +64,47 @@ export function TagChips({
   );
 }
 
+/**
+ * One tag rendered inline, where a chip list would be wrong — the label
+ * standing before an inflected form's spelling. Same resolution chain and same
+ * unbound styling as `TagChips`, as text rather than as list items, so it can
+ * sit inside a line that is already a list item.
+ */
+export function TagLabel({
+  tag,
+  lookup,
+}: {
+  tag: Tag;
+  lookup: ReadonlyMap<string, { long: string; short?: string }>;
+}): ReactNode {
+  const { t } = useTranslation();
+  return (
+    <span className="inline-flex gap-1">
+      {resolveTag(tag, lookup).map((part, i) =>
+        part.bound && part.label !== undefined ? (
+          <span key={i}>
+            {part.label.short !== undefined ? (
+              <abbr title={part.label.long} className="no-underline">
+                {part.label.short}
+              </abbr>
+            ) : (
+              part.label.long
+            )}
+          </span>
+        ) : (
+          <span
+            key={i}
+            title={t("entry.unboundTag")}
+            className="text-amber-700 dark:text-amber-400"
+          >
+            {part.verbatim}
+          </span>
+        ),
+      )}
+    </span>
+  );
+}
+
 /** Indentation per definition depth (its place's length, 1–3). */
 const DEPTH_INDENT = ["", "pl-5 sm:pl-6", "pl-10 sm:pl-12"];
 
@@ -84,17 +122,8 @@ export function DefinitionList({
   definitions: EntryDefinition[];
   abbreviations: AbbreviationView[];
 }): ReactNode {
-  const { t } = useTranslation();
   const depth = definitionsDepth(definitions);
   const lookup = abbreviationLookup(abbreviations);
-
-  function noteTitle(note: EntryAnnotation): string {
-    const conflicts = annotationConflicts(note, abbreviations);
-    if (conflicts.length === 0) return note.long;
-    return `${note.long} — ${t("entry.conflictWarning", {
-      pairs: conflicts.map(formatAbbreviationRef).join(", "),
-    })}`;
-  }
 
   // Indentation by displayed depth (0s in the place are skipped, so a place
   // like [0, 1, 1] renders at depth 2, not 3).
@@ -118,29 +147,6 @@ export function DefinitionList({
                 <ul className="mr-2 inline-flex flex-wrap items-center gap-1 align-middle">
                   <TagChips tags={def.categories} lookup={lookup} />
                 </ul>
-              )}
-              {def.annotations.length > 0 && (
-                <span className="mr-2">
-                  {def.annotations.map((note, j) => {
-                    const conflicted = annotationConflicts(note, abbreviations).length > 0;
-                    const chipClass = `mr-1 rounded border bg-surface-muted/60 px-1.5 py-0.5 font-mono text-xs text-content-muted ${
-                      conflicted ? "border-red-400" : ""
-                    }`;
-                    return note.short !== undefined ? (
-                      <abbr key={j} title={noteTitle(note)} className={`${chipClass} no-underline`}>
-                        {conflicted && <span aria-hidden="true">⚠ </span>}
-                        {note.short}
-                      </abbr>
-                    ) : (
-                      // No abbreviation: the full form is shown directly, so
-                      // there is nothing to reveal on hover (and no conflict —
-                      // a pair without a short form never conflicts).
-                      <span key={j} className={chipClass}>
-                        {note.long}
-                      </span>
-                    );
-                  })}
-                </span>
               )}
               {notes.length > 0 && (
                 <span className="mr-2 text-sm italic text-content-muted">

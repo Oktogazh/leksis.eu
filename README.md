@@ -3,12 +3,19 @@
 A distributed, crowdsourced multilingual dictionary for low-resource languages,
 built on the AT Protocol and ArangoDB. See [leksis.eu](https://leksis.eu).
 
-> **Status:** Week 2 — AT Proto OAuth + frontend foundations (released
-> `v0.2.0`, live on leksis.eu). A landing page introduces the project and lets
-> visitors log in against their own PDS via browser-only AT Protocol OAuth;
-> connected users see a search shell. The frontend now ships i18n and theming
-> scaffolding. No backend changes — see
-> [docs/adr/0002](docs/adr/0002-atproto-oauth-client-model.md).
+> **Status:** In development, continuously released — `CHANGELOG.md`, the git
+> tags and [docs/adr](docs/adr) are the source of truth for what exists.
+> Content loops 1–4 are live (languages, entries, definitions, tree-shaped
+> definitions with a grammatical-tag worklist); translations are the next
+> unbuilt content loop. In parallel the **morphology arc** is through layer 3:
+> a language declares its grammatical primitives, which features are inherent
+> to a category, and which vary across its forms — see
+> [ADR-0006](docs/adr/0006-grammar-layer-primitives.md),
+> [ADR-0007](docs/adr/0007-grammar-layer-inherent-combinations.md) and
+> [ADR-0008](docs/adr/0008-grammar-layer-axes-and-single-sourced-labels.md).
+>
+> Work advances in **loops — units of work, not units of time.** An earlier
+> plan framed these as calendar weeks; that framing is retired.
 
 ## Monorepo layout
 

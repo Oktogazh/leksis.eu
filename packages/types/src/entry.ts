@@ -13,33 +13,6 @@ import type { Tag } from "./tag.js";
 export const LEKSIS_ENTRY_COLLECTION = "eu.leksis.entry";
 
 /**
- * A short/long annotation pair — a label with no grammatical meaning attached
- * ("arch." / "archaic", "bot." / "botany", "vulg." / "vulgar"). Freeform, not
- * an enforced vocabulary, and it stays that way: most of what a real
- * dictionary prints has no Universal Dependencies equivalent and never will.
- *
- * Annotations and tags never share a field. Each annotation site holds
- * exactly one type — `categories` for tags, `annotations` for these — because
- * a field holding either would give one displayed string two sources of
- * truth, and they can only drift.
- */
-export interface EntryAnnotation {
-  /**
-   * Full form (e.g. "noun", "botany") — the only required half: a lone form
-   * is always the full one, displayed directly with nothing on hover.
-   */
-  long: string;
-  /**
-   * Optional abbreviated display form (e.g. "n.", "bot."); when present it
-   * is shown instead of the full form, which appears on hover.
-   * Written in the entry's own language (entries are homolingual — see the file
-   * header): a Breton entry carries "anv-kadarn", not "noun". The pairs a
-   * language uses are that language's own abbreviation list.
-   */
-  short?: string;
-}
-
-/**
  * One node of an entry's definition tree. `definitions` is a flat list, each
  * node carrying its address (`place`) in a hierarchy of up to three
  * dimensions. The LAST index of a place is the node type: non-zero means a
@@ -63,8 +36,6 @@ export interface EntryDefinition {
    * print "v.t." in the headword line *and* split senses by transitivity.
    */
   categories?: Tag[];
-  /** Ordered abbreviation labels shown before the node's content. */
-  annotations: EntryAnnotation[];
   /** Free-text remarks shown before the node's content (neither label nor definition text). */
   notes?: string[];
   /** The definition text — present on and only on a leaf (place ending non-zero). */
@@ -75,11 +46,23 @@ export interface EntryDefinition {
 export const ENTRY_DEFINITIONS_MAX_DEPTH = 3;
 
 /**
- * An inflected/other grammatical form of the word (plural, gerund…): an
- * abbreviation from the entry's pool plus the form's spelling.
+ * An inflected/other grammatical form of the word (plural, gerund…): the tag
+ * saying *which* form it is, plus its spelling.
+ *
+ * **One tag, not a list**, because the tag is the form's address in the
+ * paradigm: a real dictionary's "gen. pl." is one coordinate in two
+ * dimensions, so it is one bundle carrying `Case=Gen` and `Number=Plur`. That
+ * is what layer 5 will match a generated cell against by canonical key, and
+ * what layer 4 will place in a grid; a list of separate tags could not say
+ * which combination it meant.
+ *
+ * Form-level altitude: these values are the ones the language declares as
+ * **axes** of the entry's category. Nothing enforces that here — an axis
+ * declaration is a menu, never a whitelist, and a form whose tag matches no
+ * declared axis simply stays in the flat list.
  */
 export interface EntryInflectedForm {
-  annotation: EntryAnnotation;
+  tag: Tag;
   form: string;
 }
 
@@ -123,7 +106,7 @@ export function isValidDefinitionPlace(value: unknown): value is number[] {
  * Rules, over the list in its given order:
  *  - a leaf (place ending non-zero) must carry non-empty text; a group node
  *    (place ending in 0) must not carry text ("text-rule");
- *  (`categories`/`annotations`/`notes` are not inspected here — they are
+ *  (`categories`/`notes` are not inspected here — they are
  *  well-formedness, checked where the record is parsed.)
  *  - places are strictly sorted in reading order ("order");
  *  - sibling indices are contiguous from 1 within each parent, and a group
@@ -215,7 +198,8 @@ export interface LeksisEntryRecord {
    * declaration before authoring entries, so entries come out consistent
    * across the system; the friction is the mechanism working, not a flaw to
    * relax later. Non-grammatical headword labels (`vulg.`, `arch.`, `fam.`)
-   * are not categories — they belong in `annotations`.
+   * are not categories: they go in `notes` as prose, or become tags in their
+   * own right once the language mints and binds a feature for them.
    *
    * Order is the entry author's: it is phrasing, not table geometry.
    * May be empty — a language whose grammar nobody has declared yet must
@@ -223,14 +207,9 @@ export interface LeksisEntryRecord {
    */
   categories: Tag[];
   /**
-   * Entry-level labels with no grammatical meaning: register, domain,
-   * editorial hedges. Freeform pairs, and permanently so.
-   */
-  annotations?: EntryAnnotation[];
-  /**
-   * Other grammatical forms (plural, gerund…), each an abbreviation from the
-   * entry's pool plus the form's spelling. The AppView indexes each form for
-   * search. Absent when the entry has none.
+   * Other grammatical forms (plural, gerund…), each a tag saying which form it
+   * is plus the form's spelling. The AppView indexes each form for search, so
+   * an inflected form leads back to its entry. Absent when the entry has none.
    */
   otherForms?: EntryInflectedForm[];
   /**

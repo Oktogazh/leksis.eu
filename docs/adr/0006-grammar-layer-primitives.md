@@ -7,6 +7,13 @@
 - **Supersedes:** `docs/design/grammatical-tagging.md` for layer 1 only; that
   note remains the design source for layers 2–6
 
+> **Amended by ADR-0008** (2026-08-03): the annotation-site split survives, but
+> the free-pair side of it is gone — `annotations` was removed from the entry
+> and from the definition node, and the abbreviations model this ADR made
+> dual-sourced is now single-sourced from a language's bindings. What stands
+> unchanged: `categories` is tag-only, sites separate by field rather than by
+> union, and a label lives on the language record.
+
 ## Context
 
 The morphology arc's north star (in the `leksis-evolution` skill) is an entry

@@ -13,11 +13,7 @@
 
 import { aql, Database } from "arangojs";
 import type { LanguageTranslation, Tag } from "@leksis/types";
-import {
-  buildAbbreviationDocs,
-  type AbbreviationPair,
-  type BindingPair,
-} from "../firehose/abbreviations";
+import { buildAbbreviationDocs, type BindingPair } from "../firehose/abbreviations";
 import { syncLocalLanguages } from "../firehose/local-languages";
 
 const url = process.env.ARANGO_URL ?? "http://127.0.0.1:8529";
@@ -164,48 +160,48 @@ async function main() {
     console.log(`backfilled "localLanguages" from ${legacy.length} pre-split language doc(s)`);
   }
 
-  // Rebuild the derived `abbreviations` read model wholesale from current
-  // entry versions' stored pairs. Idempotent by recomputation, so re-running
-  // on every deploy self-heals the model; entry docs indexed before pairs
-  // were stored contribute nothing until their entries are re-published.
-  // (The consumer may ingest concurrently during a deploy; the window is
-  // tiny and its own sync corrects the affected entry right after.)
-  const pairRowsCursor = await db.query<{
+  // Rebuild the derived `abbreviations` read model wholesale. Idempotent by
+  // recomputation, so re-running on every deploy self-heals the model; entry
+  // docs indexed before tags were stored contribute nothing until their
+  // entries are re-published. (The consumer may ingest concurrently during a
+  // deploy; the window is tiny and its own sync corrects the affected entry
+  // right after.)
+  //
+  // Entries supply usage only — the tags their current versions carry.
+  const usageRowsCursor = await db.query<{
     entryKey: string;
     languageID: string;
-    abbreviations: AbbreviationPair[];
     tags: Tag[] | null;
   }>(aql`
     FOR e IN entries
-      FILTER e.current == true AND e.abbreviations != null AND e.deleted != true
+      FILTER e.current == true AND e.tags != null AND e.deleted != true
       RETURN {
         entryKey: e.entryKey,
         languageID: e.languageID,
-        abbreviations: e.abbreviations,
         tags: e.tags
       }
   `);
-  const pairRows = await pairRowsCursor.all();
-  // Second source: the labels each current language record binds to a
-  // grammatical atom. Stored on the language doc precisely so this rebuild
-  // does not have to resolve every record from its PDS — without it, a
-  // db:init would erase every binding the model carries.
+  const usageRows = await usageRowsCursor.all();
+  // Every label comes from here: the bindings each current language record
+  // declares. Stored on the language doc precisely so this rebuild does not
+  // have to resolve every record from its PDS — without it, a db:init would
+  // erase every label the model carries.
   const bindingRowsCursor = await db.query<{ languageID: string; bindings: BindingPair[] }>(aql`
     FOR l IN languages
       FILTER l.current == true AND l.bindings != null
       RETURN { languageID: l.tag, bindings: l.bindings }
   `);
   const bindingRows = await bindingRowsCursor.all();
-  const abbreviationDocs = buildAbbreviationDocs(pairRows, bindingRows);
+  const abbreviationDocs = buildAbbreviationDocs(usageRows, bindingRows);
   await db.query(aql`FOR a IN abbreviations REMOVE a IN abbreviations`);
   if (abbreviationDocs.length > 0) {
     await db.query(aql`FOR d IN ${abbreviationDocs} INSERT d INTO abbreviations`);
   }
   const boundCount = abbreviationDocs.filter((d) => d.bindingKey !== null).length;
   console.log(
-    `rebuilt "abbreviations": ${abbreviationDocs.length} pair doc(s) ` +
-      `from ${pairRows.length} current entry version(s) and ` +
-      `${bindingRows.length} language grammar(s) (${boundCount} bound)`,
+    `rebuilt "abbreviations": ${abbreviationDocs.length} row(s) ` +
+      `from ${bindingRows.length} language grammar(s) (${boundCount} bound) ` +
+      `and ${usageRows.length} current entry version(s)`,
   );
 
   console.log("database init complete.");

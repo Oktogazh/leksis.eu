@@ -1,26 +1,17 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-  type ChangeEvent,
-  type KeyboardEvent,
-  type PointerEvent as ReactPointerEvent,
-  type ReactNode,
-} from "react";
+import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  annotationConflicts,
+  applicableAxes,
   categoryRefinements,
   categoryRoots,
-  formatAbbreviationRef,
   LEKSIS_ENTRY_COLLECTION,
-  type AbbreviationRef,
   type AbbreviationView,
   type Grammar,
+  type GrammarValue,
+  type ResolvedAxis,
   abbreviationLookup,
   parseTagInput,
   tagKey,
-  type EntryAnnotation,
   type Tag,
   type EntryInflectedForm,
   type EntryReference,
@@ -50,326 +41,173 @@ import {
 } from "../lib/definition-tree";
 import { endonym } from "./LanguageSelector";
 
-interface AnnotationTag extends EntryAnnotation {
-  /** Stable identity across reorders — chips keep their DOM node while dragged. */
-  id: number;
-}
-
 let nextAnnotationId = 0;
 
-function toAnnotationTags(annotations: EntryAnnotation[]): AnnotationTag[] {
-  return annotations.map((a) => ({ ...a, id: nextAnnotationId++ }));
-}
-
-/** Back to the record shape: drop the editor identity and an empty short form. */
-function toRecordAnnotation({ short, long }: EntryAnnotation): EntryAnnotation {
-  return short !== undefined && short.trim() !== "" ? { short, long } : { long };
-}
-
 /**
- * Reorderable chip row for short/long annotation pairs (grammatical
- * categories, definition notes). Each chip shows the short form; the long
- * form appears in a tooltip on hover/focus, or on tap/click where there is
- * no hover. Chips are reordered by dragging (pointer events, so mouse and
- * touch alike — a click is only a reveal if the pointer never crossed the
- * drag threshold) or with the arrow keys, and removed with their × button.
- * Order is meaningful: it becomes the order of the record's array.
+ * Which form this is: one value picked per declared axis, assembled into a
+ * single tag — the form's address in the paradigm ("gen. pl." is one bundle
+ * carrying Case=Gen and Number=Plur).
+ *
+ * The axes are **orthogonal dimensions, not a narrowing tree**: unlike the
+ * inherent features of a category, where each choice conditions what is
+ * offered next, a cell address takes one value from each axis independently.
+ * So this offers a selector per axis rather than reusing the category
+ * editor's walk.
+ *
+ * When the language has declared no axis for this entry's category, it
+ * degrades to the flat picker of bound tags plus manual entry — the same
+ * documented degradation the category editor has, and what keeps a form
+ * labellable in a language whose grammar nobody has declared.
  */
-function AnnotationTagList({
-  tags,
-  onReorder,
-  onRemove,
-  conflictsFor,
+function FormTagEditor({
+  tag,
+  onChange,
+  axes,
+  abbreviations,
 }: {
-  tags: AnnotationTag[];
-  onReorder: (from: number, to: number) => void;
-  onRemove: (id: number) => void;
-  /** Conflict partners of a chip's pair, for the ⚠ flag; absent = no data. */
-  conflictsFor?: (tag: AnnotationTag) => AbbreviationRef[];
+  tag: Tag | null;
+  onChange: (tag: Tag | null) => void;
+  axes: ResolvedAxis[];
+  abbreviations: AbbreviationView[];
 }) {
   const { t } = useTranslation();
-  const [revealedId, setRevealedId] = useState<number | null>(null);
-  const [draggingId, setDraggingId] = useState<number | null>(null);
-  const chipRefs = useRef(new Map<number, HTMLButtonElement>());
-  // Window-level listeners see the latest order through this ref, not through
-  // the closure they were created in.
-  const tagsRef = useRef(tags);
-  tagsRef.current = tags;
-  const suppressClick = useRef(false);
+  const [manual, setManual] = useState("");
+  const lookup = abbreviationLookup(abbreviations);
+  const parsed = parseTagInput(manual);
+  const feats = tag?.feats ?? [];
 
-  function startDrag(event: ReactPointerEvent<HTMLButtonElement>, id: number) {
-    if (event.pointerType === "mouse" && event.button !== 0) return;
-    suppressClick.current = false;
-    const startX = event.clientX;
-    const startY = event.clientY;
-    let moved = false;
-
-    // Listeners live on window rather than pointer capture: reordering moves
-    // the chip in the DOM, which would release the capture mid-drag.
-    const onMove = (ev: PointerEvent) => {
-      if (!moved) {
-        if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 6) return;
-        moved = true;
-        setDraggingId(id);
-        setRevealedId(null);
-      }
-      const current = tagsRef.current;
-      const from = current.findIndex((tag) => tag.id === id);
-      const to = current.findIndex((tag) => {
-        const el = chipRefs.current.get(tag.id);
-        if (!el) return false;
-        const r = el.getBoundingClientRect();
-        return (
-          ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom
-        );
-      });
-      if (to !== -1 && from !== -1 && to !== from) onReorder(from, to);
-    };
-    const onUp = () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
-      suppressClick.current = moved;
-      setDraggingId(null);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onUp);
+  /** Set or clear one axis's value, leaving the other axes alone. */
+  function pick(feature: string, value: GrammarValue | null) {
+    const rest = feats.filter((f) => f.feature !== feature);
+    const next =
+      value === null
+        ? rest
+        : [
+            ...rest,
+            {
+              feature: value.feature,
+              value: value.value,
+              ...(value.scheme !== undefined ? { scheme: value.scheme } : {}),
+            },
+          ];
+    onChange(
+      next.length === 0 && tag?.upos === undefined
+        ? null
+        : {
+            ...(tag?.upos !== undefined ? { upos: tag.upos } : {}),
+            ...(next.length > 0 ? { feats: next } : {}),
+          },
+    );
   }
 
-  function onChipClick(id: number) {
-    if (suppressClick.current) {
-      suppressClick.current = false;
-      return;
-    }
-    setRevealedId((prev) => (prev === id ? null : id));
-  }
-
-  function onChipKeyDown(event: KeyboardEvent<HTMLButtonElement>, id: number) {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-    event.preventDefault();
-    const from = tags.findIndex((tag) => tag.id === id);
-    const to = event.key === "ArrowLeft" ? from - 1 : from + 1;
-    if (from !== -1 && to >= 0 && to < tags.length) onReorder(from, to);
-  }
+  const bound = abbreviations.filter((a) => a.tag !== undefined && a.long !== undefined);
 
   return (
-    <ul className="mt-2 flex flex-wrap items-center gap-1.5">
-      {tags.map((tag) => {
-        const conflicts = conflictsFor?.(tag) ?? [];
-        return (
-        <li
-          key={tag.id}
-          className={`group relative flex items-center rounded-full border bg-surface-muted/60 ${
-            draggingId === tag.id ? "opacity-70 ring-2" : ""
-          } ${conflicts.length > 0 ? "border-red-400" : ""}`}
-        >
-          {/* No tooltip without a short form — the chip already shows the
-              full form, so there is nothing to reveal. */}
-          {tag.short !== undefined && (
-            <span
-              role="tooltip"
-              className={`pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 -translate-x-1/2 whitespace-nowrap rounded border bg-surface px-2 py-1 text-xs text-content shadow-sm ${
-                revealedId === tag.id ? "" : "hidden group-hover:block group-focus-within:block"
-              }`}
-            >
-              {tag.long}
-              {conflicts.length > 0 && (
-                <span className="block text-red-600">
-                  {t("createEntry.conflictWarning", {
-                    pairs: conflicts.map(formatAbbreviationRef).join(", "),
-                  })}
-                </span>
-              )}
-            </span>
-          )}
+    <div className="mt-2">
+      {tag !== null && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <ul className="flex flex-wrap items-center gap-1">
+            <TagChips tags={[tag]} lookup={lookup} />
+          </ul>
           <button
             type="button"
-            ref={(el) => {
-              if (el) chipRefs.current.set(tag.id, el);
-              else chipRefs.current.delete(tag.id);
-            }}
-            onPointerDown={(e) => startDrag(e, tag.id)}
-            onClick={() => onChipClick(tag.id)}
-            onKeyDown={(e) => onChipKeyDown(e, tag.id)}
-            aria-label={tag.short !== undefined ? `${tag.short} — ${tag.long}` : tag.long}
-            title={t("createEntry.annotationChipHint")}
-            className="cursor-grab touch-none select-none rounded-l-full py-1 pl-2.5 pr-1 font-mono text-xs text-content active:cursor-grabbing"
-          >
-            {conflicts.length > 0 && <span aria-hidden="true">⚠ </span>}
-            {tag.short ?? tag.long}
-          </button>
-          <button
-            type="button"
-            onClick={() => onRemove(tag.id)}
-            aria-label={t("createEntry.removeAnnotation", { annotation: tag.long })}
-            title={t("createEntry.removeAnnotation", { annotation: tag.long })}
-            className="rounded-r-full py-1 pl-1 pr-2 text-sm leading-none text-content-subtle hover:text-content"
+            onClick={() => onChange(null)}
+            aria-label={t("createEntry.formTagClear")}
+            title={t("createEntry.formTagClear")}
+            className="text-content-subtle hover:text-red-600"
           >
             ×
           </button>
-        </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-/**
- * Chips + long/short input pair for one annotation list. Used for the
- * entry's grammatical categories and for each definition's notes; owns its
- * draft inputs, the parent only sees the committed, ordered list. When the
- * language's abbreviation list is provided, it powers the input
- * suggestions, the cross-prefill (an exactly matching form fills in its
- * counterpart) and the ⚠ conflict flag on chips.
- */
-function AnnotationEditor({
-  idPrefix,
-  tags,
-  onChange,
-  addLabel,
-  suggestions = [],
-}: {
-  idPrefix: string;
-  tags: AnnotationTag[];
-  onChange: (tags: AnnotationTag[]) => void;
-  addLabel: string;
-  /** The language's abbreviation pairs, most used first. */
-  suggestions?: AbbreviationView[];
-}) {
-  const { t } = useTranslation();
-  const [draftShort, setDraftShort] = useState("");
-  const [draftLong, setDraftLong] = useState("");
-  // Only the full form is required: a lone form is always the long one, so
-  // nothing dangles on hover. The abbreviation is optional.
-  const canAdd = draftLong.trim() !== "";
-
-  function add() {
-    if (!canAdd) return;
-    const long = draftLong.trim();
-    const short = draftShort.trim();
-    onChange([...tags, { id: nextAnnotationId++, ...(short !== "" ? { short } : {}), long }]);
-    setDraftShort("");
-    setDraftLong("");
-  }
-
-  // Cross-prefill: a value exactly matching a known form fills the other
-  // field, when it is still empty and the counterpart is unambiguous.
-  function onLongInput(value: string) {
-    setDraftLong(value);
-    if (draftShort.trim() !== "") return;
-    const shorts = [
-      ...new Set(
-        suggestions.flatMap((s) =>
-          s.long === value.trim() && s.short !== undefined ? [s.short] : [],
-        ),
-      ),
-    ];
-    if (shorts.length === 1) setDraftShort(shorts[0]!);
-  }
-
-  function onShortInput(value: string) {
-    setDraftShort(value);
-    if (draftLong.trim() !== "") return;
-    const longs = [
-      ...new Set(suggestions.flatMap((s) => (s.short === value.trim() ? [s.long] : []))),
-    ];
-    if (longs.length === 1) setDraftLong(longs[0]!);
-  }
-
-  function onInputKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key !== "Enter") return;
-    event.preventDefault();
-    add();
-  }
-
-  function reorder(from: number, to: number) {
-    const next = [...tags];
-    const [moved] = next.splice(from, 1);
-    if (moved === undefined) return;
-    next.splice(to, 0, moved);
-    onChange(next);
-  }
-
-  return (
-    <>
-      {tags.length > 0 && (
-        <AnnotationTagList
-          tags={tags}
-          onReorder={reorder}
-          onRemove={(id) => onChange(tags.filter((tag) => tag.id !== id))}
-          conflictsFor={(tag) => annotationConflicts(tag, suggestions)}
-        />
+        </div>
       )}
-      {/* Full form first — it is the required half; the abbreviation besides
-          it is optional. */}
-      <div className="mt-2 flex items-center gap-2">
-        <label className="sr-only" htmlFor={`${idPrefix}-long`}>
-          {t("createEntry.annotationLongLabel")}
-        </label>
+
+      {axes.length > 0
+        ? axes.map((axis) => {
+            const current = feats.find((f) => f.feature === axis.feature.feature);
+            return (
+              <div key={axis.feature.feature} className="mt-2">
+                <p className="text-xs text-content-subtle">{axis.feature.label.long}</p>
+                <ul className="mt-1 flex flex-wrap gap-1.5">
+                  {axis.values.map((value) => {
+                    const active = current?.value === value.value;
+                    return (
+                      <li key={value.value}>
+                        <button
+                          type="button"
+                          onClick={() => pick(axis.feature.feature, active ? null : value)}
+                          title={value.label.long}
+                          className={
+                            active
+                              ? "rounded-full border border-primary bg-surface px-2.5 py-1 font-mono text-xs font-medium text-primary"
+                              : "rounded-full border border-dashed px-2.5 py-1 font-mono text-xs text-content-muted hover:border-primary hover:text-primary"
+                          }
+                        >
+                          {value.label.short ?? value.label.long}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })
+        : bound.length > 0 && (
+            <ul className="mt-2 flex flex-wrap gap-1.5">
+              {bound.map((option, i) => (
+                <li key={i}>
+                  <button
+                    type="button"
+                    onClick={() => onChange(option.tag!)}
+                    title={option.long}
+                    className="rounded-full border border-dashed px-2.5 py-1 font-mono text-xs text-content-muted hover:border-primary hover:text-primary"
+                  >
+                    + {option.short ?? option.long}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+      <div className="mt-2 flex gap-2">
         <input
-          id={`${idPrefix}-long`}
-          value={draftLong}
-          onChange={(e) => onLongInput(e.target.value)}
-          onKeyDown={onInputKeyDown}
-          placeholder={t("createEntry.annotationLongPlaceholder")}
-          list={`${idPrefix}-long-options`}
-          className="min-w-0 flex-1 rounded-lg border bg-surface px-3 py-2 text-sm text-content outline-none placeholder:text-content-subtle focus:ring-2"
+          value={manual}
+          onChange={(e) => setManual(e.target.value)}
+          aria-label={t("createEntry.formTagManualLabel")}
+          placeholder={t("createEntry.categoryManualPlaceholder")}
+          className="w-full min-w-0 rounded-lg border bg-surface px-3 py-2 text-sm text-content outline-none placeholder:text-content-subtle focus:ring-2"
         />
-        <datalist id={`${idPrefix}-long-options`}>
-          {[...new Set(suggestions.map((s) => s.long))].map((long) => (
-            <option key={long} value={long} />
-          ))}
-        </datalist>
-        <label className="sr-only" htmlFor={`${idPrefix}-short`}>
-          {t("createEntry.annotationShortLabel")}
-        </label>
-        <input
-          id={`${idPrefix}-short`}
-          value={draftShort}
-          onChange={(e) => onShortInput(e.target.value)}
-          onKeyDown={onInputKeyDown}
-          placeholder={t("createEntry.annotationShortPlaceholder")}
-          list={`${idPrefix}-short-options`}
-          className="w-20 min-w-0 shrink-0 rounded-lg border bg-surface px-2 py-2 font-mono text-sm text-content outline-none placeholder:text-content-subtle focus:ring-2 sm:w-24"
-        />
-        <datalist id={`${idPrefix}-short-options`}>
-          {[
-            ...new Set(suggestions.flatMap((s) => (s.short !== undefined ? [s.short] : []))),
-          ].map((short) => (
-            <option key={short} value={short} />
-          ))}
-        </datalist>
         <button
           type="button"
-          onClick={add}
-          disabled={!canAdd}
-          aria-label={addLabel}
-          title={addLabel}
-          className="shrink-0 rounded-lg border px-3 py-2 text-sm text-content hover:bg-surface-muted disabled:opacity-50"
+          disabled={parsed === null}
+          onClick={() => {
+            if (parsed === null) return;
+            onChange(parsed);
+            setManual("");
+          }}
+          className="shrink-0 rounded-lg border px-3 py-2 text-sm text-content hover:border-primary disabled:opacity-50"
         >
-          ＋
+          {t("createEntry.formTagSet")}
         </button>
       </div>
-    </>
+    </div>
   );
 }
 
 /**
- * Editor for the entry's other grammatical forms: each row is an
- * abbreviation (drawn from the same per-language pool as categories and
- * notes) plus the form's spelling. The abbreviation reuses the single-pair
- * AnnotationEditor; a row is only published when both its label and form are
- * filled in.
+ * Editor for the entry's other grammatical forms: each row is the tag saying
+ * which form it is, plus the form's spelling. A row is only published when
+ * both are filled in.
  */
 function OtherFormsEditor({
   forms,
   onChange,
-  suggestions,
+  axes,
+  abbreviations,
 }: {
   forms: OtherFormDraft[];
   onChange: (forms: OtherFormDraft[]) => void;
-  suggestions: AbbreviationView[];
+  axes: ResolvedAxis[];
+  abbreviations: AbbreviationView[];
 }) {
   const { t } = useTranslation();
   return (
@@ -399,25 +237,17 @@ function OtherFormsEditor({
               ×
             </button>
           </div>
-          <AnnotationEditor
-            idPrefix={`entry-otherform-annotation-${row.id}`}
-            tags={row.annotation !== null ? [row.annotation] : []}
-            // A form carries exactly one label: adding a new one replaces it.
-            onChange={(tags) =>
-              onChange(
-                forms.map((f) =>
-                  f.id === row.id ? { ...f, annotation: tags[tags.length - 1] ?? null } : f,
-                ),
-              )
-            }
-            addLabel={t("createEntry.addOtherFormLabel")}
-            suggestions={suggestions}
+          <FormTagEditor
+            tag={row.tag}
+            onChange={(tag) => onChange(forms.map((f) => (f.id === row.id ? { ...f, tag } : f)))}
+            axes={axes}
+            abbreviations={abbreviations}
           />
         </div>
       ))}
       <button
         type="button"
-        onClick={() => onChange([...forms, { id: nextAnnotationId++, annotation: null, form: "" }])}
+        onClick={() => onChange([...forms, { id: nextAnnotationId++, tag: null, form: "" }])}
         className="mt-2 text-sm text-primary hover:text-primary-hover"
       >
         {t("createEntry.addOtherForm")}
@@ -601,29 +431,27 @@ function StringList({
   );
 }
 
-/** Editor leaf payload: one definition's note chips, plain notes and text. */
+/** Editor leaf payload: one definition's notes and text. */
 interface DefinitionDraft {
-  annotations: AnnotationTag[];
   notes: string[];
   text: string;
 }
 
-/** Editor group-node payload: a heading's note chips and plain notes (no text). */
+/** Editor group-node payload: a heading's notes (no text). */
 interface GroupDraft {
-  annotations: AnnotationTag[];
   notes: string[];
 }
 
-/** Editor row for one other grammatical form: an abbreviation + the spelling. */
+/** Editor row for one other grammatical form: which form it is + the spelling. */
 interface OtherFormDraft {
   id: number;
-  annotation: AnnotationTag | null;
+  tag: Tag | null;
   form: string;
 }
 
 let nextNodeId = 0;
 const mintNodeId = () => nextNodeId++;
-const emptyGroupDraft = (): GroupDraft => ({ annotations: [], notes: [] });
+const emptyGroupDraft = (): GroupDraft => ({ notes: [] });
 
 /**
  * The entry's grammatical categories: tags, picked from what the language has
@@ -879,15 +707,13 @@ export function EntryEditorDialog({
   const [pickedTag, setPickedTag] = useState(language?.tag ?? initial?.languageID ?? "");
   const [spellings, setSpellings] = useState<string[]>(initial?.orthography ?? [word]);
   const [transcription, setTranscription] = useState(initial?.transcription ?? "");
-  // `categories` is tag-only now; free labels moved to `annotations`.
+  // Every annotation site is tag-only now: an entry carries no labels of its
+  // own, and a reader sees whatever the language bound each tag to.
   const [categories, setCategories] = useState<Tag[]>(() => initial?.categories ?? []);
-  const [entryAnnotations, setEntryAnnotations] = useState<AnnotationTag[]>(() =>
-    toAnnotationTags(initial?.annotations ?? []),
-  );
   const [otherForms, setOtherForms] = useState<OtherFormDraft[]>(() =>
     (initial?.otherForms ?? []).map((f) => ({
       id: nextAnnotationId++,
-      annotation: { ...f.annotation, id: nextAnnotationId++ },
+      tag: f.tag,
       form: f.form,
     })),
   );
@@ -895,16 +721,12 @@ export function EntryEditorDialog({
     initial
       ? fromRecordDefinitions(
           initial.definitions,
-          (d) => ({
-            annotations: toAnnotationTags(d.annotations),
-            notes: d.notes ?? [],
-            text: d.text ?? "",
-          }),
-          (d) => ({ annotations: toAnnotationTags(d.annotations), notes: d.notes ?? [] }),
+          (d) => ({ notes: d.notes ?? [], text: d.text ?? "" }),
+          (d) => ({ notes: d.notes ?? [] }),
           emptyGroupDraft,
           mintNodeId,
         )
-      : [{ kind: "leaf", id: mintNodeId(), payload: { annotations: [], notes: [], text: "" } }],
+      : [{ kind: "leaf", id: mintNodeId(), payload: { notes: [], text: "" } }],
   );
   const [entryNotes, setEntryNotes] = useState<string[]>(initial?.notes ?? []);
   const [references, setReferences] = useState<EntryReference[]>(initial?.references ?? []);
@@ -923,6 +745,15 @@ export function EntryEditorDialog({
   const [grammar, setGrammar] = useState<Grammar | null>(null);
   /** Current entries in the target language sharing a spelling with a fresh entry, for the duplicate warning. */
   const [duplicates, setDuplicates] = useState<EntryView[]>([]);
+
+  /**
+   * What this entry's forms may vary over: the axes the language declares for
+   * the categories it has been given. Empty until a category is picked — which
+   * is the cascade doing its work, since a form's dimensions follow from what
+   * kind of word it is — and empty for a language that has declared none, where
+   * the form editor falls back to its flat picker.
+   */
+  const formAxes = grammar === null ? [] : applicableAxes(grammar, categories);
 
   const target = language ?? languages.find((l) => l.tag === pickedTag) ?? null;
   const targetTag = target?.tag ?? null;
@@ -1006,31 +837,27 @@ export function EntryEditorDialog({
     .map((r) => ({ text: r.text.trim(), ...(r.url && r.url.trim() !== "" ? { url: r.url.trim() } : {}) }))
     .filter((r) => r.text !== "");
   const cleanOtherForms: EntryInflectedForm[] = otherForms
-    .filter((f) => f.annotation !== null && f.form.trim() !== "")
-    .map((f) => ({ annotation: toRecordAnnotation(f.annotation!), form: f.form.trim() }));
+    .filter((f) => f.tag !== null && f.form.trim() !== "")
+    .map((f) => ({ tag: f.tag!, form: f.form.trim() }));
   const cleanNodeNotes = (notes: string[]) => notes.map((s) => s.trim()).filter((s) => s !== "");
   // Serialize the editor tree to record definitions under the tree place
-  // convention: leaves become definitions with text, annotated group nodes
-  // become group items (notes only), bare groups stay implicit.
+  // convention: leaves become definitions with text, group nodes carrying
+  // notes become group items, bare groups stay implicit.
   const cleanDefinitions = toRecordDefinitions(
     definitions,
     (payload) =>
       payload.text.trim() === ""
         ? null
         : {
-            annotations: payload.annotations.map(toRecordAnnotation),
             ...(cleanNodeNotes(payload.notes).length > 0
               ? { notes: cleanNodeNotes(payload.notes) }
               : {}),
             text: payload.text.trim(),
           },
     (group) => {
-      const annotations = group.annotations.map(toRecordAnnotation);
       const notes = cleanNodeNotes(group.notes);
       // A group is only worth an explicit record item when it carries content.
-      return annotations.length === 0 && notes.length === 0
-        ? null
-        : { annotations, ...(notes.length > 0 ? { notes } : {}) };
+      return notes.length === 0 ? null : { notes };
     },
   );
   // Last guard before writing: the tree must serialize to a strictly valid
@@ -1050,9 +877,6 @@ export function EntryEditorDialog({
       orthography: cleanSpellings,
       ...(transcription.trim() !== "" ? { transcription: transcription.trim() } : {}),
       categories,
-      ...(entryAnnotations.length > 0
-        ? { annotations: entryAnnotations.map(toRecordAnnotation) }
-        : {}),
       ...(cleanOtherForms.length > 0 ? { otherForms: cleanOtherForms } : {}),
       definitions: cleanDefinitions,
       ...(cleanNotes.length > 0 ? { notes: cleanNotes } : {}),
@@ -1086,14 +910,6 @@ export function EntryEditorDialog({
   // so authors see the published numbering while they arrange definitions.
   const definitionLabels = editTreeLabels(definitions);
   const leafCount = collectLeaves(definitions).length;
-
-  // Which nodes have their (optional) abbreviation field revealed. It is
-  // hidden by default — most definitions carry none — and opened by the
-  // "+ add an abbreviation" action or automatically when the node already has
-  // abbreviations (e.g. when proposing changes to an existing entry).
-  const [abbrevOpen, setAbbrevOpen] = useState<Set<number>>(new Set());
-  const revealAbbrev = (id: number) =>
-    setAbbrevOpen((prev) => new Set(prev).add(id));
 
   function moveButton(label: string, glyph: string, onClick: () => void) {
     return (
@@ -1143,18 +959,11 @@ export function EntryEditorDialog({
     );
   }
 
-  // Shared notes area for a node: the free-text notes list, plus an OPTIONAL
-  // abbreviation editor that stays hidden behind a "+ add an abbreviation"
-  // action until it is opened (or the node already carries abbreviations).
-  function nodeNotes(
-    idPrefix: string,
-    annotations: AnnotationTag[],
-    notes: string[],
-    setAnnotations: (annotations: AnnotationTag[]) => void,
-    setNotes: (notes: string[]) => void,
-    revealKey: number,
-  ) {
-    const showAbbrev = annotations.length > 0 || abbrevOpen.has(revealKey);
+  // A node's free-text notes. Sense-level *tags* have a place on the record
+  // (a definition node's own `categories`) but no editor yet: that is deferred
+  // to the first contributor who asks for one, and the shape is already there
+  // when they do.
+  function nodeNotes(idPrefix: string, notes: string[], setNotes: (notes: string[]) => void) {
     return (
       <div className="mt-2">
         <StringList
@@ -1166,26 +975,6 @@ export function EntryEditorDialog({
           addLabel={t("createEntry.addPlainNote")}
           removeLabel={t("createEntry.removePlainNote")}
         />
-        {showAbbrev ? (
-          <div className="mt-2">
-            <p className="text-xs text-content-subtle">{t("createEntry.notesHelp")}</p>
-            <AnnotationEditor
-              idPrefix={`${idPrefix}-note`}
-              tags={annotations}
-              onChange={setAnnotations}
-              addLabel={t("createEntry.addNote")}
-              suggestions={abbreviations}
-            />
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => revealAbbrev(revealKey)}
-            className="mt-1 text-sm text-primary hover:text-primary-hover"
-          >
-            {t("createEntry.addAbbreviation")}
-          </button>
-        )}
       </div>
     );
   }
@@ -1211,15 +1000,8 @@ export function EntryEditorDialog({
               </span>
             </div>
             <p className="mt-0.5 text-xs text-content-subtle">{t("createEntry.groupNotesHelp")}</p>
-            {nodeNotes(
-              `entry-group-${node.id}`,
-              node.group.annotations,
-              node.group.notes,
-              (annotations) =>
-                setDefinitions((prev) => updateGroup(prev, node.id, (g) => ({ ...g, annotations }))),
-              (notes) =>
-                setDefinitions((prev) => updateGroup(prev, node.id, (g) => ({ ...g, notes }))),
-              node.id,
+            {nodeNotes(`entry-group-${node.id}`, node.group.notes, (notes) =>
+              setDefinitions((prev) => updateGroup(prev, node.id, (g) => ({ ...g, notes }))),
             )}
             {renderDefinitionNodes(node.children)}
           </div>
@@ -1248,15 +1030,8 @@ export function EntryEditorDialog({
             rows={2}
             className="mt-2 w-full min-w-0 rounded-lg border bg-surface px-3 py-2 text-sm text-content outline-none placeholder:text-content-subtle focus:ring-2"
           />
-          {nodeNotes(
-            `entry-definition-${node.id}`,
-            node.payload.annotations,
-            node.payload.notes,
-            (annotations) =>
-              setDefinitions((prev) => updateLeaf(prev, node.id, (p) => ({ ...p, annotations }))),
-            (notes) =>
-              setDefinitions((prev) => updateLeaf(prev, node.id, (p) => ({ ...p, notes }))),
-            node.id,
+          {nodeNotes(`entry-definition-${node.id}`, node.payload.notes, (notes) =>
+            setDefinitions((prev) => updateLeaf(prev, node.id, (p) => ({ ...p, notes }))),
           )}
         </div>
       );
@@ -1401,29 +1176,14 @@ export function EntryEditorDialog({
 
           <fieldset className="mt-5">
             <legend className="text-sm font-medium text-content">
-              {t("createEntry.annotationsLegend")}
-            </legend>
-            <p className="mt-1 text-xs text-content-subtle">
-              {t("createEntry.annotationsHelp")}
-            </p>
-            <AnnotationEditor
-              idPrefix="entry-annotation"
-              tags={entryAnnotations}
-              onChange={setEntryAnnotations}
-              addLabel={t("createEntry.addAnnotation")}
-              suggestions={abbreviations}
-            />
-          </fieldset>
-
-          <fieldset className="mt-5">
-            <legend className="text-sm font-medium text-content">
               {t("createEntry.otherFormsLegend")}
             </legend>
             <p className="mt-1 text-xs text-content-subtle">{t("createEntry.otherFormsHelp")}</p>
             <OtherFormsEditor
               forms={otherForms}
               onChange={setOtherForms}
-              suggestions={abbreviations}
+              axes={formAxes}
+              abbreviations={abbreviations}
             />
           </fieldset>
 
@@ -1440,7 +1200,7 @@ export function EntryEditorDialog({
               onClick={() =>
                 setDefinitions((prev) => [
                   ...prev,
-                  { kind: "leaf", id: mintNodeId(), payload: { annotations: [], notes: [], text: "" } },
+                  { kind: "leaf", id: mintNodeId(), payload: { notes: [], text: "" } },
                 ])
               }
               className="mt-2 text-sm text-primary hover:text-primary-hover"

@@ -5,7 +5,7 @@ description: >
   out where it currently stands, executing the next milestone, and keeping every step aligned with the
   white paper's bottom-up vision and recorded in the right place.
   Use this skill whenever the work is about MOVING THE PROJECT FORWARD rather than just recalling facts:
-  "what's next", "where are we", "let's start week N", "is this in scope", "should I build X now or later",
+  "what's next", "where are we", "let's start the next loop", "is this in scope", "should I build X now or later",
   planning a milestone, deciding whether a feature belongs in the prototype, or recording a decision
   (CHANGELOG / ADR / amendment). Also holds the north star for the **morphology arc** — grammatical
   tagging (UPOS/FEATS/UniMorph) and language-level inflection paradigms — so load it before designing
@@ -56,31 +56,54 @@ Before proposing any next step, establish where the project actually is:
    continuous**: the developer tags several times a day, so master == production or hours
    from it. Treat everything committed as released (or about to be); never assume a
    long-lived "implemented but unreleased" state.
-3. **Skim the timeline table** (below) to map the current milestone to a week/loop and see what's next.
-4. **Check open ADR action items** (`docs/adr/*.md`) for unfinished infra obligations (e.g. backups before week 3).
+3. **Skim the loop tables** (below) to place the current milestone and see what's next.
+4. **Check open ADR action items** (`docs/adr/*.md`) for unfinished infra obligations.
 
-State the current position in one sentence ("Week N complete, next is Week N+1: <theme>") before doing anything else.
+State the current position in one sentence ("Loop N complete, next is <theme>") before doing anything else.
 
-### Development timeline (8 weeks, 10–20h/week, solo dev)
+### The loops
 
-| Week | Theme | Milestone (definition of done) |
+**A loop is a unit of work, not a unit of time.** The original plan called these "weeks" on a
+10–20h/week budget; that framing is retired. Loops are finished when their milestone is verified
+on the live URL, and several may land in a day or one may take a fortnight. Do not infer a
+schedule from a number, do not promise a date, and do not treat a high loop number as "late".
+
+**Two sequences run side by side.** The *content* loops grow the dictionary outward; the
+*grammar* loops (the morphology arc, below) grow the entry deeper. They interleave — a grammar
+loop may land between two content loops — but a grammar loop never *replaces* a content one, and
+the arc must not stall loops 5 and 6.
+
+**Content loops**
+
+| # | Theme | Milestone (definition of done) |
 |---|---|---|
-| 1 | Foundation + CI/CD | Live URL + green pipeline ✅ |
-| 2 | AT Proto auth | Log in with a Bluesky account (OAuth, real session) ✅ |
-| 3 | Loop 1: Languages | Create and browse languages; **firehose consumption starts** ✅ |
-| 4 | Loop 2: Entries + orthography | Create, edit, delete entries ✅ |
-| 5 | Loop 3: Definitions | Look up a word and read its definitions ✅ |
-| 6 | Loop 4: Structure + grammar | Hierarchical definitions + harvested grammatical tags — ✅ (tree-shaped definitions + abbreviations read model shipped v0.8; other forms, per-node notes, references added) |
-| 7 | Loop 5: Translations | Cross-language graph traversal |
-| 8 | Search + polish + release | Public collaborator demo |
+| 0 | Foundation + CI/CD | Live URL + green pipeline ✅ |
+| 0 | AT Proto auth | Log in with a Bluesky account (OAuth, real session) ✅ |
+| 1 | Languages | Create and browse languages; **firehose consumption starts** ✅ |
+| 2 | Entries + orthography | Create, edit, delete entries ✅ |
+| 3 | Definitions | Look up a word and read its definitions ✅ |
+| 4 | Structure + grammar | Hierarchical definitions + a harvested tag worklist ✅ (v0.8) |
+| 5 | Translations | Cross-language graph traversal |
+| 6 | Search + polish + release | Public collaborator demo |
+
+**Grammar loops** — the morphology arc's layers, one loop each. See the arc section for scope.
+
+| Layer | Declares | Status |
+|---|---|---|
+| 1 | Primitives — the atoms this language uses | ✅ ADR-0006 |
+| 2 | Inherent combinations — what a headword *is* | ✅ ADR-0007 |
+| 3 | Axes — what its forms *vary over* | ✅ ADR-0008 |
+| 4 | Layout — the shape of the tables | ← next |
+| 5 | Rules — generation filling the cells | |
+| 6 | Export — Hunspell, UniMorph, CoNLL-U | |
 
 > Confirm the actual current position from `CHANGELOG.md` + `git tag` at orient time (step 1) —
-> these ✅ marks are a convenience, not the source of truth. As of v0.8 the prototype is past
-> Loop 4's core; Loop 5 (translations) is the next unbuilt loop.
+> these ✅ marks are a convenience, not the source of truth. As of ADR-0008 the grammar arc is
+> through layer 3; content loop 5 (translations) is the next unbuilt content loop.
 
-> Week 3 is the hinge: once the AppView consumes `subscribeRepos`, it must stay online and **real data
-> starts accumulating**. ADR-0001 action items #4 (deploy secrets) and #5 (off-box backups) must be done
-> *before* week 3, not after.
+> **Loop 1 was the hinge**: once the AppView consumes the firehose it must stay online and **real
+> data accumulates**. ADR-0001 action items #4 (deploy secrets) and #5 (off-box backups) were due
+> *before* that point — check them at orient time rather than assuming.
 
 ---
 
@@ -136,7 +159,7 @@ Each feature milestone follows this sequence. Do them in order; don't skip the d
 
 **Principles for the loop:**
 - **Deploy on day one, every loop.** A deployed empty shell is a working pipeline. A pipeline that breaks
-  in week 6 is a crisis; in week 1 it's a Tuesday. End every loop on the live URL, not localhost.
+  late is a crisis; on day one it's a Tuesday. End every loop on the live URL, not localhost.
 - **Smallest schema slice.** Only widen the `eu.leksis.entry` lexicon by what the current loop renders.
   The full lexicon (etymology, cognates, dialectal forms, recordings) is aspirational — pull fields in
   loop by loop, not all at once.
@@ -163,7 +186,7 @@ its home:
 
 | What changed | Where it's recorded | Notes |
 |---|---|---|
-| A feature shipped / a milestone reached | **`CHANGELOG.md`** under the milestone heading | One section per weekly milestone; mirror the existing structure. |
+| A feature shipped / a milestone reached | **`CHANGELOG.md`** under the milestone heading | One section per loop (content or grammar); mirror the existing structure. |
 | An architecture/tech choice with trade-offs | **New `docs/adr/NNNN-*.md`** | Status, Date, Deciders, Context, Decision, Consequences, Action Items. Supersede prior ADRs explicitly. |
 | A design decision diverging from the white paper | An **amendment** (in the `Oktogazh.github.io` paper folder) and/or an ADR | Keep the paper's amendments file in sync so the public vision doc doesn't drift silently. |
 | A change to *what is true now* (stack, schema, lexicon, status line) | Update the **`leksis` context skill** | The context skill must always describe present reality, including its "Status" line. |
@@ -178,8 +201,8 @@ its home:
 
 *Alignment context, not a plan. Detailed planning is deliberately deferred to the top of each layer. This
 section exists so that (a) every loop picks shapes this arc can grow into, and (b) no session invents tagset
-details nobody has actually verified. **Layers 1 and 2 shipped (ADR-0006, ADR-0007); the next thing to
-build is layer 3.***
+details nobody has actually verified. **Layers 1, 2 and 3 shipped (ADR-0006, ADR-0007, ADR-0008); the next
+thing to build is layer 4.***
 
 ### Where it ends up
 
@@ -230,12 +253,19 @@ deliberately short so they stay readable as a checklist.
    tag rides on the entry record; the **language record carries the binding**. Never render a raw tag as
    prose; never store an English label inside an entry. A tag is a **bundle**, not an atom, and provenance
    rides on **each item** of it.
-3. **Free annotation never disappears, and tagging is a property *of* an abbreviation.** Most labels a real
-   dictionary uses (`bot.`, `arch.`, `fam.`, register, dialect) have no UD equivalent and stay free pairs
-   forever. The framing is **"a tagged abbreviation", not "a labelled tag"** — so binding does not create a
-   second kind of thing, and ADR-0004's `abbreviations` read model stays the single home rather than gaining
-   a parallel tag collection. An entry in a language whose tagset nobody has declared must stay fully
-   editable.
+3. **A label lives on the language, never on an entry — and tagging is a property *of* an abbreviation.**
+   The framing is **"a tagged abbreviation", not "a labelled tag"** — binding does not create a second kind
+   of thing, and ADR-0004's `abbreviations` read model stays the single home rather than gaining a parallel
+   tag collection. An entry in a language whose tagset nobody has declared must stay fully editable (through
+   the flat picker and manual tag entry).
+   **⚠ This invariant was REVERSED in part by ADR-0008 and the old wording is retired.** It used to read
+   "free annotation never disappears": that most of what a dictionary prints (`bot.`, `arch.`, `fam.`) has no
+   UD equivalent and stays a free `{long, short}` pair on the entry *forever*. The reasoning was right about
+   **vocabulary** and wrong about **storage**. The freedom stands — a language may name anything, minting a
+   feature where UD has no term — but a label written on an entry is one the language cannot govern:
+   invisible to the worklist, uncorrectable in one place, free to drift between two entries. So free pairs
+   were removed from the entry lexicon at layer 3; an evicted editorial label becomes prose in `notes`, or a
+   minted feature bound on the language record. Do not re-introduce a free-pair field on an entry.
 4. **Four different things live at annotation sites — don't let them collapse into one.**
    (a) a taggable grammatical feature; (b) an untaggable editorial/domain/register label — stays a free
    pair; (c) a free prose remark — `plainNotes`; (d) a **collocation or example phrase** (a word shown
@@ -263,29 +293,36 @@ what it has closed. The closed set, named so a session recognises them on sight:
 **one bundle, one chip** · **exact → decomposition → verbatim** · **the canonical key** ·
 **tag-only `categories`, and the friction is deliberate** · **strict per-site type separation** (replaced the XOR rule at layer 1 — ADR-0006) ·
 **binding is declaring (the cascade)** · **store sparse, display complete** ·
-**harvest-first, "a tagged abbreviation"** · **bindings and layout on the language record, rules in their
+**"a tagged abbreviation"** (harvest-first was retired at layer 3 — labels are single-sourced from the
+language now) · **bindings, axes and layout on the language record, rules in their
 own lexicon** · **no XPOS as storage** · **`VerbForm=` on a VERB** · **the triage gate before minting** ·
 **the no-orphan rule** · **the layer-1 name→value gate** · **the layer-2 inherence gate, and its enumeration
 prompt is not a constraint** · **inflection classes are minted primitives, declared inherent at layer 2 —
 there is no separate class layer and no `appliesTo`** · **a (category, feature) pair is inherent XOR an
 axis** · **live UD candidate lists with degrade-to-manual** · **sense-level tagging on definition nodes** ·
 **`categories` order is the author's, `otherForms` order is the language's** ·
+**an axis names its values in order** · **a label lives on the language, never on an entry** (ADR-0008) ·
 **index expansion at ingest for inflected-form search** (leaning, priced at layer 5).
 
 **Settled by the layer-1 build (ADR-0006), do not re-derive:** `grammar` is `pos` + `features` + `values`,
 with `bindings` reserved for layer-2 *combinations* (≥2 items) — a `values` row names its feature, which is
-the declaration a bundle cannot make. Annotation sites separate **by field, not by union**: `categories`
-(tags) · `annotations` (free pairs) · `notes` (prose), identically on the entry and the definition node.
-The `abbreviations` read model is dual-sourced and keyed on the **label pair**, a tag being an attribute a
-pair acquires. §4.2's progressive narrowing was **cut from layer 1 and is layer 2's to build** — it derives
-from inherence, so it could not ship before the thing it derives from.
+the declaration a bundle cannot make. Annotation sites separate **by field, not by union** — `categories`
+(tags) · `notes` (prose), identically on the entry and the definition node. (Layer 1 had a third,
+`annotations` for free pairs; **layer 3 removed it** — ADR-0008.) The `abbreviations` read model is keyed
+on the **label**, a tag being an attribute it acquires; layer 1 made it dual-sourced and **layer 3 made it
+single-sourced from the language's bindings**. §4.2's progressive narrowing was **cut from layer 1 and is
+layer 2's to build** — it derives from inherence, so it could not ship before the thing it derives from.
 
 ### Still genuinely open — do not answer these by guessing
 
-- **Should the entry-level annotation site also accept a *tag*, or free pairs only?** Recorded as
-  free-pairs-only, which leaves a whole-entry tag that is not a grammatical category with no home.
-- **The `layout` sub-object's inner shape** (layer 5) — deliberately undesigned until a real conjugation
-  table has been drawn by hand.
+- ~~**Should the entry-level annotation site also accept a *tag*, or free pairs only?**~~ **Dissolved by
+  ADR-0008** — the site itself is gone. The question it leaves behind is sharper and still open: a
+  whole-entry label that is *not* a grammatical category (`arch.`, `fam.`) now has only prose `notes` or a
+  minted feature. Watch whether contributors reach for a minted `Register` feature; if they do, that is
+  evidence the triage gate needs a fourth answer, not that free pairs should come back.
+- **The `layout` sub-object's inner shape** (layer 4) — deliberately undesigned until a real conjugation
+  table has been drawn by hand. Note layer 3 proved paradigms may be **non-rectangular**, so a dense grid
+  is not a safe default.
 - ~~**The lexicon `union` encoding for annotation-XOR-tag.**~~ **Moot** — sites separate by field, so no
   union is needed (ADR-0006).
 - **The remaining ~19 UD FEATS value inventories.** *Not* a layer-1 blocker — layer 1 validates shape, not
@@ -342,8 +379,8 @@ layer at its top; the scope says *what is in and out*, not *how*.
 | **0 — Abbreviations** | free homolingual `{long, short}` pairs bound to nothing: definition notes, register, domain | **shipped** (v0.8); gained its **entry-level** site with layer 1 |
 | **1 — Primitives** | the atoms this language uses: 14 headword-eligible UPOS, feature *names*, feature *values*. **Minting lives here**, including inflection-class features and their values | **shipped** — see **ADR-0006**, which is authoritative over the design note for this layer |
 | **2 — Inherent combinations** | which features are **inherent** to a category, then the labelled headword categories that follow: masculine noun, first-declension feminine noun, transitive imperfective verb | **shipped** — see **ADR-0007**, authoritative over the design note for this layer |
-| **3 — Axes** | per category, which features **vary across its forms** — the option set of the `otherForms` editor | **next** |
-| **4 — Layout** | the *shape* of the inflection tables: which axis sits where, one table or several, their order, what is shown by default, and the order of the flat `otherForms` list — **not** chip order | |
+| **3 — Axes** | per category, which features **vary across its forms**, over which values, **in order** — the option set of the `otherForms` editor | **shipped** — see **ADR-0008**, authoritative over the design note for this layer |
+| **4 — Layout** | the *shape* of the inflection tables: which axis sits where, one table or several, their order, what is shown by default, and the order of the flat `otherForms` list — **not** chip order | **next** |
 | **5 — Rules** | Hunspell-shaped rules populating cells, overridden by the entry's own `otherForms`; its own lexicon | |
 | **6 — Export** | Hunspell `.aff`/`.dic`, UniMorph TSV, CoNLL-U — and XPOS as a *derived* output | |
 
@@ -408,15 +445,24 @@ design. The entry editor resolves the grammar from the **language record via its
 an authoring surface may pay that round trip where the viewers never do. `Tag` now lives in a shared
 **`eu.leksis.defs`** lexicon, which is where layer 5's paradigms should get it too.
 
-**Layer 3 — Axes.** Per category, which features **vary across its forms** — the `otherForms` editor's
-option set, filtered by the cascade to bound tags only. With layer 2 this completes invariant 1's
-declaration: layer 2 is its inherent half, layer 3 its axis half, and the pair *is* the paradigm's
-cell-coordinate system. Keyed on **a category (a layer-1 atom or a layer-2 combination), not on UPOS
-alone**: a Slavic perfective verb has a different cell space from an imperfective one, and UPOS-only keying
-cannot say that. **Validate that a (category, feature) pair is not both inherent and an axis** — the
-apparent counterexample resolves through the keying, since `Number` is an axis for `{NOUN}` and inherent for
-`{NOUN, Number=Ptan}`. `otherForms[].annotation` also pluralises to a bundle here — a form's label is
-"gen. pl." in real dictionaries. Inflected-form search must keep working unchanged. *Out:* generated forms.
+**Layer 3 — Axes. ✅ shipped (ADR-0008).** Per category, which features **vary across its forms**, over
+which **values**, in which **order** — the `otherForms` editor's option set. With layer 2 this completes
+invariant 1's declaration: layer 2 is its inherent half, layer 3 its axis half, and the pair *is* the
+paradigm's cell-coordinate system.
+
+**What layer 3 settled, and layer 4 inherits (ADR-0008), do not re-derive:** an `axes` row is
+`{category: Tag, feature: string, values: string[]}` — it **names its values in order**, because a
+language's inventory and one category's paradigm are not the same set (three genders in the adjectives, a
+split masculine in the nouns) and because that order is what layer 4 prints. It keys exactly as `inherent`
+does — a `Tag` category, a **bare** feature name — which is what makes `inherent-axis-conflict` detectable;
+`empty-axis` is the other new issue kind, and both are issues rather than shape rejections. An axis
+category is checked for **bound atoms only, never grounding**, and that is what lets a paradigm be
+non-rectangular: `{VERB, VerbForm=Fin}` takes a Person axis, `{VERB, VerbForm=Inf}` simply never declares
+one — so **layer 4 must not assume a rectangular grid**. `applicableAxes` walks an entry's *sub-bundles*,
+so an axis on `{NOUN}` reaches an entry categorised `{NOUN, Gender=Fem}`; layer 4 should read the cell
+space through it, not through exact matching. `otherForms[].annotation` became `otherForms[].tag`, **one
+bundle** — the cell address layer 5 will match by canonical key. The API cost was **zero** again, as at
+layer 2; treat any need for new indexing at layer 4 as a signal to re-check the design.
 
 **Layer 4 — Layout.** Layer 3 gives a category's *cell space*; it does **not** say what the table looks
 like, and axes alone underdetermine presentation — four axes could be one grid with nested headers or four
@@ -471,7 +517,7 @@ required at layer 1:
 ## Beyond the prototype (the constellation)
 
 Where the morphology arc grows the atom **deeper**, the constellation grows **outward**. Once the
-word-to-word dictionary is live and stable (post-week 8), the roadmap expands on the **same ArangoDB graph
+word-to-word dictionary is live and stable (after the last content loop), the roadmap expands on the **same ArangoDB graph
 + AT Proto backend**. Keep these in view so today's choices don't foreclose them, but do **not** build
 them early:
 
@@ -483,7 +529,7 @@ them early:
 4. **Usage / language-learning tools** — built on the dictionary graph + translation memory.
 5. **Expo / React Native** — migrate once the PWA architecture is validated.
 
-Each is a future AppView, not a prototype feature. The discipline of week 8 is to ship the *one solid
+Each is a future AppView, not a prototype feature. The discipline of the last content loop is to ship the *one solid
 atom* (the dictionary) that the rest can grow from.
 
 ---

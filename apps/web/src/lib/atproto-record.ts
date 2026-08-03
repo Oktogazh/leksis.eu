@@ -7,7 +7,6 @@ import {
   normalizeLanguageTag,
   LEKSIS_ENTRY_COLLECTION,
   LEKSIS_LANGUAGE_COLLECTION,
-  type EntryAnnotation,
   type EntryDefinition,
   type EntryInflectedForm,
   type EntryReference,
@@ -62,18 +61,6 @@ async function resolvePds(did: string): Promise<string> {
   return pds.serviceEndpoint;
 }
 
-function parseAnnotations(value: unknown): EntryAnnotation[] {
-  if (!Array.isArray(value)) return [];
-  const annotations: EntryAnnotation[] = [];
-  for (const item of value) {
-    const a = item as Record<string, unknown> | null;
-    if (!a || typeof a.long !== "string" || a.long.trim() === "") continue;
-    const short = typeof a.short === "string" && a.short.trim() !== "" ? a.short : undefined;
-    annotations.push(short === undefined ? { long: a.long } : { short, long: a.long });
-  }
-  return annotations;
-}
-
 /** Lenient parse of a tag list; malformed tags are dropped, not fatal. */
 function parseTags(value: unknown): Tag[] {
   if (!Array.isArray(value)) return [];
@@ -110,22 +97,15 @@ function parseDefinitions(value: unknown): EntryDefinition[] {
     if (!def || typeof def !== "object") continue;
     if (!isValidDefinitionPlace(def.place)) continue;
     const text = typeof def.text === "string" ? def.text : "";
-    const annotations = parseAnnotations(def.annotations);
     const categories = parseTags(def.categories);
     const notes = parseTextList(def.notes);
     // A node with nothing to show is dropped: an empty leaf, or a bare group
     // the tree re-derives from its children anyway.
-    if (
-      text.trim() === "" &&
-      annotations.length === 0 &&
-      categories.length === 0 &&
-      notes.length === 0
-    ) {
+    if (text.trim() === "" && categories.length === 0 && notes.length === 0) {
       continue;
     }
     definitions.push({
       place: def.place,
-      annotations,
       ...(categories.length > 0 ? { categories } : {}),
       ...(notes.length > 0 ? { notes } : {}),
       ...(text.trim() !== "" ? { text } : {}),
@@ -135,8 +115,14 @@ function parseDefinitions(value: unknown): EntryDefinition[] {
 }
 
 /**
- * Lenient parse of the entry's other grammatical forms: each is one
- * abbreviation plus a non-empty spelling. Malformed items are dropped.
+ * Lenient parse of the entry's other grammatical forms: each is the tag saying
+ * which form it is, plus a non-empty spelling. Malformed items are dropped.
+ *
+ * A form from a record written before labels moved to the language record
+ * carries a free `{short, long}` pair and no tag, so it drops out here. That
+ * is deliberate and it is the *lenient* half of the break: the AppView refuses
+ * such a record outright, while a copy already indexed renders without the
+ * form rather than not rendering at all.
  */
 function parseOtherForms(value: unknown): EntryInflectedForm[] {
   if (!Array.isArray(value)) return [];
@@ -144,9 +130,8 @@ function parseOtherForms(value: unknown): EntryInflectedForm[] {
   for (const item of value) {
     const f = item as Record<string, unknown> | null;
     if (!f || typeof f.form !== "string" || f.form.trim() === "") continue;
-    const [annotation] = parseAnnotations([f.annotation]);
-    if (annotation === undefined) continue;
-    forms.push({ annotation, form: f.form });
+    if (!isValidTag(f.tag)) continue;
+    forms.push({ tag: f.tag, form: f.form });
   }
   return forms;
 }
@@ -184,7 +169,6 @@ function parseEntryRecord(value: unknown): LeksisEntryRecord | null {
   const definitions = parseDefinitions(r.definitions);
   if (definitions.length === 0) return null;
 
-  const entryAnnotations = parseAnnotations(r.annotations);
   const otherForms = parseOtherForms(r.otherForms);
   const notes = parseTextList(r.notes);
   const references = parseReferences(r.references);
@@ -200,7 +184,6 @@ function parseEntryRecord(value: unknown): LeksisEntryRecord | null {
       ? { transcription: r.transcription }
       : {}),
     categories: parseTags(r.categories),
-    ...(entryAnnotations.length > 0 ? { annotations: entryAnnotations } : {}),
     ...(otherForms.length > 0 ? { otherForms } : {}),
     definitions,
     ...(notes.length > 0 ? { notes } : {}),

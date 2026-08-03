@@ -1,7 +1,78 @@
 # Changelog
 
-All notable changes to Leksis. This project follows the 8-week development
-timeline; each entry maps to a weekly milestone.
+All notable changes to Leksis. Each section is one loop — a unit of work, not a
+unit of time: the content loops grow the dictionary outward, the grammar loops
+(the morphology arc) grow the entry deeper, and the two interleave.
+
+## Grammar layer — layer 3: axes, and labels that live on the language
+
+A language can now say what a word's **forms** vary over — which features, over
+which values, **in which order** — and with that the last reader-facing string
+left the entry record. See **ADR-0008**.
+
+> **Breaking.** The entry lexicon loses every free `{long, short}` label and
+> `otherForms` is retagged. Ingestion bots must reset and republish.
+
+### Lexicon & types
+
+- **`grammar.axes`** — `{category, feature, values[]}`, "for this category this
+  feature varies across its forms, over these values, in this order". The values
+  are **named rather than inherited** from the whole inventory, because a
+  language's inventory and one category's paradigm are not the same set: three
+  genders in the adjectives, a split masculine in the nouns. Naming them fixes
+  the order layer 4 will print — the alphabetical order of an identifier is not
+  a grammatical order.
+- **Keyed exactly as `inherent`** (a `Tag` category, a bare feature name), which
+  is what makes the conflict between the two detectable. An axis category is
+  checked for **bound atoms only, never grounding** — that is what lets a
+  paradigm be non-rectangular, so a finite verb can take a Person axis while an
+  infinitive simply never declares one.
+- **Two new issue kinds**, both issues rather than shape rejections:
+  `inherent-axis-conflict` and `empty-axis`. The no-orphan diff needed **no
+  change** — unbinding a value an axis uses already surfaces as `unbound-atom`.
+- **`applicableAxes`** walks an entry's sub-bundles, so an axis declared on
+  `{NOUN}` reaches an entry categorised `{NOUN, Gender=Fem}`.
+- **Entry lexicon break (one, deliberate, pre-1.0):** entry-level `annotations`,
+  definition-node `annotations` and the `#annotation` def are **removed**;
+  `otherForms[].annotation` becomes **`otherForms[].tag`** — one `Tag` bundle,
+  because a form's label is its address in the paradigm ("gen. pl." is one
+  coordinate in two dimensions). An evicted editorial label goes to `notes` as
+  prose, or becomes a minted feature bound on the language record.
+
+### AppView
+
+- **The `abbreviations` model is single-sourced.** A *language* supplies the
+  label, an *entry* supplies only usage, joined on the canonical tag key. A row
+  is either a bound label — count legitimately **zero** when declared before
+  use — or **a tag in use that nothing has named yet**, which is the worklist
+  item. `syncEntryAbbreviations` became `syncEntryTags`; entry docs lost their
+  `abbreviations` array.
+- **Form tags now reach the worklist**: an entry's tags are collected at all
+  three altitudes — lexeme, sense and form. An unnamed `Number=Plur` on a plural
+  is as much a gap as an unnamed `NOUN` on a headword.
+- **Strict at ingest, lenient at render.** A record whose `otherForms` carry the
+  old free pair is rejected whole; the retired `annotations` fields are simply
+  ignored (AT Proto extensibility), because refusing would drop the entry from
+  search until someone republished it. The web parser drops an old-shape form
+  rather than failing the record.
+- `db:init` rebuilds **bindings first, then usage** — an order that is
+  load-bearing. Axis orphan detection needed **no API change at all**.
+
+### Web
+
+- **Axes tab** in the binding editor, same path-scoped discipline as the other
+  two: pick a category, pick a feature, then tick and **order** its values.
+- **The gate is navigation on both sides**: the Axes tab does not offer a
+  feature already inherent to the category, and the Categories tab does not
+  offer one already an axis of it.
+- **Form tags in the entry editor** — one selector per declared axis. Axes are
+  orthogonal dimensions, not layer 2's narrowing tree: a cell address takes one
+  value from each independently. Degrades to the flat bound-tag picker plus
+  manual entry when nothing is declared.
+- Every free-pair authoring surface is gone (the chip row, its editor, the
+  entry-level and definition-node sections). Prose notes are untouched. Both
+  viewers render a form's tag through the existing
+  exact → decomposition → verbatim chain.
 
 ## Grammar layer — layer 2: inherence, and the editor that narrows
 

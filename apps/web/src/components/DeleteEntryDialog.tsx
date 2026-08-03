@@ -75,7 +75,6 @@ export function DeleteEntryDialog({ view, record, onClose, onDeleted }: DeleteEn
       orthography: record.orthography,
       ...(record.transcription !== undefined ? { transcription: record.transcription } : {}),
       categories: record.categories,
-      ...(record.annotations !== undefined ? { annotations: record.annotations } : {}),
       ...(record.otherForms !== undefined ? { otherForms: record.otherForms } : {}),
       definitions: record.definitions,
       ...(record.notes !== undefined ? { notes: record.notes } : {}),

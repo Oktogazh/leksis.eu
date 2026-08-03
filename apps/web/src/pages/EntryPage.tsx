@@ -8,7 +8,7 @@ import {
   type LeksisEntryRecord,
 } from "@leksis/types";
 import { EntryEditorDialog } from "../components/CreateEntryPanel";
-import { DefinitionList, TagChips } from "../components/EntryPreview";
+import { DefinitionList, TagChips, TagLabel } from "../components/EntryPreview";
 import { endonym } from "../components/LanguageSelector";
 import { fetchAbbreviations, fetchEntry, searchEntries } from "../lib/api";
 import { fetchEntryRecord } from "../lib/atproto-record";
@@ -258,39 +258,17 @@ export function EntryPage({
                 <TagChips tags={record.categories} lookup={abbreviationLookup(abbreviations)} />
               </ul>
             )}
-            {record.annotations !== undefined && record.annotations.length > 0 && (
-              <ul className="mt-2 flex flex-wrap items-center gap-1.5">
-                {record.annotations.map((annotation, i) => (
-                  <li
-                    key={i}
-                    className="rounded-full border bg-surface-muted/60 px-2.5 py-1 font-mono text-xs text-content-muted"
-                  >
-                    {annotation.short !== undefined ? (
-                      <abbr title={annotation.long} className="no-underline">
-                        {annotation.short}
-                      </abbr>
-                    ) : (
-                      annotation.long
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
             {record.otherForms !== undefined && record.otherForms.length > 0 && (
               <ul
                 className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm"
                 aria-label={t("entry.otherFormsLabel")}
               >
+                {/* The list's order is the entry author's for now; declaring
+                    it belongs to the language is layer 4's business. */}
                 {record.otherForms.map((form, i) => (
                   <li key={i} className="text-content">
                     <span className="mr-1 font-mono text-xs text-content-muted">
-                      {form.annotation.short !== undefined ? (
-                        <abbr title={form.annotation.long} className="no-underline">
-                          {form.annotation.short}
-                        </abbr>
-                      ) : (
-                        form.annotation.long
-                      )}
+                      <TagLabel tag={form.tag} lookup={abbreviationLookup(abbreviations)} />
                     </span>
                     {form.form}
                   </li>

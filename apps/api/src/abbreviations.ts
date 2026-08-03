@@ -2,13 +2,13 @@ import { aql } from "arangojs";
 import type { AbbreviationView } from "@leksis/types";
 import { db } from "./db";
 
-// Abbreviations read path: a language's annotation pairs (categories +
-// definition notes of current entry versions) with usage counts and
-// conflicts. The entries using a pair stay in the database — the API never
-// exposes them, only their number, so the dictionary cannot be enumerated
-// through its abbreviation list.
+// Abbreviations read path: a language's labels — the ones its grammar binds —
+// with usage counts and conflicts, plus the tags its entries use that nothing
+// has named yet. The entries behind a row stay in the database: the API
+// exposes only their number, so the dictionary cannot be enumerated through
+// its abbreviation list.
 
-/** All abbreviation pairs of one language, most used first. */
+/** All abbreviation rows of one language, most used first. */
 export async function listAbbreviations(languageID: string): Promise<AbbreviationView[]> {
   const cursor = await db.query<AbbreviationView>(aql`
     FOR a IN abbreviations

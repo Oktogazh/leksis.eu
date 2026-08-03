@@ -2,36 +2,36 @@ import { createHash } from "node:crypto";
 import { aql, type Database } from "arangojs";
 import { grammarRows, tagKey, type Grammar, type Tag } from "@leksis/types";
 
-// Maintenance of the `abbreviations` read model: one doc per distinct
-// (language, short, long) annotation pair — the front-matter "abbreviations"
-// section of a printed dictionary. Each doc lists the entryKeys of the
-// current versions using the pair (its length is the counter, and a pointer
-// back to the entries for maintenance) plus the _keys of same-language docs
-// it conflicts with: same short with a different long, or same long with a
-// different short — a pair with no short form never conflicts. The model is
-// derived and fully rebuildable (db:init), like `localLanguages`.
+// Maintenance of the `abbreviations` read model: one doc per row of the
+// front-matter "abbreviations" section of a printed dictionary. Each doc lists
+// the entryKeys of the current versions using the row (its length is the
+// counter, and a pointer back to the entries for maintenance) plus the _keys
+// of same-language docs it conflicts with: same short with a different long,
+// or same long with a different short — a row with no short form never
+// conflicts. The model is derived and fully rebuildable (db:init), like
+// `localLanguages`.
 //
-// The model has **two sources**, and the pair stays the primary object: the
-// annotation pairs of current entry versions, and the labels a language bound
-// to grammatical tags in its record. A binding does not create a second kind
-// of thing — the framing is "a tagged abbreviation", not "a labelled tag", so
-// a pair simply *acquires* a `tag` when a language binds one to it, and the
-// dashboard keeps one list rather than growing a parallel one.
+// **Every label has exactly one source: a binding on the language record.**
+// Entries no longer carry labels of their own — they carry tags, and what a
+// reader sees is whatever the language bound that tag to. So the two things
+// this module joins are asymmetric: a *language* contributes the label, an
+// *entry* contributes only usage, and the join is the canonical tag key.
 //
-// Two consequences of the second source. A bound pair survives with **no
-// entries at all** — that is the normal state of a label nobody has used yet,
-// and deleting it would erase the language's own declaration. And a label a
-// language binds is offered to contributors immediately, without waiting for
-// an entry to use it first, which is what lets a binding be given a brand-new
-// abbreviation rather than only one the entry harvest already collected.
+// That leaves a row in one of two states, and both are the point of the model:
+// a bound label, whose count may legitimately be zero because the language
+// declared it before anyone used it; and a tag in use that nothing has named
+// yet, which carries a count and no label at all. The second *is* the
+// worklist item — "used here, still needs a name in this language" — and it is
+// why `long` is nullable.
 
+/** A homolingual label, as stored on a row of the read model. */
 export interface AbbreviationPair {
-  /** null = the pair has no abbreviated form (allowed; never conflicts). */
+  /** null = the label has no abbreviated form (allowed; never conflicts). */
   short: string | null;
   long: string;
 }
 
-/** A label a language bound to a grammatical atom, as a harvestable pair. */
+/** A label a language bound to a grammatical atom, with what it names. */
 export interface BindingPair extends AbbreviationPair {
   /** Canonical key of the bound atom (`tagKey`, or `featureKey` for a name). */
   bindingKey: string;
@@ -72,12 +72,12 @@ export interface AbbreviationDoc {
 }
 
 /**
- * The label pairs a language's grammar declares. Keyed on the label, so a
- * binding and an identical free pair are the same row — which is the point:
- * the reader's abbreviation list shows "an. anv-kadarn" once, whatever put it
- * there. Two atoms bound to the *same* label collapse into one row (last
- * declared wins); that is an authoring mistake — two grammatical atoms a
- * reader cannot tell apart — and it belongs to the language to fix.
+ * The labels a language's grammar declares. Keyed on the label itself, so the
+ * reader's abbreviation list shows "an. anv-kadarn" once however many rows of
+ * the grammar arrive at it. Two atoms bound to the *same* label therefore
+ * collapse into one row (last declared wins); that is an authoring mistake —
+ * two grammatical atoms a reader cannot tell apart — and it belongs to the
+ * language to fix.
  */
 export function grammarBindingPairs(grammar: Grammar): BindingPair[] {
   return grammarRows(grammar).map((row) => ({
@@ -131,7 +131,7 @@ function conflictsBetween(
 
 /**
  * Recompute every doc's `conflictsWith` inside one language. Conflicts only
- * change when a pair doc appears or disappears, so callers invoke this per
+ * change when a row appears or disappears, so callers invoke this per
  * affected language after such a change. Whole-language recompute keeps the
  * logic obviously correct; per-language pair counts stay small.
  */
@@ -155,37 +155,28 @@ async function recomputeConflicts(db: Database, languageID: string): Promise<voi
 }
 
 /**
- * Declare the full set of pairs one entry's current version uses (empty =
- * the entry is gone, or pairless). Membership is tracked by entryKey, so a
- * new version, a promotion after deletion and a full removal all reduce to
- * this same declaration. Callers are sequential single writers (firehose
- * consumer, db:init backfill), so read-then-write is race-free.
+ * Declare the full set of tags one entry's current version uses (empty = the
+ * entry is gone, or carries none). Membership is tracked by entryKey, so a new
+ * version, a promotion after deletion and a full removal all reduce to this
+ * same declaration. Callers are sequential single writers (firehose consumer,
+ * db:init backfill), so read-then-write is race-free.
+ *
+ * An entry contributes **usage and nothing else**. It has no label to give:
+ * the language record owns every label, and this only decides which row each
+ * tag's usage lands on.
  */
-export async function syncEntryAbbreviations(
+export async function syncEntryTags(
   db: Database,
   entryKey: string,
   languageID: string | null,
-  pairs: AbbreviationPair[],
-  tags: Tag[] = [],
+  tags: Tag[],
 ): Promise<void> {
   const now = new Date().toISOString();
 
   /** Every row this version should belong to: _key → what to insert if absent. */
-  const keep = new Map<
-    string,
-    { short: string | null; long: string | null; tagKey: string | null; tag: Tag | null }
-  >();
+  const keep = new Map<string, { tagKey: string; tag: Tag }>();
 
   if (languageID !== null) {
-    for (const pair of pairs) {
-      keep.set(abbreviationKey(languageID, pair), {
-        short: pair.short,
-        long: pair.long,
-        tagKey: null,
-        tag: null,
-      });
-    }
-
     // A tag joins the row that already carries it — normally the row a
     // language binding created — so usage counts land on the bound label
     // rather than beside it. A tag nothing has bound has no row to join, so
@@ -200,11 +191,7 @@ export async function syncEntryAbbreviations(
     `);
     const existingByTag = new Map((await existingCursor.all()).map((r) => [r.tagKey, r.key]));
     for (const [canonical, tag] of wanted) {
-      const key = existingByTag.get(canonical) ?? tagRowKey(languageID, canonical);
-      const already = keep.get(key);
-      keep.set(key, {
-        short: already?.short ?? null,
-        long: already?.long ?? null,
+      keep.set(existingByTag.get(canonical) ?? tagRowKey(languageID, canonical), {
         tagKey: canonical,
         tag,
       });
@@ -236,6 +223,8 @@ export async function syncEntryAbbreviations(
   }
 
   // Ensure a doc exists for every row now in use, and the entry is listed.
+  // A row created here is label-less by construction: an entry has no label to
+  // give, so it stays a worklist item until the language binds one.
   const createdLanguages = new Set<string>();
   for (const [key, row] of keep) {
     const upsertCursor = await db.query<boolean>(aql`
@@ -243,8 +232,8 @@ export async function syncEntryAbbreviations(
       INSERT {
         _key: ${key},
         languageID: ${languageID},
-        short: ${row.short},
-        long: ${row.long},
+        short: null,
+        long: null,
         entries: [${entryKey}],
         bindingKey: null,
         tagKey: ${row.tagKey},
@@ -264,7 +253,7 @@ export async function syncEntryAbbreviations(
     }
   }
 
-  // Conflicts only move when a pair doc was created or deleted.
+  // Conflicts only move when a row was created or deleted.
   const affected = new Set<string>([
     ...emptied.map((e) => e.languageID),
     ...createdLanguages,
@@ -293,7 +282,7 @@ export async function syncLanguageBindings(
   for (const binding of bindings) keep.set(abbreviationKey(languageID, binding), binding);
   const keepKeys = [...keep.keys()];
 
-  // Un-bind the pairs this version no longer declares, dropping those no
+  // Un-bind the labels this version no longer declares, dropping those no
   // entry keeps alive.
   const staleCursor = await db.query<{ key: string; empty: boolean }>(aql`
     FOR a IN abbreviations
@@ -340,46 +329,25 @@ export async function syncLanguageBindings(
 }
 
 /**
- * Pure wholesale build of the read model from its two sources — used by the
- * db:init rebuild. Returns the full desired collection content, conflicts
- * included.
+ * Pure wholesale build of the read model — used by the db:init rebuild.
+ * Returns the full desired collection content, conflicts included.
+ *
+ * **Bindings first, then entry usage**, and the order is load-bearing: a
+ * binding is what creates a labelled row, so usage applied afterwards finds
+ * that row by tag key and lands its count on the label instead of beside it.
+ * Reverse the two and every bound label would acquire a label-less twin.
  */
 export function buildAbbreviationDocs(
   rows: {
     entryKey: string;
     languageID: string;
-    abbreviations: AbbreviationPair[];
     tags?: Tag[] | null;
   }[],
   bindingRows: { languageID: string; bindings: BindingPair[] }[] = [],
 ): AbbreviationDoc[] {
   const now = new Date().toISOString();
   const byKey = new Map<string, AbbreviationDoc>();
-  for (const row of rows) {
-    for (const pair of row.abbreviations) {
-      const key = abbreviationKey(row.languageID, pair);
-      const doc = byKey.get(key);
-      if (doc === undefined) {
-        byKey.set(key, {
-          _key: key,
-          languageID: row.languageID,
-          short: pair.short,
-          long: pair.long,
-          entries: [row.entryKey],
-          bindingKey: null,
-          tagKey: null,
-          tag: null,
-          conflictsWith: [],
-          updatedAt: now,
-        });
-      } else if (!doc.entries.includes(row.entryKey)) {
-        doc.entries.push(row.entryKey);
-      }
-    }
-  }
 
-  // Bindings are applied second, so a pair entries already use simply gains
-  // its tag rather than becoming a second row.
   for (const row of bindingRows) {
     for (const binding of row.bindings) {
       const key = abbreviationKey(row.languageID, binding);
@@ -405,10 +373,9 @@ export function buildAbbreviationDocs(
     }
   }
 
-  // Third: entry tag usage joins the row already carrying that tag — the one
-  // a binding created — so counts land on the bound label. A tag nothing
-  // binds gets a label-less row of its own: the worklist item. Order matters,
-  // which is why bindings are applied before this.
+  // Entry tag usage joins the row already carrying that tag — the one a
+  // binding created — so counts land on the bound label. A tag nothing binds
+  // gets a label-less row of its own: the worklist item.
   for (const row of rows) {
     for (const tag of row.tags ?? []) {
       const canonical = tagKey(tag);

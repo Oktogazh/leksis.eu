@@ -1,5 +1,5 @@
 // Contract for the `grammar` sub-object of an eu.leksis.language record —
-// layers 1 and 2 of the grammar layer (docs/design/grammatical-tagging.md).
+// layers 1 to 3 of the grammar layer (docs/design/grammatical-tagging.md).
 //
 // A language declares the grammatical vocabulary it uses by *binding* each
 // atom to a homolingual label. Binding is not merely labelling: it is how a
@@ -30,6 +30,17 @@
 // name: a combination has to be reachable through the inherence declarations
 // that build it up. One rule at two levels — which is why both render as
 // navigation in the editor rather than as validation errors.
+//
+// Layer 3 adds the other half of that declaration, in one more array:
+//
+//   axes     — "for this category, this feature varies across its forms",
+//              naming the values it varies over, in order
+//
+// Inherence and axes are one relation at two altitudes: layer 2 says what a
+// headword *is*, layer 3 says what its forms *range over*, and together they
+// are the paradigm's cell-coordinate system. They are keyed identically —
+// (category, bare feature name) — so that a pair declared as both can be
+// caught, which is the layer's own gate.
 
 import {
   featureKey,
@@ -153,6 +164,42 @@ export interface GrammarCombination {
 }
 
 /**
+ * "For this category, this feature **varies across its forms**" — layer 3, and
+ * the exact counterpart of an inherence declaration one altitude up. Together
+ * they are the paradigm's cell-coordinate system: layer 2 says what a headword
+ * *is*, layer 3 says what its forms *range over*.
+ *
+ * **The row names its values, in order**, rather than inheriting whatever layer
+ * 1 happens to have bound — because a language's inventory and one category's
+ * paradigm are not the same set. A language may distinguish three genders in
+ * its adjectives while splitting the masculine of its nouns in two, personal
+ * and non-personal; only a per-category value list can say that, and a
+ * declaration that spanned every bound value could not. Naming them also fixes
+ * their **order**, which is what layer 4's table headers print and what the
+ * flat `otherForms` list is sorted by: the alphabetical order of an identifier
+ * is not a grammatical order, and no grammar prints the accusative first.
+ *
+ * `category` is a `Tag`, which is what lets a paradigm stop being rectangular.
+ * A language declares Person an axis of `{VERB, VerbForm=Fin}` and simply never
+ * declares it for `{VERB, VerbForm=Inf}`, so an infinitive has no person cells
+ * to leave conspicuously empty. Note such a category refines by a value that is
+ * itself an axis value elsewhere: that is ordinary, and it is why an axis
+ * category is checked only for **bound atoms**, exactly as an inherence
+ * declaration's category is, and never for layer 2's grounding.
+ *
+ * `feature` is a bare name and the values are bare strings, both matched **by
+ * name and never by scheme** — the same rule a value already follows to reach
+ * its feature. An axis is a *selection* from the language's inventory, not a
+ * second place to declare it, so it repeats neither provenance nor labels.
+ */
+export interface GrammarAxis {
+  category: Tag;
+  feature: string;
+  /** The values this category's forms range over, in the order they are shown. */
+  values: string[];
+}
+
+/**
  * A language's declared grammatical inventory. Every array is optional and
  * holds only *authored* rows: the record stores no skeleton of unbound atoms,
  * because absence already means unbound and a stored "complete" state goes
@@ -168,6 +215,7 @@ export interface Grammar {
   values?: GrammarValue[];
   inherent?: GrammarInherent[];
   bindings?: GrammarCombination[];
+  axes?: GrammarAxis[];
 }
 
 /** The tag a `pos` row binds. */
@@ -200,6 +248,28 @@ export type GrammarRowKind = "pos" | "feature" | "value" | "combination";
  */
 export function inherentKey(row: GrammarInherent): string {
   return `${tagKey(row.category)}#${row.feature}`;
+}
+
+/**
+ * Stable identity of an axis declaration. Deliberately **prefixed**, because an
+ * axis and an inherence declaration are keyed on the same (category, feature)
+ * pair — that identical keying is what makes the conflict between them
+ * detectable — and an issue reported against one must not be indistinguishable
+ * from the same issue reported against the other.
+ */
+export function axisKey(row: { category: Tag; feature: string }): string {
+  return `axis#${tagKey(row.category)}#${row.feature}`;
+}
+
+/**
+ * A feature value's identity for matching, with provenance deliberately
+ * dropped and any multivalue item's values normalised into UD's order. An axis
+ * names its values bare, so this is the only way it can reach the `values` rows
+ * that bound them — and it is the same "by name, never by scheme" rule that
+ * already lets a value minted on a UD feature find that feature.
+ */
+function valueMatchKey(feature: string, value: string): string {
+  return tagKey(valueTag({ feature, value }));
 }
 
 /** How many atoms a tag bundles. */
@@ -295,12 +365,113 @@ function boundFeatureNames(grammar: Grammar): Set<string> {
   return new Set((grammar.features ?? []).map((row) => row.feature));
 }
 
+/**
+ * The feature values this language has bound, keyed so a bare (feature, value)
+ * pair can find them — the layer-1 inventory an axis draws its values from.
+ * Distinct from `boundAtomKeys`, which keys on the full tag including scheme:
+ * a category in an `inherent` or `bindings` row carries its provenance and is
+ * matched exactly, while an axis value does not carry any and cannot be.
+ */
+function boundValueKeys(grammar: Grammar): Set<string> {
+  return new Set((grammar.values ?? []).map((row) => valueMatchKey(row.feature, row.value)));
+}
+
 /** Whether this language declares `feature` inherent to exactly this category. */
 export function isInherent(grammar: Grammar, category: Tag, feature: string): boolean {
   const key = tagKey(category);
   return (grammar.inherent ?? []).some(
     (row) => row.feature === feature && tagKey(row.category) === key,
   );
+}
+
+/** Whether this language declares `feature` an axis of exactly this category. */
+export function isAxis(grammar: Grammar, category: Tag, feature: string): boolean {
+  const key = tagKey(category);
+  return (grammar.axes ?? []).some(
+    (row) => row.feature === feature && tagKey(row.category) === key,
+  );
+}
+
+/** One declared axis, resolved to the layer-1 rows that give it its labels. */
+export interface ResolvedAxis {
+  feature: GrammarFeature;
+  /** The axis's values in the order the language declared them. */
+  values: GrammarValue[];
+}
+
+/**
+ * The axes this language declares for exactly this category, resolved to their
+ * bound rows — what the `otherForms` editor offers, and what layer 4 will lay
+ * out. Declaration order is preserved: it is the language's default axis order,
+ * as each row's `values` order is its default header order.
+ *
+ * A row naming a feature or a value nobody bound is skipped rather than shown
+ * unnamed, exactly as `inherentFeatures` skips its orphans: an authoring
+ * surface is not where an orphan gets repaired, the worklist is. An axis whose
+ * values are *all* orphaned drops out entirely — an axis with nothing to range
+ * over offers no choice.
+ */
+export function axesOf(grammar: Grammar, category: Tag): ResolvedAxis[] {
+  const key = tagKey(category);
+  return resolveAxes(
+    grammar,
+    (grammar.axes ?? []).filter((row) => tagKey(row.category) === key),
+  );
+}
+
+/**
+ * The axes that apply to an entry carrying these categories — what its forms
+ * may vary over, and so what the `otherForms` editor offers.
+ *
+ * Wider than `axesOf` on purpose: an axis declared on `{NOUN}` applies to an
+ * entry categorised `{NOUN, Gender=Fem}`, because that entry *is* a noun.
+ * Requiring the declaration to match the entry's bundle exactly would make the
+ * ordinary case — a language declaring number of nouns in general, an entry
+ * naming its gender as well — silently offer nothing. So a row applies when
+ * its category is the entry's bundle **or any sub-bundle of it**, which is the
+ * same containment the renderer's decomposition walks.
+ *
+ * Rows are returned in the language's own declaration order, one per feature:
+ * a paradigm has one Number axis, however many categories of the entry
+ * declared it.
+ */
+export function applicableAxes(grammar: Grammar, categories: readonly Tag[]): ResolvedAxis[] {
+  const held = new Set<string>();
+  for (const category of categories) {
+    const parts =
+      tagSize(category) <= MAX_DECOMPOSED_ITEMS ? subBundles(category) : tagAtoms(category);
+    for (const part of parts) held.add(tagKey(part));
+    held.add(tagKey(category));
+  }
+  return resolveAxes(
+    grammar,
+    (grammar.axes ?? []).filter((row) => held.has(tagKey(row.category))),
+  );
+}
+
+/** Resolve axis rows to their bound layer-1 rows, one per feature, in order. */
+function resolveAxes(grammar: Grammar, rows: readonly GrammarAxis[]): ResolvedAxis[] {
+  const features = grammar.features ?? [];
+  const values = grammar.values ?? [];
+  const seen = new Set<string>();
+  const out: ResolvedAxis[] = [];
+  for (const row of rows) {
+    if (seen.has(row.feature)) continue;
+    const feature = features.find((f) => f.feature === row.feature);
+    if (feature === undefined) continue;
+    const resolved: GrammarValue[] = [];
+    for (const value of row.values) {
+      const wanted = valueMatchKey(row.feature, value);
+      const bound = values.find(
+        (v) => v.feature === row.feature && valueMatchKey(v.feature, v.value) === wanted,
+      );
+      if (bound !== undefined) resolved.push(bound);
+    }
+    if (resolved.length === 0) continue;
+    seen.add(row.feature);
+    out.push({ feature, values: resolved });
+  }
+  return out;
 }
 
 /** The same tag without its i-th feature item. */
@@ -394,6 +565,15 @@ export function grammarLookup(grammar: Grammar): Map<string, GrammarLabel> {
  * - `single-item-binding` — a combination row holding a single atom, which
  *   already has a home in `pos` or `values`. Two ways to state one fact is how
  *   the two come to disagree.
+ * - `inherent-axis-conflict` — a (category, feature) pair declared both
+ *   inherent and an axis: the language says the same feature both identifies
+ *   the word and varies across its forms, and a paradigm cannot be built from
+ *   a coordinate that is also a constant. The apparent counterexample resolves
+ *   through the keying rather than through this rule — `Number` is an axis of
+ *   `{NOUN}` and inherent to `{NOUN, Number=Ptan}`, which are different
+ *   categories and so never meet here.
+ * - `empty-axis` — an axis row naming no values, which declares that a feature
+ *   varies without saying what it varies over.
  */
 export interface GrammarIssue {
   kind:
@@ -401,7 +581,9 @@ export interface GrammarIssue {
     | "duplicate"
     | "unbound-atom"
     | "ungrounded-combination"
-    | "single-item-binding";
+    | "single-item-binding"
+    | "inherent-axis-conflict"
+    | "empty-axis";
   /** Canonical key of the offending row. */
   key: string;
   /** The feature name at fault, on an `unbound-feature` issue. */
@@ -476,6 +658,56 @@ export function grammarIssues(grammar: Grammar): GrammarIssue[] {
     // produces two issues and the repair worklist reads as twice the work.
     if (unbound.length === 0 && !isGroundedCombination(grammar, row.tag)) {
       issues.push({ kind: "ungrounded-combination", key });
+    }
+  }
+
+  // Layer 3. An axis is checked against layer 1 the same way everything above
+  // it is — its category's atoms and its feature name must be bound — plus the
+  // check only it can make: its *values* must be bound too. That is the
+  // cascade's mirror at this altitude, and it is what makes unbinding a value
+  // still used as an axis option show up as an orphan rather than silently
+  // shrinking a paradigm.
+  const boundValues = boundValueKeys(grammar);
+  const seenAxes = new Set<string>();
+  const flaggedAxes = new Set<string>();
+  for (const row of grammar.axes ?? []) {
+    const key = axisKey(row);
+    if (seenAxes.has(key)) {
+      // A second row for the same pair makes the value *order* depend on array
+      // order, which is the same defect a duplicate label is, and its other
+      // defects were already reported against the first row.
+      if (!flaggedAxes.has(key)) {
+        flaggedAxes.add(key);
+        issues.push({ kind: "duplicate", key });
+      }
+      continue;
+    }
+    seenAxes.add(key);
+
+    if (!boundNames.has(row.feature)) {
+      issues.push({ kind: "unbound-feature", key, feature: row.feature });
+    }
+    for (const atom of tagAtoms(row.category)) {
+      if (!atoms.has(tagKey(atom))) {
+        issues.push({ kind: "unbound-atom", key, atom: formatTagVerbatim(atom) });
+      }
+    }
+    for (const value of row.values) {
+      if (!boundValues.has(valueMatchKey(row.feature, value))) {
+        issues.push({
+          kind: "unbound-atom",
+          key,
+          atom: formatTagVerbatim(valueTag({ feature: row.feature, value })),
+        });
+      }
+    }
+    // Both carry the feature name: an editor reporting these should be able to
+    // say which axis is at fault without printing a canonical key at a reader.
+    if (row.values.length === 0) {
+      issues.push({ kind: "empty-axis", key, feature: row.feature });
+    }
+    if (isInherent(grammar, row.category, row.feature)) {
+      issues.push({ kind: "inherent-axis-conflict", key, feature: row.feature });
     }
   }
 
@@ -806,6 +1038,26 @@ export function isValidGrammar(value: unknown): value is Grammar {
       if (!isPlainObject(row)) return false;
       if (!isValidTag(row.category)) return false;
       if (typeof row.feature !== "string" || !FEATURE_NAME_PATTERN.test(row.feature)) return false;
+    }
+  }
+
+  // An axis naming no values is well-formed and merely says nothing, so like a
+  // single-item combination it is reported by `grammarIssues` rather than
+  // rejected here: shape failures discard the whole record, and one empty row
+  // is not worth a language's entire declaration.
+  if (value.axes !== undefined) {
+    if (!Array.isArray(value.axes)) return false;
+    for (const row of value.axes) {
+      if (!isPlainObject(row)) return false;
+      if (!isValidTag(row.category)) return false;
+      if (typeof row.feature !== "string" || !FEATURE_NAME_PATTERN.test(row.feature)) return false;
+      if (!Array.isArray(row.values)) return false;
+      // Each value is validated as the feature item it stands for, so a
+      // multivalue option ("Gender=Fem,Masc" for an épicène form) is accepted
+      // on exactly the terms layer 1 accepts one.
+      for (const item of row.values) {
+        if (!isValidTagFeat({ feature: row.feature, value: item })) return false;
+      }
     }
   }
 
