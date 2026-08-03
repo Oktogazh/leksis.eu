@@ -10,7 +10,7 @@ reconciled 2026-08-03.
 **Related:** **ADR-0006 (layer 1, accepted)**, **ADR-0007 (layer 2, accepted)**,
 **ADR-0008 (layer 3 + the label inversion, accepted)**,
 `lexicons/eu.leksis.entry.json`, `lexicons/eu.leksis.language.json`, `lexicons/eu.leksis.defs.json`,
-ADR-0004 (abbreviations read model, amended by 0006), ADR-0002 (the browser is the write path)
+ADR-0004 (the labels read model, amended by 0006 and re-keyed by 0010), ADR-0002 (the browser is the write path)
 
 > **How to read this.** §0 is binding on every session. §1 is what has been **verified at source** — treat
 > anything absent from it as unknown, and §6 as the list of things nobody has checked. §§2–4 are the design.
@@ -212,7 +212,7 @@ sits behind. A `features` row is likewise not a tag: a bare name has no value.
 `[shipped]` **Layer 2's rows landed additively**, as predicted — no entry change and no republish. The
 `bindings` ≥2-items rule ships as a `single-item-binding` *issue* rather than a shape rejection: the row is
 well-formed and merely says something true in the wrong place, and rejecting would discard a whole
-language's declaration over it. `inherent` rows carry no label, so they never enter the abbreviations model;
+language's declaration over it. `inherent` rows carry no label, so they never enter the labels model;
 `bindings` rows do, through `grammarRows`, with no plumbing of their own.
 
 One **self-contained `grammar` sub-object** holding layers 0–4. Layer 5's rules get their own
@@ -329,7 +329,7 @@ Each layer draws its options from the layer below, and each must ship and be use
 > 2 — layer 1 ships the flat multi-select this note itself names as its degradation, plus a manual field.
 
 *In:* the `Tag` type and canonical key in `packages/types`; `grammar.bindings` + `grammar.features`; the
-`abbreviations` read model widened to carry the tag and to surface **unbound tags in use** as a worklist; the
+`labels` read model widened to carry the tag and to surface **unbound tags in use** as a worklist; the
 binding editor; the entry editor's suggestion flow; the viewer's resolution chain.
 
 **Two row kinds, and both are needed:** a feature *value* row is the chip (`Gender=Fem` → `b.`); a feature
@@ -459,7 +459,7 @@ them. **A cell the language says cannot exist and a cell nobody has filled in mu
 em dash against a faint dot — or `exclude` does no visible work; a line or column left entirely excluded is
 dropped and the headers above it re-span. And **the entry page resolves the language record from its PDS** to
 get the layout at all: that is not a breach of "viewers never pay the PDS round trip" (ADR-0007), which was
-about *labels* — those still come from the indexed `abbreviations` model — because a layout is **content**,
+about *labels* — those still come from the indexed `labels` model — because a layout is **content**,
 and content was always PDS-resolved.
 
 ### Layer 5 — Rules
@@ -547,14 +547,14 @@ of work: a BCP 47 → treebank code mapping (`br` → `br_keb`).
 still be able to type a tag and bind it — otherwise UD's uptime becomes a hard dependency for authoring,
 which breaks "design for the language that has nothing".
 
-### 4.2 The entry editor — progressive narrowing by clicking abbreviations
+### 4.2 The entry editor — progressive narrowing by clicking labels
 
 > `[shipped]` **Built at layer 2** (ADR-0007), and all four properties below hold. The grammar is
 > resolved from the language's own record at editor-open — an authoring surface may pay a PDS round trip
 > where the viewers deliberately never do — and a failure lands on this section's own documented
 > degradation (the flat multi-select) along the same code path, not a special case.
 
-The contributor never types a criterion. They are shown the language's bound **UPOS abbreviations**, and each
+The contributor never types a criterion. They are shown the language's named **parts of speech**, and each
 click narrows what is offered next, drawn from layer 2's declarations:
 
 > A Latin first-declension feminine noun: click **`n.`** → gender options appear (because Gender is declared
@@ -621,7 +621,7 @@ Minting is legitimate and expected, but reaching for it first is how "follow UD 
 
 For a `ud`-scheme item the documentation URL is **derivable** from the item itself (`u/pos/`,
 `u/feat/<Feature>.html`) — compute it in the UI and store nothing, which keeps records small and links
-unrotted. For a **minted** item and for a **free layer-0 pair** the source is not derivable, so the row
+unrotted. For a **minted** item and for a **plain abbreviation** the source is not derivable, so the row
 carries `references: [{text, url}]`, reusing the entry lexicon's existing shape. On a minted item this is not
 decoration: UD's licence is conditional on being "properly documented", so the reference is what makes the
 compatibility claim honest.
@@ -630,11 +630,16 @@ compatibility claim honest.
 
 ## 5. Consequences to design for
 
-- `[shipped, ADR-0008]` **The `abbreviations` read model inverts, and stays the single home.** The framing
-  is **"a tagged abbreviation", not "a labelled tag"**. It is now **single-sourced**: a *language* supplies
-  the label, an *entry* supplies only usage, joined on the canonical tag key. The dashboard's question
-  becomes *"which tags are in use with no label yet?"* — a **translation worklist** — and the model must
-  tolerate a bound row at count 0 and a used row carrying no label at all.
+- `[shipped, ADR-0008]` **The read model inverts, and stays the single home.** It is **single-sourced**: a
+  *language* supplies the label, an *entry* supplies only usage, joined on the canonical row key. The
+  dashboard's question becomes *"which tags are in use with no label yet?"* — a **naming worklist** — and
+  the model must tolerate a named row at count 0 and a used row carrying no label at all.
+  **The framing was "a tagged abbreviation, not a labelled tag"; ADR-0010 reversed it, and the collection is
+  now `labels`.** Keying a row on its label pair had three live defects: renaming `n.` to `an.` destroyed one
+  row and created another, losing its usage; two atoms named identically collapsed into one row, hiding
+  exactly the clash the conflict machinery exists to surface; and nothing stopped two rows describing one
+  tag. **The tag is the identity and the label is what it is called**, so the doc key is
+  `(language, canonical row key)` and ArangoDB's primary key enforces the policy on its own.
 - ~~**Most labels a real dictionary uses stay free pairs forever.**~~ **Reversed by ADR-0008 as to
   storage.** The *freedom* stands — a language may name anything, minting a feature where UD has no term —
   but the label lives on the language record, never on an entry. A label written on an entry is one the
@@ -642,10 +647,16 @@ compatibility claim honest.
   entries. An entry in a language whose tagset nobody has declared stays editable through the form editor's
   flat picker and manual tag entry.
 - **Four different things live at annotation sites — do not let them collapse.** (a) a taggable grammatical
-  feature; (b) an untaggable editorial/domain/register label — a free pair; (c) a free prose remark —
-  `plainNotes`; (d) a **collocation or example phrase**, which is *content*, not annotation, and needs its
-  own field rather than being smuggled into notes. The project's bet is that structure substitutes for corpus
-  size, so a mislabelled note is structure lost.
+  feature; (b) an editorial/domain/register label; (c) a free prose remark — `plainNotes`; (d) a
+  **collocation or example phrase**, which is *content*, not annotation, and needs its own field rather than
+  being smuggled into notes. The project's bet is that structure substitutes for corpus size, so a
+  mislabelled note is structure lost.
+  **(b) got its home at ADR-0010 and it is not a free pair.** A **lexicographic label set** is a feature
+  flagged `lexicographic` on the language record: structurally a minted feature with values, so its values
+  are ordinary tags an entry or a sense carries, but excluded from layers 2 to 4 — a word is not inflected
+  for "by extension". This is the fourth answer to the triage gate that ADR-0008 left open, and it is
+  emphatically **not** the return of free pairs to the entry lexicon. The one row that stands for no tag at
+  all is a **plain abbreviation** (`udb.` → "un dra bennak"), identified by its own short form.
 - **Syncretism makes cells many-to-one** (layers 4–5): a generated table must merge cells, not repeat a form
   four times. Cell-address-as-bundle handles this; an ordinal grid does not.
 - **"Cell absent" and "cell spans the axis" must render differently.** Three states, not two: a feature that

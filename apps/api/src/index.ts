@@ -3,12 +3,12 @@ import { Hono } from "hono";
 import {
   isValidLanguageTag,
   normalizeLanguageTag,
-  type AbbreviationsResponse,
+  type LabelsResponse,
   type EntriesResponse,
   type HealthResponse,
   type LanguagesResponse,
 } from "@leksis/types";
-import { listAbbreviations } from "./abbreviations";
+import { listLabels } from "./labels";
 import { getLanguageDashboard } from "./dashboard";
 import { pingDb } from "./db";
 import { getEntry, searchEntries } from "./entries";
@@ -79,17 +79,17 @@ app.get("/languages/:tag/currentRecord", async (c) => {
   }
 });
 
-app.get("/languages/:tag/abbreviations", async (c) => {
+app.get("/languages/:tag/labels", async (c) => {
   const requested = normalizeLanguageTag(c.req.param("tag"));
   if (!isValidLanguageTag(requested)) {
     return c.json({ error: "invalid language tag" }, 400);
   }
   try {
-    const abbreviations = await listAbbreviations(requested);
-    const body: AbbreviationsResponse = { languageID: requested, abbreviations };
+    const labels = await listLabels(requested);
+    const body: LabelsResponse = { languageID: requested, labels };
     return c.json(body);
   } catch (err) {
-    console.error("GET /languages/:tag/abbreviations failed:", err);
+    console.error("GET /languages/:tag/labels failed:", err);
     return c.json({ error: "database unavailable" }, 503);
   }
 });

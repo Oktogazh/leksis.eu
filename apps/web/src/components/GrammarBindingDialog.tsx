@@ -37,6 +37,7 @@ import { useSession } from "../auth/SessionProvider";
 import { fetchCurrentLanguageRecord } from "../lib/api";
 import { fetchLanguageRecord } from "../lib/atproto-record";
 import {
+  abbreviationRows,
   addAxis,
   addBlock,
   addInherent,
@@ -45,7 +46,11 @@ import {
   axisRows,
   blockWithoutExclusions,
   classRows,
-  featureRows,
+  findAbbreviation,
+  grammaticalFeatureRows,
+  lexicalRows,
+  removeAbbreviation,
+  upsertAbbreviation,
   findAxis,
   layoutRow,
   moveAxisValue,
@@ -108,10 +113,20 @@ type Path =
   // levels cannot work out for themselves — a class not yet bound has no row to
   // read a scheme from.
   | { at: "classes" }
+  // Lexicographic label sets — register, domain, usage. A third door onto the
+  // same three levels, for the same reason the classes door exists: the
+  // machinery is a feature's, and only what a contributor is *shown* differs.
+  // `lexical` plays the part `minting` plays above, and for the same reason.
+  | { at: "lexical" }
   | { at: "feature"; feature: string }
-  | { at: "featureForm"; feature: string; minting?: boolean }
+  | { at: "featureForm"; feature: string; minting?: boolean; lexical?: boolean }
   | { at: "values"; feature: string }
   | { at: "valueForm"; feature: string; value: string }
+  // Plain abbreviations. Two levels, not three: an abbreviation has no values
+  // to open, because it is not a set of options — it is one shallow row whose
+  // short form is its identity.
+  | { at: "abbreviations" }
+  | { at: "abbreviationForm"; short: string }
   // Layer 2 — the same shape one level up: pick a category, declare which
   // features are inherent to it, then the combinations for a declared feature
   // become available to name.
@@ -268,13 +283,26 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
     else if (next.at === "featureForm") existing = findFeature(draft, next.feature);
     else if (next.at === "valueForm") existing = findValue(draft, next.feature, next.value);
     else if (next.at === "l2combinationForm") existing = findCombination(draft, next.tag);
+    else if (next.at === "abbreviationForm") {
+      // An abbreviation has no tag and so no label pair to seed from: its short
+      // form came in through the path and only the expansion is being written.
+      const row = findAbbreviation(draft, next.short);
+      setForm({
+        long: row?.long ?? "",
+        short: next.short,
+        minted: false,
+        references: row?.references ?? [],
+      });
+      setPath(next);
+      return;
+    }
     // A new row starts with the mint box ticked wherever minting is the only
-    // coherent answer: an inflection class, which UD has no term for, and any
-    // value of a feature that is itself minted — UD cannot document a value of
-    // a feature it does not define. Everywhere else it starts unticked, so
-    // minting stays a deliberate act.
+    // coherent answer: an inflection class or a lexicographic label set, which
+    // UD has no terms for, and any value of a feature that is itself minted —
+    // UD cannot document a value of a feature it does not define. Everywhere
+    // else it starts unticked, so minting stays a deliberate act.
     const mintedByDefault =
-      (next.at === "featureForm" && next.minting === true) ||
+      (next.at === "featureForm" && (next.minting === true || next.lexical === true)) ||
       (next.at === "valueForm" && findFeature(draft, next.feature)?.scheme !== undefined);
     setForm(
       existing === undefined
@@ -299,11 +327,34 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
       ...(references.length > 0 ? { references } : {}),
     };
 
-    if (path.at === "posForm") {
+    if (path.at === "abbreviationForm") {
+      // The short form is the identity and came in with the path, so it is not
+      // read back off the form: editing it would be creating another row.
+      setDraft(
+        upsertAbbreviation(draft, {
+          short: path.short,
+          long: label.long,
+          ...(references.length > 0 ? { references } : {}),
+        }),
+      );
+      setPath({ at: "abbreviations" });
+    } else if (path.at === "posForm") {
       setDraft(upsertPos(draft, { value: path.value, label, ...extra }));
       setPath({ at: "pos" });
     } else if (path.at === "featureForm") {
-      setDraft(upsertFeature(draft, { feature: path.feature, label, ...extra }));
+      // Whether a row is a lexicographic set is decided once, when it is
+      // created, and thereafter read off the row rather than off the path — so
+      // reopening it through any door keeps it what it is.
+      const lexicographic =
+        findFeature(draft, path.feature)?.lexicographic === true || path.lexical === true;
+      setDraft(
+        upsertFeature(draft, {
+          feature: path.feature,
+          label,
+          ...extra,
+          ...(lexicographic ? { lexicographic: true } : {}),
+        }),
+      );
       setPath({ at: "feature", feature: path.feature });
     } else if (path.at === "valueForm") {
       setDraft(upsertValue(draft, { feature: path.feature, value: path.value, label, ...extra }));
@@ -366,10 +417,10 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
         return;
       }
 
-      const hasRows =
-        (draft.pos ?? []).length > 0 ||
-        (draft.features ?? []).length > 0 ||
-        (draft.values ?? []).length > 0;
+      // Every array, not just layer 1's: a grammar holding only abbreviations
+      // is a perfectly good declaration, and checking three arrays would have
+      // silently dropped it on the way to the PDS.
+      const hasRows = Object.values(draft).some((rows) => (rows ?? []).length > 0);
       const updated: LeksisLanguageRecord = {
         ...record,
         $type: LEKSIS_LANGUAGE_COLLECTION,
@@ -447,6 +498,11 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
     }
   } else if (path.at === "classes") {
     crumbs.push({ label: t("grammar.classesLevel"), go: { at: "classes" } });
+  } else if (path.at === "lexical") {
+    crumbs.push({ label: t("grammar.lexicalLevel"), go: { at: "lexical" } });
+  } else if (path.at === "abbreviations" || path.at === "abbreviationForm") {
+    crumbs.push({ label: t("grammar.abbreviationsLevel"), go: { at: "abbreviations" } });
+    if (path.at === "abbreviationForm") crumbs.push({ label: path.short, go: path });
   } else if (
     path.at !== "root" &&
     path.at !== "l2root" &&
@@ -454,18 +510,24 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
     path.at !== "l4root"
   ) {
     // Which section a feature sits under is **derived from the row**, not
-    // remembered: a class is a minted feature, so a minted one leads back to
-    // the classes level and a UD one to the features level. The trail is then
-    // still right when the dialog is reopened, and there is no section state to
-    // keep in step with the draft.
-    const asClass =
+    // remembered: a lexicographic set says so on the row, a class is any other
+    // minted feature, and a UD one leads back to the features level. The trail
+    // is then still right when the dialog is reopened, and there is no section
+    // state to keep in step with the draft.
+    const row = path.at === "features" ? undefined : findFeature(draft, path.feature);
+    const asLexical =
       path.at !== "features" &&
-      (findFeature(draft, path.feature)?.scheme !== undefined ||
-        (path.at === "featureForm" && path.minting === true));
+      (row?.lexicographic === true || (path.at === "featureForm" && path.lexical === true));
+    const asClass =
+      !asLexical &&
+      path.at !== "features" &&
+      (row?.scheme !== undefined || (path.at === "featureForm" && path.minting === true));
     crumbs.push(
-      asClass
-        ? { label: t("grammar.classesLevel"), go: { at: "classes" } }
-        : { label: t("grammar.featuresLevel"), go: { at: "features" } },
+      asLexical
+        ? { label: t("grammar.lexicalLevel"), go: { at: "lexical" } }
+        : asClass
+          ? { label: t("grammar.classesLevel"), go: { at: "classes" } }
+          : { label: t("grammar.featuresLevel"), go: { at: "features" } },
     );
     if (path.at !== "features") {
       crumbs.push({ label: path.feature, go: { at: "feature", feature: path.feature } });
@@ -493,7 +555,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
           <button type="button" onClick={() => setPath({ at: "features" })} className={levelButton}>
             <span className="font-medium text-content">{t("grammar.featuresLevel")}</span>
             <span className="text-xs text-content-subtle">
-              {t("grammar.featuresCount", { count: featureRows(draft).length })}
+              {t("grammar.featuresCount", { count: grammaticalFeatureRows(draft).length })}
             </span>
           </button>
         </li>
@@ -505,7 +567,128 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
             </span>
           </button>
         </li>
+        <li>
+          <button type="button" onClick={() => setPath({ at: "lexical" })} className={levelButton}>
+            <span className="font-medium text-content">{t("grammar.lexicalLevel")}</span>
+            <span className="text-xs text-content-subtle">
+              {t("grammar.lexicalCount", { count: lexicalRows(draft).length })}
+            </span>
+          </button>
+        </li>
+        <li>
+          <button
+            type="button"
+            onClick={() => setPath({ at: "abbreviations" })}
+            className={levelButton}
+          >
+            <span className="font-medium text-content">{t("grammar.abbreviationsLevel")}</span>
+            <span className="text-xs text-content-subtle">
+              {t("grammar.abbreviationsCount", { count: abbreviationRows(draft).length })}
+            </span>
+          </button>
+        </li>
       </ul>
+    );
+  }
+
+  /**
+   * Lexicographic label sets: register, domain, editorial usage.
+   *
+   * The machinery is an inflection class's exactly — a minted feature, one name
+   * and several values — because the shape of "a set of named options this
+   * language declares" is the same whatever the options mean. What differs is
+   * what may be *built* on them: a class says which paradigm a word follows, so
+   * layers 2 to 4 stand on it, while a lexicographic label says how a word is
+   * used, so they must not. That exclusion is rendered the way every gate here
+   * is — these rows are simply absent from the pickers upstairs — and reported
+   * as an issue only for a record authored somewhere else.
+   */
+  function renderLexical() {
+    const rows = lexicalRows(draft);
+    return (
+      <>
+        <p className="mb-3 text-xs text-content-subtle">{t("grammar.lexicalHint")}</p>
+        {rows.length === 0 ? (
+          <p className="text-sm text-content-muted">{t("grammar.lexicalEmpty")}</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {rows.map((row) => (
+              <li key={row.feature}>
+                <button
+                  type="button"
+                  onClick={() => setPath({ at: "feature", feature: row.feature })}
+                  className={levelButton}
+                >
+                  <span className="flex min-w-0 items-baseline gap-2">
+                    <span className="font-mono text-sm text-content">{row.feature}</span>
+                    <span className="truncate text-xs text-content-subtle">{row.label.long}</span>
+                  </span>
+                  <span className="text-xs text-content-subtle">
+                    {t("grammar.valuesCount", { count: valueRows(draft, row.feature).length })}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <AddRow
+          placeholder={t("grammar.addLexicalPlaceholder")}
+          pattern={FEATURE_NAME_PATTERN}
+          hint={t("grammar.addLexicalHint")}
+          onAdd={(feature) => openForm({ at: "featureForm", feature, lexical: true })}
+        />
+      </>
+    );
+  }
+
+  /**
+   * Plain abbreviations — the front matter proper: "udb." for "un dra bennak".
+   *
+   * One level, not three, because there is nothing underneath: an abbreviation
+   * is not a set of options and stands for no tag, so there is no value list to
+   * open and no tag to bind. The short form is asked for first and never again,
+   * since it is what identifies the row — editing it would be writing a
+   * different abbreviation, which is what the delete and re-add it forces
+   * actually means.
+   */
+  function renderAbbreviations() {
+    const rows = abbreviationRows(draft);
+    return (
+      <>
+        <p className="mb-3 text-xs text-content-subtle">{t("grammar.abbreviationsHint")}</p>
+        {rows.length === 0 ? (
+          <p className="text-sm text-content-muted">{t("grammar.abbreviationsEmpty")}</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {rows.map((row) => (
+              <li key={row.short} className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => openForm({ at: "abbreviationForm", short: row.short })}
+                  className={`${levelButton} flex-1`}
+                >
+                  <span className="font-mono text-sm text-content">{row.short}</span>
+                  <span className="truncate text-sm text-content">{row.long}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDraft(removeAbbreviation(draft, row.short))}
+                  aria-label={t("grammar.removeAbbreviation")}
+                  title={t("grammar.removeAbbreviation")}
+                  className="text-content-subtle hover:text-red-600"
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <AddRow
+          placeholder={t("grammar.addAbbreviationPlaceholder")}
+          hint={t("grammar.addAbbreviationHint")}
+          onAdd={(short) => openForm({ at: "abbreviationForm", short })}
+        />
+      </>
     );
   }
 
@@ -623,11 +806,11 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
     return (
       <>
         <p className="mb-3 text-xs text-content-subtle">{t("grammar.featuresHint")}</p>
-        {featureRows(draft).length === 0 ? (
+        {grammaticalFeatureRows(draft).length === 0 ? (
           <p className="text-sm text-content-muted">{t("grammar.featuresEmpty")}</p>
         ) : (
           <ul className="space-y-1.5">
-            {featureRows(draft).map((row) => (
+            {grammaticalFeatureRows(draft).map((row) => (
               <li key={row.feature}>
                 <button
                   type="button"
@@ -724,13 +907,23 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
               title={values.length > 0 ? t("grammar.unbindBlocked") : undefined}
               onClick={() => {
                 setDraft(removeFeature(draft, feature, bound.scheme));
-                // Back to the section it was reached through, which is the one
-                // that lists it: a minted feature is an inflection class.
-                setPath(bound.scheme === undefined ? { at: "features" } : { at: "classes" });
+                // Back to the section that lists it, worked out from the row
+                // rather than remembered: a lexicographic set says so, any
+                // other minted feature is an inflection class, and a UD one
+                // belongs with the features.
+                setPath(
+                  bound.lexicographic === true
+                    ? { at: "lexical" }
+                    : bound.scheme === undefined
+                      ? { at: "features" }
+                      : { at: "classes" },
+                );
               }}
               className="text-sm text-red-600 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {t("grammar.unbindFeature")}
+              {bound.lexicographic === true
+                ? t("grammar.unbindLexical")
+                : t("grammar.unbindFeature")}
             </button>
             {values.length > 0 && (
               <p className="mt-1 text-xs text-content-subtle">{t("grammar.unbindBlocked")}</p>
@@ -746,13 +939,17 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
     // A minted feature's values are the members of an inflection class (or of
     // whatever else this language named): necessarily minted themselves, and
     // with nothing in UD to offer.
-    const minted = findFeature(draft, feature)?.scheme !== undefined;
+    const parent = findFeature(draft, feature);
+    const minted = parent?.scheme !== undefined;
+    const lexical = parent?.lexicographic === true;
     return (
       <>
         <p className="mb-3 text-xs text-content-subtle">
-          {minted
-            ? t("grammar.classValuesHint", { feature })
-            : t("grammar.valuesHint", { feature })}
+          {lexical
+            ? t("grammar.lexicalValuesHint", { feature })
+            : minted
+              ? t("grammar.classValuesHint", { feature })
+              : t("grammar.valuesHint", { feature })}
         </p>
         {values.length === 0 ? (
           <p className="text-sm text-content-muted">{t("grammar.valuesEmpty")}</p>
@@ -865,7 +1062,10 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
     // this category is not offered as inherent either. One rule, enforced from
     // whichever side the contributor arrives at it.
     const axisNames = new Set(axisRows(draft, category).map((row) => row.feature));
-    const available = featureRows(draft).filter(
+    // Lexicographic label sets are absent rather than disabled — the gate as
+    // navigation again. "Archaic" is not something a word *is*, so it is never
+    // an inherent feature of anything.
+    const available = grammaticalFeatureRows(draft).filter(
       (row) => !declaredNames.has(row.feature) && !axisNames.has(row.feature),
     );
     return (
@@ -1062,7 +1262,9 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
     const declared = axisRows(draft, category);
     const declaredNames = new Set(declared.map((row) => row.feature));
     const inherentNames = new Set(inherentRows(draft, category).map((row) => row.feature));
-    const available = featureRows(draft).filter(
+    // Absent for the reason they are absent from layer 2: a word's forms do not
+    // vary over "by extension", so it can address no cell of a paradigm.
+    const available = grammaticalFeatureRows(draft).filter(
       (row) => !declaredNames.has(row.feature) && !inherentNames.has(row.feature),
     );
     return (
@@ -1685,6 +1887,61 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
     );
   }
 
+  /**
+   * The abbreviation form: what a short form stands for, and nothing else.
+   *
+   * Separate from `renderForm` rather than a mode of it, because nothing it
+   * asks is the same. There is no abbreviated form to fill in (the short form
+   * *is* the row, and it was given on the way in), no minting question (the
+   * only possible provenance is this language), and the delete offered is a
+   * removal from a list rather than an unbinding of a tag.
+   */
+  function renderAbbreviationForm(short: string) {
+    const existing = findAbbreviation(draft, short);
+    return (
+      <>
+        <p className="mb-3 font-mono text-sm text-content">{short}</p>
+
+        <label className="block text-sm font-medium text-content" htmlFor="grammar-abbr-long">
+          {t("grammar.abbreviationLongLabel")}
+        </label>
+        <p className="mt-0.5 text-xs text-content-subtle">{t("grammar.homolingualHint")}</p>
+        <input
+          id="grammar-abbr-long"
+          value={form.long}
+          onChange={(e) => setForm({ ...form, long: e.target.value })}
+          placeholder={t("grammar.longPlaceholder")}
+          className={`${inputClass} mt-1`}
+        />
+
+        <div className="mt-4 flex items-center justify-between gap-3 border-t pt-3">
+          {existing !== undefined ? (
+            <button
+              type="button"
+              onClick={() => {
+                setDraft(removeAbbreviation(draft, short));
+                setPath({ at: "abbreviations" });
+              }}
+              className="text-sm text-red-600 hover:text-red-700"
+            >
+              {t("grammar.removeAbbreviation")}
+            </button>
+          ) : (
+            <span />
+          )}
+          <button
+            type="button"
+            onClick={saveForm}
+            disabled={form.long.trim() === ""}
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-fg hover:bg-primary-hover disabled:opacity-50"
+          >
+            {t("grammar.bind")}
+          </button>
+        </div>
+      </>
+    );
+  }
+
   function renderForm() {
     const subject =
       path.at === "posForm"
@@ -1873,6 +2130,12 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
         return renderFeatures();
       case "classes":
         return renderClasses();
+      case "lexical":
+        return renderLexical();
+      case "abbreviations":
+        return renderAbbreviations();
+      case "abbreviationForm":
+        return renderAbbreviationForm(path.short);
       case "feature":
         return renderFeature(path.feature);
       case "values":
@@ -2269,13 +2532,19 @@ function AddRow({
   onAdd,
 }: {
   placeholder: string;
-  pattern: RegExp;
+  /**
+   * The shape the identifier must take. Omitted where there is no shape to
+   * require: an abbreviation is a printed string, so "udb." and "s.o." are as
+   * legitimate as anything else and only emptiness can be rejected.
+   */
+  pattern?: RegExp;
   hint: string;
   onAdd: (value: string) => void;
 }) {
   const { t } = useTranslation();
   const [value, setValue] = useState("");
-  const valid = pattern.test(value.trim());
+  const trimmed = value.trim();
+  const valid = trimmed !== "" && (pattern === undefined || pattern.test(trimmed));
   return (
     <div className="mt-4 border-t pt-3">
       <div className="flex gap-2">

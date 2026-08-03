@@ -36,7 +36,7 @@
     },
     "grammar": {
       "type": "object",
-      "description": "A language's declared grammatical inventory. Binding is how a language declares what it uses, so these arrays are its vocabulary: what is absent is simply not offered when authoring. Only authored rows are stored — there is no skeleton of unbound atoms, since absence already means unbound. Layer 1 declares the atoms (`pos`, `features`, `values`); layer 2 declares what they combine into (`inherent`, `bindings`); layer 3 declares what a category's forms vary over (`axes`). The remaining layer (layout) will be added here as a further property, and they all share one object because they reference each other: unbinding an atom orphans every higher row that uses it, and one self-contained object means a single write keeps the whole cascade consistent.",
+      "description": "A language's declared grammatical inventory. Binding is how a language declares what it uses, so these arrays are its vocabulary: what is absent is simply not offered when authoring. Only authored rows are stored — there is no skeleton of unbound atoms, since absence already means unbound. Layer 1 declares the atoms (`pos`, `features`, `values`); layer 2 declares what they combine into (`inherent`, `bindings`); layer 3 declares what a category's forms vary over (`axes`); layer 4 declares the shape of the tables printing those cells (`layout`). They all share one object because they reference each other: unbinding an atom orphans every higher row that uses it, and one self-contained object means a single write keeps the whole cascade consistent. Two further declarations here are lexicography rather than grammar and take part in no cascade: a feature flagged `lexicographic` (register, domain, editorial usage) and the plain `abbreviations`.",
       "properties": {
         "pos": {
           "type": "array",
@@ -79,6 +79,12 @@
           "maxLength": 256,
           "items": { "type": "ref", "ref": "#layoutDeclaration" },
           "description": "The shape of a category's inflection tables: which axis sits on which dimension, one table or several, in what order, and what is shown without asking. Axes alone underdetermine this — four axes could be one grid with nested headers or four separate tables — and where no layout is declared an entry's forms are shown as a flat list, which is the fallback this layer must never break."
+        },
+        "abbreviations": {
+          "type": "array",
+          "maxLength": 512,
+          "items": { "type": "ref", "ref": "#abbreviation" },
+          "description": "Traditional dictionary abbreviations, standing for no tag at all — \"udb.\" for \"un dra bennak\". They reference nothing here and nothing references them; they live in this object because a contributor opening \"the labels of this language\" means one shelf, and splitting a dictionary's front matter across two records would buy nothing."
         }
       }
     },
@@ -275,6 +281,10 @@
           "description": "Provenance. Absent means documented by Universal Dependencies; otherwise the BCP 47 tag of the minting language."
         },
         "label": { "type": "ref", "ref": "#label" },
+        "lexicographic": {
+          "type": "boolean",
+          "description": "True when this is a lexicographic label set rather than a grammatical feature: register, domain, editorial usage (\"archaic\", \"neologism\", \"by extension\"). Its values are ordinary tags an entry or a sense may carry, rendering and binding exactly like any other; the flag withholds only participation in the grammatical layers, so such a feature is never inherent to a category, never an axis of one, never a layout dimension and never part of a named combination — none of those describe it. A record saying otherwise is incoherent rather than invalid: the AppView reports it and indexes it anyway."
+        },
         "references": {
           "type": "array",
           "maxLength": 16,
@@ -302,6 +312,30 @@
           "description": "Provenance of the feature/value pair as a whole. Absent means documented by Universal Dependencies; otherwise the BCP 47 tag of the minting language — which is how a value minted on a UD feature is expressed (\"Number=Sgv\", scheme \"br\")."
         },
         "label": { "type": "ref", "ref": "#label" },
+        "references": {
+          "type": "array",
+          "maxLength": 16,
+          "items": { "type": "ref", "ref": "#reference" }
+        }
+      }
+    },
+    "abbreviation": {
+      "type": "object",
+      "required": ["short", "long"],
+      "description": "A traditional dictionary abbreviation: \"udb.\" for \"un dra bennak\", \"s.o.\" for \"someone\". A shallow primitive standing for no tag at all — not a feature, not a value, not an option to pick from a list. Its short form is its identity, which is why both halves are required where a label's short form is optional, and why it carries no provenance: the only possible answer would be this language's own lexicographic tradition.",
+      "properties": {
+        "short": {
+          "type": "string",
+          "maxLength": 64,
+          "maxGraphemes": 32,
+          "description": "The abbreviated form — the row's identity, unique within a language."
+        },
+        "long": {
+          "type": "string",
+          "maxLength": 256,
+          "maxGraphemes": 128,
+          "description": "What it stands for, written out."
+        },
         "references": {
           "type": "array",
           "maxLength": 16,

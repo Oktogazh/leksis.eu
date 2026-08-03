@@ -7,6 +7,7 @@ import {
   tagKey,
   valueTag,
   type Grammar,
+  type GrammarAbbreviation,
   type GrammarAxis,
   type GrammarCombination,
   type GrammarFeature,
@@ -58,7 +59,69 @@ export function featureRows(grammar: Grammar): GrammarFeature[] {
  * two places rather than a fact having two homes.
  */
 export function classRows(grammar: Grammar): GrammarFeature[] {
-  return featureRows(grammar).filter((row) => row.scheme !== undefined);
+  return featureRows(grammar).filter(
+    (row) => row.scheme !== undefined && row.lexicographic !== true,
+  );
+}
+
+/**
+ * The lexicographic label sets — register, domain, editorial usage: "archaic",
+ * "neologism", "by extension".
+ *
+ * Structurally a minted feature, exactly as an inflection class is, and for the
+ * same reason: a set of named options a language declares, which UD has no
+ * vocabulary for. What differs is what the options *mean*. A class says which
+ * paradigm a word follows, so the grammatical layers build on it; a
+ * lexicographic set says how a word is used, so they must not — a table of
+ * "archaic" against "by extension" addresses no cell.
+ *
+ * The two are told apart by the flag rather than by which door they were added
+ * through, so the row stays in one section however the record is reopened.
+ */
+export function lexicalRows(grammar: Grammar): GrammarFeature[] {
+  return featureRows(grammar).filter((row) => row.lexicographic === true);
+}
+
+/**
+ * The features the grammatical layers may use — everything but the
+ * lexicographic sets. Inflection classes stay in this list: they are minted,
+ * but they are grammar.
+ */
+export function grammaticalFeatureRows(grammar: Grammar): GrammarFeature[] {
+  return featureRows(grammar).filter((row) => row.lexicographic !== true);
+}
+
+/** The plain abbreviations a language declares, in record order. */
+export function abbreviationRows(grammar: Grammar): GrammarAbbreviation[] {
+  return grammar.abbreviations ?? [];
+}
+
+/** The abbreviation with this short form, if any. */
+export function findAbbreviation(
+  grammar: Grammar,
+  short: string,
+): GrammarAbbreviation | undefined {
+  return abbreviationRows(grammar).find((row) => row.short === short);
+}
+
+/**
+ * Add an abbreviation, replacing any existing one with the same short form —
+ * matched on `short` alone, because that is the row's identity and not merely
+ * one of its two strings.
+ */
+export function upsertAbbreviation(grammar: Grammar, row: GrammarAbbreviation): Grammar {
+  const rows = abbreviationRows(grammar);
+  const at = rows.findIndex((r) => r.short === row.short);
+  const abbreviations = at === -1 ? [...rows, row] : rows.map((r, i) => (i === at ? row : r));
+  return tidy({ ...grammar, abbreviations });
+}
+
+/** Remove an abbreviation. Nothing references it, so nothing can be orphaned. */
+export function removeAbbreviation(grammar: Grammar, short: string): Grammar {
+  return tidy({
+    ...grammar,
+    abbreviations: abbreviationRows(grammar).filter((row) => row.short !== short),
+  });
 }
 
 /**

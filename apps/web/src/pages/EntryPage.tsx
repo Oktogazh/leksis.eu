@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  abbreviationLookup,
-  type AbbreviationView,
+  labelLookup,
+  type LabelView,
   type EntryView,
   type Grammar,
   type LanguageView,
@@ -12,7 +12,7 @@ import { EntryEditorDialog } from "../components/CreateEntryPanel";
 import { DefinitionList, TagChips } from "../components/EntryPreview";
 import { EntryParadigm } from "../components/ParadigmView";
 import { endonym } from "../components/LanguageSelector";
-import { fetchAbbreviations, fetchEntry, searchEntries } from "../lib/api";
+import { fetchLabels, fetchEntry, searchEntries } from "../lib/api";
 import { fetchEntryRecord } from "../lib/atproto-record";
 import { fetchLanguageGrammar } from "../lib/language-grammar";
 
@@ -73,8 +73,8 @@ export function EntryPage({
   const [view, setView] = useState<EntryView | null>(null);
   const [record, setRecord] = useState<LeksisEntryRecord | null>(null);
   const [homonyms, setHomonyms] = useState<EntryView[]>([]);
-  /** The language's abbreviation pairs, for the ⚠ conflict flags. */
-  const [abbreviations, setAbbreviations] = useState<AbbreviationView[]>([]);
+  /** The language's labelled tags, for the ⚠ conflict flags. */
+  const [labels, setLabels] = useState<LabelView[]>([]);
   /**
    * The language's declared grammar, which is what lays this entry's forms out.
    * Best-effort like the rest of the side data: absent means the flat list, and
@@ -94,7 +94,7 @@ export function EntryPage({
     setView(null);
     setRecord(null);
     setHomonyms([]);
-    setAbbreviations([]);
+    setLabels([]);
     setGrammar(undefined);
     setRedirectTarget(null);
 
@@ -120,9 +120,9 @@ export function EntryPage({
             if (!cancelled) setHomonyms(others);
           })
           .catch(() => {});
-        fetchAbbreviations(found.languageID)
+        fetchLabels(found.languageID)
           .then((list) => {
-            if (!cancelled) setAbbreviations(list);
+            if (!cancelled) setLabels(list);
           })
           .catch(() => {});
         // Hydration: the language's own declaration is what turns this entry's
@@ -271,7 +271,7 @@ export function EntryPage({
                 className="mt-3 flex flex-wrap items-center gap-1.5"
                 aria-label={t("entry.categoriesLabel")}
               >
-                <TagChips tags={record.categories} lookup={abbreviationLookup(abbreviations)} />
+                <TagChips tags={record.categories} lookup={labelLookup(labels)} />
               </ul>
             )}
             {record.otherForms !== undefined && record.otherForms.length > 0 && (
@@ -283,7 +283,7 @@ export function EntryPage({
                   grammar={grammar}
                   categories={record.categories}
                   forms={record.otherForms}
-                  lookup={abbreviationLookup(abbreviations)}
+                  lookup={labelLookup(labels)}
                 />
               </div>
             )}
@@ -308,7 +308,7 @@ export function EntryPage({
 
           <section className="mt-6">
             <h2 className="sr-only">{t("entry.definitionsLabel")}</h2>
-            <DefinitionList definitions={record.definitions} abbreviations={abbreviations} />
+            <DefinitionList definitions={record.definitions} labels={labels} />
           </section>
 
           {record.notes !== undefined && record.notes.length > 0 && (

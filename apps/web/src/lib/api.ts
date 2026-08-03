@@ -1,6 +1,6 @@
 import type {
-  AbbreviationsResponse,
-  AbbreviationView,
+  LabelsResponse,
+  LabelView,
   CurrentLanguageRecordResponse,
   EntriesResponse,
   EntryView,
@@ -42,19 +42,18 @@ export async function searchEntries(query: string, languageTag: string): Promise
 }
 
 /**
- * A language's abbreviation pairs — categories and definition notes of its
- * current entries — most used first, with conflicts. Powers the editor's
- * suggestions and the conflict flags; never lists the entries themselves.
+ * A language's labelled tags — every label its grammar declares, plus every tag
+ * its entries use that nothing has named yet — most used first, with conflicts.
+ * Powers the editor's suggestions, the viewer's label lookup and the conflict
+ * flags; never lists the entries themselves.
  */
-export async function fetchAbbreviations(languageTag: string): Promise<AbbreviationView[]> {
-  const res = await fetch(
-    `${API_BASE}/languages/${encodeURIComponent(languageTag)}/abbreviations`,
-  );
+export async function fetchLabels(languageTag: string): Promise<LabelView[]> {
+  const res = await fetch(`${API_BASE}/languages/${encodeURIComponent(languageTag)}/labels`);
   if (!res.ok) {
-    throw new Error(`GET /languages/${languageTag}/abbreviations failed: ${res.status}`);
+    throw new Error(`GET /languages/${languageTag}/labels failed: ${res.status}`);
   }
-  const body = (await res.json()) as AbbreviationsResponse;
-  return body.abbreviations;
+  const body = (await res.json()) as LabelsResponse;
+  return body.labels;
 }
 
 /**

@@ -260,11 +260,13 @@ deliberately short so they stay readable as a checklist.
    tag rides on the entry record; the **language record carries the binding**. Never render a raw tag as
    prose; never store an English label inside an entry. A tag is a **bundle**, not an atom, and provenance
    rides on **each item** of it.
-3. **A label lives on the language, never on an entry — and tagging is a property *of* an abbreviation.**
-   The framing is **"a tagged abbreviation", not "a labelled tag"** — binding does not create a second kind
-   of thing, and ADR-0004's `abbreviations` read model stays the single home rather than gaining a parallel
-   tag collection. An entry in a language whose tagset nobody has declared must stay fully editable (through
-   the flat picker and manual tag entry).
+3. **A label lives on the language, never on an entry — and the tag is what a label names.**
+   The framing is **"a labelled tag"** (ADR-0010, which reversed ADR-0006's "a tagged abbreviation"): the
+   tag is the identity, the label is what this language calls it, and ADR-0004's read model — renamed
+   `labels` — stays the single home rather than gaining a parallel tag collection. Its doc key is
+   `(language, canonical row key)`, so **one row per tag per language** is enforced by the primary key
+   itself. An entry in a language whose tagset nobody has declared must stay fully editable (through the
+   flat picker and manual tag entry).
    **⚠ This invariant was REVERSED in part by ADR-0008 and the old wording is retired.** It used to read
    "free annotation never disappears": that most of what a dictionary prints (`bot.`, `arch.`, `fam.`) has no
    UD equivalent and stays a free `{long, short}` pair on the entry *forever*. The reasoning was right about
@@ -273,6 +275,12 @@ deliberately short so they stay readable as a checklist.
    invisible to the worklist, uncorrectable in one place, free to drift between two entries. So free pairs
    were removed from the entry lexicon at layer 3; an evicted editorial label becomes prose in `notes`, or a
    minted feature bound on the language record. Do not re-introduce a free-pair field on an entry.
+   **ADR-0010 gave that eviction a proper home**: a **lexicographic label set** — a feature flagged
+   `lexicographic` on the language record, structurally a minted feature with values, whose values are
+   ordinary tags an entry or a sense carries but which the grammatical layers never offer. Alongside it,
+   **plain abbreviations** (`udb.` → "un dra bennak") stand for no tag at all and are identified by their own
+   short form. Neither weakens this invariant: both live on the *language*, and an entry still carries tags
+   and prose and nothing else.
 4. **Four different things live at annotation sites — don't let them collapse into one.**
    (a) a taggable grammatical feature; (b) an untaggable editorial/domain/register label — stays a free
    pair; (c) a free prose remark — `plainNotes`; (d) a **collocation or example phrase** (a word shown
@@ -300,8 +308,12 @@ what it has closed. The closed set, named so a session recognises them on sight:
 **one bundle, one chip** · **exact → decomposition → verbatim** · **the canonical key** ·
 **tag-only `categories`, and the friction is deliberate** · **strict per-site type separation** (replaced the XOR rule at layer 1 — ADR-0006) ·
 **binding is declaring (the cascade)** · **store sparse, display complete** ·
-**"a tagged abbreviation"** (harvest-first was retired at layer 3 — labels are single-sourced from the
-language now) · **bindings, axes and layout on the language record, rules in their
+**"a labelled tag"** (ADR-0010 reversed "a tagged abbreviation"; harvest-first was already retired at layer
+3 — labels are single-sourced from the language, and the read model is keyed on the tag) ·
+**identity on the tag, one row per tag per language, enforced by the doc key** ·
+**a lexicographic label set is a flagged feature, excluded from layers 2–4** ·
+**a plain abbreviation stands for no tag and is identified by its short form** ·
+**bindings, axes and layout on the language record, rules in their
 own lexicon** · **no XPOS as storage** · **`VerbForm=` on a VERB** · **the triage gate before minting** ·
 **the no-orphan rule** · **the layer-1 name→value gate** · **the layer-2 inherence gate, and its enumeration
 prompt is not a constraint** · **inflection classes are minted primitives, declared inherent at layer 2 —
@@ -318,9 +330,10 @@ re-qualified before use** · **exact → containment → leftover** · **"no suc
 with `bindings` reserved for layer-2 *combinations* (≥2 items) — a `values` row names its feature, which is
 the declaration a bundle cannot make. Annotation sites separate **by field, not by union** — `categories`
 (tags) · `notes` (prose), identically on the entry and the definition node. (Layer 1 had a third,
-`annotations` for free pairs; **layer 3 removed it** — ADR-0008.) The `abbreviations` read model is keyed
-on the **label**, a tag being an attribute it acquires; layer 1 made it dual-sourced and **layer 3 made it
-single-sourced from the language's bindings**. §4.2's progressive narrowing was **cut from layer 1 and is
+`annotations` for free pairs; **layer 3 removed it** — ADR-0008.) The read model was keyed
+on the **label**, a tag being an attribute it acquired; layer 1 made it dual-sourced, **layer 3 made it
+single-sourced from the language's bindings**, and **ADR-0010 re-keyed it on the tag and renamed it
+`labels`**. §4.2's progressive narrowing was **cut from layer 1 and is
 layer 2's to build** — it derives from inherence, so it could not ship before the thing it derives from.
 
 ### Still genuinely open — do not answer these by guessing
@@ -386,7 +399,7 @@ layer at its top; the scope says *what is in and out*, not *how*.
 
 | Layer | What it declares | Status |
 |---|---|---|
-| **0 — Abbreviations** | free homolingual `{long, short}` pairs bound to nothing: definition notes, register, domain | **shipped** (v0.8); gained its **entry-level** site with layer 1 |
+| **0 — Abbreviations** | homolingual labels bound to nothing: plain abbreviations, and (ADR-0010) lexicographic label sets for register, domain and editorial usage | **shipped** (v0.8); its entry-level site was removed at layer 3, and ADR-0010 gave it a home on the language record |
 | **1 — Primitives** | the atoms this language uses: 14 headword-eligible UPOS, feature *names*, feature *values*. **Minting lives here**, including inflection-class features and their values | **shipped** — see **ADR-0006**, which is authoritative over the design note for this layer |
 | **2 — Inherent combinations** | which features are **inherent** to a category, then the labelled headword categories that follow: masculine noun, first-declension feminine noun, transitive imperfective verb | **shipped** — see **ADR-0007**, authoritative over the design note for this layer |
 | **3 — Axes** | per category, which features **vary across its forms**, over which values, **in order** — the option set of the `otherForms` editor | **shipped** — see **ADR-0008**, authoritative over the design note for this layer |
@@ -395,8 +408,8 @@ layer at its top; the scope says *what is in and out*, not *how*.
 | **6 — Export** | Hunspell `.aff`/`.dic`, UniMorph TSV, CoNLL-U — and XPOS as a *derived* output | |
 
 **Layer 1 — Primitives.** *In:* the tag type in `packages/types` (per-item `scheme`, canonical key for
-matching); `grammar.bindings` + `grammar.features` on `eu.leksis.language`; the `abbreviations` read model
-widened to carry the tag ("tagged abbreviation") and to surface **unbound tags in use** as a worklist; the
+matching); `grammar.bindings` + `grammar.features` on `eu.leksis.language`; the `labels` read model
+widened to carry the tag and to surface **unbound tags in use** as a worklist; the
 entry editor's suggestion flow; the viewer resolving **exact → decomposition → verbatim**. Two row kinds are
 both needed: a feature *name* row (the axis header layer 4 prints) and a feature *value* row (the chip), and
 they are **gated — a feature name must be bound before any of its values can be**, mirror included. The 14
@@ -414,7 +427,7 @@ one break costs one bot republish; two breaks cost two.
 *Also in — two interfaces, both specified in design note §4:* the **binding editor**, a tabbed path-scoped
 tree whose navigation *is* the gate (one level at a time, path in the sidebar, everything inside the layer's
 own tab), with **live UD candidate lists** and a **degrade-to-manual** guardrail; and the **entry editor's
-progressive narrowing** — the contributor clicks bound abbreviations and each click narrows what is offered
+progressive narrowing** — the contributor clicks the language's own labels and each click narrows what is offered
 next (`n.` → gender options → `nf.` → declension options), never typing a criterion. Four properties that
 must hold: the suggestion tree is a **derived view** of layers 1–2, not a separate declaration; a refinement
 path stores **one bundle, not an accumulation**; it **degrades to a flat multi-select** and never blocks an
@@ -449,7 +462,7 @@ decomposition. *Out:* anything concerning forms.
 the two read as one relation at two altitudes. **Grounding** is the gate's name: a named combination must be
 reachable by removing one feature at a time, each removal licensed by an inherence declaration, down to a
 bound atom. Completeness ("2 of 3 named") is a **counter and never a constraint**. Combinations reach the
-`abbreviations` model through `grammarRows` alone, so **the API cost of the layer was zero** — expect the
+`labels` model through `grammarRows` alone, so **the API cost of the layer was zero** — expect the
 same of layer 3 if its shapes are right, and treat any need for new indexing as a signal to re-check the
 design. The entry editor resolves the grammar from the **language record via its PDS**, not from an index:
 an authoring surface may pay that round trip where the viewers never do. `Tag` now lives in a shared

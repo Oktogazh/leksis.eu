@@ -162,7 +162,7 @@ its rows here in the same loop.
 | L-06 | **layered** feature name | a `Feature[psor]`-shaped name, bound with values |
 | L-07 | label with `short` **and** `long` | the ordinary case (short shown, long on hover) |
 | L-08 | label with `long` **only** | no abbreviated form — must never be treated as a conflict |
-| L-09 | **conflicting** labels | two bindings sharing a `short` with different `long` → `conflictsWith` populated on `GET /languages/qtl/abbreviations` |
+| L-09 | **conflicting** labels | two bindings sharing a `short` with different `long` → `conflictsWith` populated on `GET /languages/qtl/labels` |
 | L-10 | bound label, **zero usage** | declared and used by no entry — `count: 0` is legitimate, not a bug |
 | L-11 | layer 2 `inherent` on a bare POS | e.g. Gender inherent to `{NOUN}` |
 | L-12 | layer 2 `inherent` on a **combination** | inherent to `{NOUN, Gender=…}` — sets narrowing depth |
@@ -188,7 +188,7 @@ its rows here in the same loop.
 |---|---|---|
 | L-20 | **no grammar at all** | `qtm` record with the endonym and no `grammar` key |
 | L-21 | verbatim rendering | `qtm` entries carrying well-formed tags nobody bound → unbound-styled chips |
-| L-22 | the tag worklist | those tags appear on `GET /languages/qtm/abbreviations` as rows **with a count and no `long`** |
+| L-22 | the tag worklist | those tags appear on `GET /languages/qtm/labels` as rows **with a count and no `long`** |
 | L-30 | `unbound-feature` | `qto`: a value whose feature name is not bound |
 | L-31 | `unbound-atom` | `qto`: a layer-2/3 row built on an unbound atom |
 | L-32 | `duplicate` | `qto`: two rows keying the same tag |
@@ -397,8 +397,8 @@ manifest is: it sends the next session to re-do work that is already done.
 - `apps/api/src/firehose/ingest-entry.ts` — `entryKey` minting (why the
   manifest is read back, not predicted)
 - `packages/types/src/grammar.ts` — `GrammarIssue` kinds, for §3.2
-- `packages/types/src/dashboard.ts`, `abbreviation.ts` — what the dashboard and
-  abbreviations endpoints serve, i.e. what a fixture is asserted against
+- `packages/types/src/dashboard.ts`, `label.ts` — what the dashboard and labels
+  endpoints serve, i.e. what a fixture is asserted against
 - `docs/design/grammatical-tagging.md` + `docs/adr/0006-*`, `0007-*`, `0008-*` —
   the features the matrix must cover
 - `packages/types/src/grammar.ts` — `resolveLayout`, `placeForms`,

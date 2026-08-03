@@ -9,7 +9,7 @@ import {
   type LanguageTranslation,
 } from "@leksis/types";
 import { db } from "../db";
-import { grammarBindingPairs, syncLanguageBindings, type BindingPair } from "./abbreviations";
+import { grammarLabelRows, syncLanguageLabels, type DeclaredLabel } from "./labels";
 import { syncLocalLanguages } from "./local-languages";
 
 // Decomposition of eu.leksis.language records into two collections:
@@ -33,13 +33,13 @@ interface LanguageDoc {
    */
   grammarIssues: GrammarIssue[];
   /**
-   * The label pairs this version's grammar binds. The grammar itself is not
-   * indexed (the record is its source of truth), but its *pairs* are, for the
-   * same reason entry docs store theirs: the abbreviations read model has to
+   * The labels this version's grammar declares. The grammar itself is not
+   * indexed (the record is its source of truth), but its *labels* are, for the
+   * same reason entry docs store their tags: the labels read model has to
    * survive version transitions and a wholesale db:init rebuild without
    * re-fetching every record from its PDS.
    */
-  bindings: BindingPair[];
+  labels: DeclaredLabel[];
   createdAt: string;
   indexedAt: string;
   current: boolean;
@@ -137,7 +137,7 @@ export async function ingestLanguage(
     );
   }
 
-  const bindings = parsed.grammar === null ? [] : grammarBindingPairs(parsed.grammar);
+  const labels = parsed.grammar === null ? [] : grammarLabelRows(parsed.grammar);
 
   const doc: LanguageDoc = {
     tag: parsed.tag,
@@ -145,7 +145,7 @@ export async function ingestLanguage(
     cid,
     authorDID,
     grammarIssues: issues,
-    bindings,
+    labels,
     createdAt: parsed.createdAt,
     indexedAt: new Date().toISOString(),
     current: true,
@@ -159,11 +159,10 @@ export async function ingestLanguage(
   await db.query(aql`INSERT ${doc} INTO languages`);
 
   // The version just became current: propagate its names into the per-locale
-  // read model, and its bound labels into the abbreviations model — where a
-  // binding's label joins the language's own abbreviation list even before
-  // any entry uses it.
+  // read model, and its declared labels into the labels model — where a
+  // label joins the language's own list even before any entry uses it.
   await syncLocalLanguages(db, parsed.tag, parsed.translations);
-  await syncLanguageBindings(db, parsed.tag, bindings);
+  await syncLanguageLabels(db, parsed.tag, labels);
   console.log(
     `firehose: indexed language "${doc.tag}" (${current ? "new version" : "new language"}) from ${authorDID}`,
   );

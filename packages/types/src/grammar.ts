@@ -53,6 +53,23 @@
 // at. Axes alone underdetermine presentation — four axes could be one grid with
 // nested headers or four separate tables — and that gap is the whole reason the
 // layer exists.
+//
+// Two more things a dictionary prints are declared here and take part in none
+// of that cascade, because they are lexicography rather than grammar:
+//
+//   a **lexicographic** feature — register, domain, editorial usage ("arch.",
+//     "neol.", "by extension"). Structurally a minted feature with values, so
+//     its values are ordinary tags an entry or a sense carries; flagged so the
+//     grammatical layers never offer it, since "by extension" is not something
+//     a word *is* nor something its forms *vary over*
+//   abbreviations — `udb.` for "un dra bennak": shallow primitives standing for
+//     no tag at all, identified by their own short form
+//
+// Both exist because the alternative is worse. An editorial label written as
+// free prose on an entry is one the language cannot govern — invisible to the
+// worklist, uncorrectable in one place, free to drift between two entries — and
+// that is exactly what ADR-0008 removed from the entry lexicon. Naming them
+// here keeps a single home for every displayed string.
 
 import {
   featureKey,
@@ -111,6 +128,24 @@ export interface GrammarFeature {
   scheme?: string;
   label: GrammarLabel;
   references?: GrammarReference[];
+  /**
+   * True when this is a **lexicographic** label set rather than a grammatical
+   * feature: register, domain, editorial usage — `arch.`, `neol.`, "by
+   * extension". Its values are ordinary tags an entry or a sense may carry, and
+   * they render and bind exactly like any other; what the flag withholds is
+   * participation in the grammatical layers. A lexicographic feature is never
+   * inherent to a category, never an axis of one, never a layout dimension and
+   * never part of a named combination, because none of those describe it: "by
+   * extension" is not something a word *is* nor something its forms *vary
+   * over*.
+   *
+   * It is a flag on a feature rather than a sixth array because the machinery
+   * is a feature's exactly — one name, several values, one label each — and a
+   * fact keeps one home. The exclusions are reported by `grammarIssues` and
+   * rendered as navigation in the editor, never enforced at ingest: a record
+   * that says otherwise is incoherent, not invalid.
+   */
+  lexicographic?: boolean;
 }
 
 /**
@@ -326,6 +361,31 @@ export interface GrammarLayout {
 }
 
 /**
+ * A traditional dictionary abbreviation: `udb.` → "un dra bennak", `s.o.` →
+ * "someone". A shallow primitive — not a feature, not a value, not an option to
+ * pick from a list — and the one row of the whole object that stands for no tag
+ * at all.
+ *
+ * **The short form is the identity.** Every other row here is identified by
+ * what it binds and merely *carries* a label; an abbreviation binds nothing, so
+ * its abbreviated form is what it is. Asking a contributor to supply a tag for
+ * it would be asking them to describe "udb." as a grammatical category, which
+ * it is not. That is also why `short` is required where a label's is optional:
+ * an abbreviation with nothing to abbreviate is just a word.
+ *
+ * It carries no `scheme`. Provenance answers "which tagset is this from", and
+ * for an abbreviation the answer is always the same one: this language's own
+ * lexicographic tradition.
+ */
+export interface GrammarAbbreviation {
+  /** The abbreviated form — the row's identity, unique within a language. */
+  short: string;
+  /** What it stands for, written out. */
+  long: string;
+  references?: GrammarReference[];
+}
+
+/**
  * A language's declared grammatical inventory. Every array is optional and
  * holds only *authored* rows: the record stores no skeleton of unbound atoms,
  * because absence already means unbound and a stored "complete" state goes
@@ -334,6 +394,11 @@ export interface GrammarLayout {
  * All layers share this one object because they reference each other —
  * unbinding an atom orphans every higher row that uses it, and a single
  * self-contained object means one write keeps the whole cascade consistent.
+ *
+ * `abbreviations` references nothing and nothing references it, so it could
+ * have lived elsewhere; it does not, because a contributor opening "the labels
+ * of this language" means one shelf, and splitting the front matter of a
+ * dictionary across two records would buy nothing.
  */
 export interface Grammar {
   pos?: GrammarPos[];
@@ -343,6 +408,7 @@ export interface Grammar {
   bindings?: GrammarCombination[];
   axes?: GrammarAxis[];
   layout?: GrammarLayout[];
+  abbreviations?: GrammarAbbreviation[];
 }
 
 /** The tag a `pos` row binds. */
@@ -365,7 +431,35 @@ export function valueTag(row: { feature: string; value: string; scheme?: string 
 }
 
 /** What kind of atom a row binds. */
-export type GrammarRowKind = "pos" | "feature" | "value" | "combination";
+export type GrammarRowKind = "pos" | "feature" | "value" | "combination" | "abbreviation";
+
+/**
+ * Canonical key of an abbreviation row — its short form, **prefixed**, for the
+ * reason `axisKey` is prefixed: an abbreviation shares one key space with every
+ * tag a language binds, and `abbr#` is what guarantees it can never be mistaken
+ * for one. A tag lookup asking for this key gets nothing, which is correct: an
+ * abbreviation stands for no tag, so no tag should ever resolve to it.
+ */
+export function abbreviationKey(row: { short: string }): string {
+  return `abbr#${row.short}`;
+}
+
+/**
+ * The feature names this language declared as lexicographic label sets — the
+ * ones the grammatical layers must not offer.
+ */
+export function lexicographicFeatures(grammar: Grammar): Set<string> {
+  return new Set(
+    (grammar.features ?? []).filter((row) => row.lexicographic === true).map((row) => row.feature),
+  );
+}
+
+/** Whether this language declares `feature` a lexicographic label set. */
+export function isLexicographic(grammar: Grammar, feature: string): boolean {
+  return (grammar.features ?? []).some(
+    (row) => row.feature === feature && row.lexicographic === true,
+  );
+}
 
 /**
  * Stable identity of an inherence declaration, so two versions' declarations
@@ -489,6 +583,18 @@ export function grammarRows(grammar: Grammar): GrammarRow[] {
       label: row.label,
       ...(row.references !== undefined ? { references: row.references } : {}),
       tag: row.tag,
+    });
+  }
+  // An abbreviation flows through here for the same reason a combination does:
+  // it is a row like any other, so it reaches the language's label list with no
+  // plumbing of its own. What it never gets is a `tag` — there is none, and the
+  // prefixed key keeps it out of the renderer's lookup entirely.
+  for (const row of grammar.abbreviations ?? []) {
+    rows.push({
+      kind: "abbreviation",
+      key: abbreviationKey(row),
+      label: { long: row.long, short: row.short },
+      ...(row.references !== undefined ? { references: row.references } : {}),
     });
   }
   return rows;
@@ -627,7 +733,11 @@ function resolveAxes(grammar: Grammar, rows: readonly GrammarAxis[]): ResolvedAx
   for (const row of rows) {
     if (seen.has(row.feature)) continue;
     const feature = features.find((f) => f.feature === row.feature);
-    if (feature === undefined) continue;
+    // A lexicographic label set is dropped here exactly as an orphan is: the
+    // declaration is incoherent, `grammarIssues` says so, and an authoring
+    // surface is not where it gets repaired. Only a record authored elsewhere
+    // can carry one, since the editor never offers it.
+    if (feature === undefined || feature.lexicographic === true) continue;
     const resolved: GrammarValue[] = [];
     for (const value of row.values) {
       const wanted = valueMatchKey(row.feature, value);
@@ -1283,6 +1393,16 @@ export function grammarLookup(grammar: Grammar): Map<string, GrammarLabel> {
  * - `layout-too-large` — a table whose axes multiply out past
  *   `MAX_LAYOUT_CELLS`. The block renders nothing rather than hanging a reader's
  *   browser, and this is what says so.
+ * - `lexicographic-in-grammar` — a lexicographic label set, or one of its
+ *   values, used where the grammatical layers expect a grammatical feature: as
+ *   an inherent feature, as an axis, inside a named combination or a category,
+ *   or as a layout coordinate. The flag says this vocabulary describes usage
+ *   rather than form, so a paradigm cannot be built from it — a table of
+ *   "archaic" against "by extension" addresses no cell.
+ * - `duplicate-abbreviation` — two abbreviations sharing a short form. Distinct
+ *   from `duplicate` because the defect is different: a duplicate label makes a
+ *   *tag* resolve by array order, while two `udb.` rows are two entries in the
+ *   front matter under one headword, and the short form is the identity here.
  */
 export interface GrammarIssue {
   kind:
@@ -1297,7 +1417,9 @@ export interface GrammarIssue {
     | "layout-repeated-axis"
     | "layout-foreign-coordinate"
     | "empty-layout-block"
-    | "layout-too-large";
+    | "layout-too-large"
+    | "lexicographic-in-grammar"
+    | "duplicate-abbreviation";
   /** Canonical key of the offending row. */
   key: string;
   /** The feature name at fault, on an `unbound-feature` issue. */
@@ -1335,10 +1457,51 @@ export function grammarIssues(grammar: Grammar): GrammarIssue[] {
   const boundNames = boundFeatureNames(grammar);
   const atoms = boundAtomKeys(grammar);
 
+  // The vocabulary the grammatical layers must not reach for. Checked by
+  // **name** wherever a feature is named and by the feature of each item
+  // wherever a tag is used, which are the only two ways this vocabulary can
+  // appear anywhere above layer 1.
+  const lexicographic = lexicographicFeatures(grammar);
+  /** Report every lexicographic item a category or combination carries. */
+  const lexicographicInTag = (key: string, tag: Tag): void => {
+    for (const feat of tag.feats ?? []) {
+      if (!lexicographic.has(feat.feature)) continue;
+      issues.push({
+        kind: "lexicographic-in-grammar",
+        key,
+        feature: feat.feature,
+        atom: formatTagVerbatim(valueTag(feat)),
+      });
+    }
+  };
+  /** Report a named feature that turns out to be a lexicographic label set. */
+  const lexicographicFeature = (key: string, feature: string): void => {
+    if (lexicographic.has(feature)) {
+      issues.push({ kind: "lexicographic-in-grammar", key, feature });
+    }
+  };
+
   for (const row of grammar.values ?? []) {
     if (!boundNames.has(row.feature)) {
       issues.push({ kind: "unbound-feature", key: tagKey(valueTag(row)), feature: row.feature });
     }
+  }
+
+  // Two abbreviations under one short form are two front-matter entries under
+  // one headword. Keyed on the short form because that *is* the identity, so
+  // there is nothing else the second row could be distinguished by.
+  const seenAbbreviations = new Set<string>();
+  const flaggedAbbreviations = new Set<string>();
+  for (const row of grammar.abbreviations ?? []) {
+    const key = abbreviationKey(row);
+    if (seenAbbreviations.has(key)) {
+      if (!flaggedAbbreviations.has(key)) {
+        flaggedAbbreviations.add(key);
+        issues.push({ kind: "duplicate-abbreviation", key });
+      }
+      continue;
+    }
+    seenAbbreviations.add(key);
   }
 
   // Layer 2, downwards: an inherence declaration may only name a feature and a
@@ -1348,6 +1511,8 @@ export function grammarIssues(grammar: Grammar): GrammarIssue[] {
     if (!boundNames.has(row.feature)) {
       issues.push({ kind: "unbound-feature", key, feature: row.feature });
     }
+    lexicographicFeature(key, row.feature);
+    lexicographicInTag(key, row.category);
     for (const atom of tagAtoms(row.category)) {
       if (!atoms.has(tagKey(atom))) {
         issues.push({ kind: "unbound-atom", key, atom: formatTagVerbatim(atom) });
@@ -1363,6 +1528,7 @@ export function grammarIssues(grammar: Grammar): GrammarIssue[] {
       issues.push({ kind: "single-item-binding", key });
       continue;
     }
+    lexicographicInTag(key, row.tag);
     const unbound = tagAtoms(row.tag).filter((atom) => !atoms.has(tagKey(atom)));
     for (const atom of unbound) {
       issues.push({ kind: "unbound-atom", key, atom: formatTagVerbatim(atom) });
@@ -1401,6 +1567,8 @@ export function grammarIssues(grammar: Grammar): GrammarIssue[] {
     if (!boundNames.has(row.feature)) {
       issues.push({ kind: "unbound-feature", key, feature: row.feature });
     }
+    lexicographicFeature(key, row.feature);
+    lexicographicInTag(key, row.category);
     for (const atom of tagAtoms(row.category)) {
       if (!atoms.has(tagKey(atom))) {
         issues.push({ kind: "unbound-atom", key, atom: formatTagVerbatim(atom) });
@@ -1450,6 +1618,26 @@ export function grammarIssues(grammar: Grammar): GrammarIssue[] {
       continue;
     }
     seenLayouts.add(key);
+
+    lexicographicInTag(key, row.category);
+    // A coordinate is checked here and not through the dimensions: a
+    // lexicographic feature cannot be a *declared* axis without the axis row
+    // itself being reported, so a dimension naming one is already covered,
+    // while `fixed`, `exclude` and a list's items reach a bound value directly
+    // and would otherwise pin a table to "archaic".
+    const coordFeatures = new Set<string>();
+    for (const block of row.blocks) {
+      const coords: LayoutCoord[] = [
+        ...(block.fixed ?? []),
+        ...(block.kind === "list" ? block.items ?? [] : block.exclude ?? []).flatMap(
+          (cell) => cell.coords,
+        ),
+      ];
+      for (const coord of coords) coordFeatures.add(coord.feature);
+    }
+    // One issue per offending feature, not one per coordinate: a block that
+    // pins the same constant in ten cells has one defect to repair.
+    for (const feature of coordFeatures) lexicographicFeature(key, feature);
 
     const unboundCategory = tagAtoms(row.category).filter((atom) => !atoms.has(tagKey(atom)));
     for (const atom of unboundCategory) {
@@ -1542,6 +1730,10 @@ export function grammarIssues(grammar: Grammar): GrammarIssue[] {
   const seen = new Set<string>();
   const flagged = new Set<string>();
   for (const row of grammarRows(grammar)) {
+    // Abbreviations were swept above, under a kind that says what is actually
+    // wrong with two of them; reporting them here as well would put one defect
+    // on the worklist twice.
+    if (row.kind === "abbreviation") continue;
     if (seen.has(row.key)) {
       if (!flagged.has(row.key)) {
         flagged.add(row.key);
@@ -1742,7 +1934,10 @@ export function inherentFeatures(grammar: Grammar, category: Tag): GrammarFeatur
   for (const declaration of grammar.inherent ?? []) {
     if (tagKey(declaration.category) !== key || seen.has(declaration.feature)) continue;
     const feature = rows.find((row) => row.feature === declaration.feature);
-    if (feature === undefined) continue;
+    // Dropped for the same reason `resolveAxes` drops one: a lexicographic
+    // label set is not something a headword *is*, so it never narrows the entry
+    // editor's tree even if some record declares it inherent.
+    if (feature === undefined || feature.lexicographic === true) continue;
     seen.add(declaration.feature);
     out.push(feature);
   }
@@ -1883,6 +2078,20 @@ export function isValidGrammar(value: unknown): value is Grammar {
       if (!isPlainObject(row)) return false;
       if (typeof row.feature !== "string" || !FEATURE_NAME_PATTERN.test(row.feature)) return false;
       if (!isValidLabel(row.label) || !isValidScheme(row.scheme)) return false;
+      if (!isValidReferences(row.references)) return false;
+      if (row.lexicographic !== undefined && typeof row.lexicographic !== "boolean") return false;
+    }
+  }
+
+  // An abbreviation is the one row with no tag to check, so both of its strings
+  // are required — a row missing either says nothing at all, where every other
+  // shape failure here would be losing information the record does carry.
+  if (value.abbreviations !== undefined) {
+    if (!Array.isArray(value.abbreviations)) return false;
+    for (const row of value.abbreviations) {
+      if (!isPlainObject(row)) return false;
+      if (typeof row.short !== "string" || row.short.trim() === "") return false;
+      if (typeof row.long !== "string" || row.long.trim() === "") return false;
       if (!isValidReferences(row.references)) return false;
     }
   }

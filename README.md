@@ -16,6 +16,10 @@ built on the AT Protocol and ArangoDB. See [leksis.eu](https://leksis.eu).
 > [ADR-0008](docs/adr/0008-grammar-layer-axes-and-single-sourced-labels.md) and
 > [ADR-0009](docs/adr/0009-grammar-layer-layout.md). Generation from rules is
 > layer 5 and not built: a paradigm shows only the forms an entry carries.
+> Beside the grammar, a language also declares the rest of a dictionary's front
+> matter — lexicographic labels (register, domain, usage) and plain
+> abbreviations — and every label is keyed on the tag it names
+> ([ADR-0010](docs/adr/0010-labelled-tags-and-lexicographic-labels.md)).
 >
 > Work advances in **loops — units of work, not units of time.** An earlier
 > plan framed these as calendar weeks; that framing is retired.

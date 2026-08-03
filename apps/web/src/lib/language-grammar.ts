@@ -10,7 +10,7 @@ import { fetchLanguageRecord } from "./atproto-record";
 // this layer costs the API nothing.
 //
 // It is deliberately **not** how labels are resolved. Those come from the
-// abbreviations read model, which is indexed and cheap; only the layout needs
+// labels read model, which is indexed and cheap; only the layout needs
 // the record, because a layout is content and was never indexed. If that ever
 // becomes too expensive, the escape hatch is to index `grammar` into a read
 // model — a decision of its own, not something to slip in here.

@@ -3,8 +3,8 @@
 // database can answer without exposing entry listings: counts, the
 // to-be-completed queue (todo entries are deliberately reachable — they are
 // the review inbox), a recent-activity feed and a per-day activity series.
-// The abbreviation section reuses GET /languages/:tag/abbreviations, and
-// the "named in this language" review list reuses GET /languages?locale=.
+// The labels section reuses GET /languages/:tag/labels, and the "named in this
+// language" review list reuses GET /languages?locale=.
 
 import type { GrammarIssue } from "./grammar.js";
 

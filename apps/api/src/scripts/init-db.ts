@@ -13,7 +13,11 @@
 
 import { aql, Database } from "arangojs";
 import type { LanguageTranslation, Tag } from "@leksis/types";
-import { buildAbbreviationDocs, type BindingPair } from "../firehose/abbreviations";
+import {
+  buildLabelDocs,
+  toDeclaredLabel,
+  type DeclaredLabel,
+} from "../firehose/labels";
 import { syncLocalLanguages } from "../firehose/local-languages";
 
 const url = process.env.ARANGO_URL ?? "http://127.0.0.1:8529";
@@ -23,20 +27,28 @@ const password = process.env.ARANGO_PASSWORD ?? "";
 
 // `firehoseState` holds the Jetstream cursor (single doc, _key "jetstream").
 // `localLanguages` is the per-locale language-name read model (one doc per
-// locale tag), kept in sync by the firehose consumer. `abbreviations` is the
-// per-language annotation-pair read model (categories + definition notes of
-// current entry versions), also consumer-maintained and rebuilt below.
+// locale tag), kept in sync by the firehose consumer. `labels` is the
+// per-language labelled-tag read model — every label a language declares, plus
+// every tag its entries use that nothing has named — also consumer-maintained
+// and rebuilt below.
 const documentCollections = [
   "languages",
   "localLanguages",
   "entries",
-  "abbreviations",
+  "labels",
   "firehoseState",
 ];
 // Superseded by the record-centric model (Loop 2): definitions live on the
 // entry records themselves, and translation edges will be redesigned in
 // Loop 5. Both were created empty in week 1 and never written to.
 const obsoleteCollections = ["definitions", "translations"];
+// `abbreviations` is `labels` under its former name and former conception (a
+// label that acquired a tag, rather than a tag that has a label). Dropped
+// rather than warned about: it is a **derived** model, rebuilt wholesale from
+// `languages` and `entries` at the bottom of this script, so there is nothing
+// in it to lose — the same standing exception `localLanguages` has to the
+// archive-forever rule.
+const renamedCollections = ["abbreviations"];
 
 async function main() {
   // Connect to _system first so we can create the project DB if needed.
@@ -74,6 +86,19 @@ async function main() {
         await col.drop();
         console.log(`dropped obsolete empty collection "${name}"`);
       }
+    }
+  }
+
+  // A renamed derived collection is dropped even when it has content, unlike an
+  // obsolete one: every document in it is recomputed below from `languages` and
+  // `entries`, so keeping it would leave two copies of the same read model with
+  // only the new one being maintained.
+  for (const name of renamedCollections) {
+    const col = db.collection(name);
+    if (await col.exists()) {
+      const count = (await col.count()).count;
+      await col.drop();
+      console.log(`dropped renamed collection "${name}" (${count} derived doc(s), rebuilt below)`);
     }
   }
 
@@ -118,29 +143,32 @@ async function main() {
   });
   console.log('ensured indexes on "entries"');
 
-  // The abbreviations read model is served per language and maintained by
-  // entry membership.
-  await db.collection("abbreviations").ensureIndex({
+  // The labels read model is served per language and maintained by entry
+  // membership. There is deliberately no unique index on the tag: the doc _key
+  // *is* the (language, canonical row key) pair, so one row per tag per
+  // language is enforced by the primary key itself and a second index would
+  // only restate it.
+  await db.collection("labels").ensureIndex({
     type: "persistent",
     name: "idx_language",
     fields: ["languageID"],
     unique: false,
   });
-  await db.collection("abbreviations").ensureIndex({
+  await db.collection("labels").ensureIndex({
     type: "persistent",
     name: "idx_entries",
     fields: ["entries[*]"],
     unique: false,
   });
-  // Bound pairs are looked up by the atom they label (the viewer's resolution
-  // chain, and the binding sync's stale sweep).
-  await db.collection("abbreviations").ensureIndex({
+  // Declared rows are looked up by the atom they name (the viewer's resolution
+  // chain, and the declaration sync's stale sweep).
+  await db.collection("labels").ensureIndex({
     type: "persistent",
     name: "idx_bindingkey",
     fields: ["bindingKey"],
     unique: false,
   });
-  console.log('ensured indexes on "abbreviations"');
+  console.log('ensured indexes on "labels"');
 
   // Backfill the localLanguages read model from language docs indexed before
   // the languages/localLanguages split, which still carry `translations`.
@@ -160,7 +188,7 @@ async function main() {
     console.log(`backfilled "localLanguages" from ${legacy.length} pre-split language doc(s)`);
   }
 
-  // Rebuild the derived `abbreviations` read model wholesale. Idempotent by
+  // Rebuild the derived `labels` read model wholesale. Idempotent by
   // recomputation, so re-running on every deploy self-heals the model; entry
   // docs indexed before tags were stored contribute nothing until their
   // entries are re-published. (The consumer may ingest concurrently during a
@@ -182,25 +210,33 @@ async function main() {
       }
   `);
   const usageRows = await usageRowsCursor.all();
-  // Every label comes from here: the bindings each current language record
+  // Every label comes from here: the ones each current language record
   // declares. Stored on the language doc precisely so this rebuild does not
   // have to resolve every record from its PDS — without it, a db:init would
   // erase every label the model carries.
-  const bindingRowsCursor = await db.query<{ languageID: string; bindings: BindingPair[] }>(aql`
+  //
+  // `bindings` is the field's former name and former row shape; it is read
+  // alongside `labels` and mapped forward, so a language indexed before this
+  // change keeps its labels instead of losing them until someone happens to
+  // republish that record.
+  const declaredRowsCursor = await db.query<{ languageID: string; labels: DeclaredLabel[] }>(aql`
     FOR l IN languages
-      FILTER l.current == true AND l.bindings != null
-      RETURN { languageID: l.tag, bindings: l.bindings }
+      FILTER l.current == true AND (l.labels != null OR l.bindings != null)
+      RETURN { languageID: l.tag, labels: NOT_NULL(l.labels, l.bindings) }
   `);
-  const bindingRows = await bindingRowsCursor.all();
-  const abbreviationDocs = buildAbbreviationDocs(usageRows, bindingRows);
-  await db.query(aql`FOR a IN abbreviations REMOVE a IN abbreviations`);
-  if (abbreviationDocs.length > 0) {
-    await db.query(aql`FOR d IN ${abbreviationDocs} INSERT d INTO abbreviations`);
+  const declaredRows = (await declaredRowsCursor.all()).map((row) => ({
+    languageID: row.languageID,
+    labels: row.labels.map(toDeclaredLabel),
+  }));
+  const labelDocs = buildLabelDocs(usageRows, declaredRows);
+  await db.query(aql`FOR a IN labels REMOVE a IN labels`);
+  if (labelDocs.length > 0) {
+    await db.query(aql`FOR d IN ${labelDocs} INSERT d INTO labels`);
   }
-  const boundCount = abbreviationDocs.filter((d) => d.bindingKey !== null).length;
+  const namedCount = labelDocs.filter((d) => d.bindingKey !== null).length;
   console.log(
-    `rebuilt "abbreviations": ${abbreviationDocs.length} row(s) ` +
-      `from ${bindingRows.length} language grammar(s) (${boundCount} bound) ` +
+    `rebuilt "labels": ${labelDocs.length} row(s) ` +
+      `from ${declaredRows.length} language grammar(s) (${namedCount} named) ` +
       `and ${usageRows.length} current entry version(s)`,
   );
 

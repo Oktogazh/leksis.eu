@@ -1,14 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  abbreviationLookup,
+  labelLookup,
   resolveTag,
-  type AbbreviationView,
+  type LabelView,
   type EntryDefinition,
   type EntryView,
   type Tag,
 } from "@leksis/types";
-import { fetchAbbreviations } from "../lib/api";
+import { fetchLabels } from "../lib/api";
 import { fetchEntryRecord } from "../lib/atproto-record";
 import { definitionsDepth, placeLabel } from "../lib/definition-tree";
 
@@ -112,18 +112,18 @@ const DEPTH_INDENT = ["", "pl-5 sm:pl-6", "pl-10 sm:pl-12"];
  * The flat definitions list, in the record's reading order. Each row shows
  * its full place label — arabic only (1), roman → arabic (2), letters →
  * roman → arabic (3) — and indents by its own depth. Notes matching a
- * conflicted abbreviation pair carry the ⚠ flag. Shared by the entry page
+ * conflicting label carry the ⚠ flag. Shared by the entry page
  * and the compact entry preview.
  */
 export function DefinitionList({
   definitions,
-  abbreviations,
+  labels,
 }: {
   definitions: EntryDefinition[];
-  abbreviations: AbbreviationView[];
+  labels: LabelView[];
 }): ReactNode {
   const depth = definitionsDepth(definitions);
-  const lookup = abbreviationLookup(abbreviations);
+  const lookup = labelLookup(labels);
 
   // Indentation by displayed depth (0s in the place are skipped, so a place
   // like [0, 1, 1] renders at depth 2, not 3).
@@ -189,15 +189,15 @@ export function EntryPreview({ entry, onOpen }: EntryPreviewProps) {
   const { t } = useTranslation();
   const [state, setState] = useState<PreviewState>("loading");
   const [record, setRecord] = useState<Awaited<ReturnType<typeof fetchEntryRecord>>>(null);
-  const [abbreviations, setAbbreviations] = useState<AbbreviationView[]>([]);
+  const [labels, setLabels] = useState<LabelView[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     setState("loading");
     setRecord(null);
-    fetchAbbreviations(entry.languageID)
+    fetchLabels(entry.languageID)
       .then((list) => {
-        if (!cancelled) setAbbreviations(list);
+        if (!cancelled) setLabels(list);
       })
       .catch(() => {});
     fetchEntryRecord(entry.recordURI)
@@ -254,11 +254,11 @@ export function EntryPreview({ entry, onOpen }: EntryPreviewProps) {
           </div>
           {record.categories.length > 0 && (
             <ul className="mt-2 flex flex-wrap items-center gap-1.5">
-              <TagChips tags={record.categories} lookup={abbreviationLookup(abbreviations)} />
+              <TagChips tags={record.categories} lookup={labelLookup(labels)} />
             </ul>
           )}
           <div className="mt-2">
-            <DefinitionList definitions={record.definitions} abbreviations={abbreviations} />
+            <DefinitionList definitions={record.definitions} labels={labels} />
           </div>
         </>
       )}

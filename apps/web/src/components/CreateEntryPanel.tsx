@@ -5,11 +5,11 @@ import {
   categoryRefinements,
   categoryRoots,
   LEKSIS_ENTRY_COLLECTION,
-  type AbbreviationView,
+  type LabelView,
   type Grammar,
   type GrammarValue,
   type ResolvedAxis,
-  abbreviationLookup,
+  labelLookup,
   parseTagInput,
   tagKey,
   type Tag,
@@ -20,7 +20,7 @@ import {
   type LeksisEntryRecord,
 } from "@leksis/types";
 import { useSession } from "../auth/SessionProvider";
-import { fetchAbbreviations, fetchCurrentLanguageRecord, searchEntries } from "../lib/api";
+import { fetchLabels, fetchCurrentLanguageRecord, searchEntries } from "../lib/api";
 import { fetchLanguageRecord } from "../lib/atproto-record";
 import { DeleteEntryDialog } from "./DeleteEntryDialog";
 import { EntryPreview, TagChips } from "./EntryPreview";
@@ -63,16 +63,16 @@ function FormTagEditor({
   tag,
   onChange,
   axes,
-  abbreviations,
+  labels,
 }: {
   tag: Tag | null;
   onChange: (tag: Tag | null) => void;
   axes: ResolvedAxis[];
-  abbreviations: AbbreviationView[];
+  labels: LabelView[];
 }) {
   const { t } = useTranslation();
   const [manual, setManual] = useState("");
-  const lookup = abbreviationLookup(abbreviations);
+  const lookup = labelLookup(labels);
   const parsed = parseTagInput(manual);
   const feats = tag?.feats ?? [];
 
@@ -100,7 +100,7 @@ function FormTagEditor({
     );
   }
 
-  const bound = abbreviations.filter((a) => a.tag !== undefined && a.long !== undefined);
+  const bound = labels.filter((a) => a.tag !== undefined && a.long !== undefined);
 
   return (
     <div className="mt-2">
@@ -202,12 +202,12 @@ function OtherFormsEditor({
   forms,
   onChange,
   axes,
-  abbreviations,
+  labels,
 }: {
   forms: OtherFormDraft[];
   onChange: (forms: OtherFormDraft[]) => void;
   axes: ResolvedAxis[];
-  abbreviations: AbbreviationView[];
+  labels: LabelView[];
 }) {
   const { t } = useTranslation();
   return (
@@ -241,7 +241,7 @@ function OtherFormsEditor({
             tag={row.tag}
             onChange={(tag) => onChange(forms.map((f) => (f.id === row.id ? { ...f, tag } : f)))}
             axes={axes}
-            abbreviations={abbreviations}
+            labels={labels}
           />
         </div>
       ))}
@@ -472,12 +472,12 @@ const emptyGroupDraft = (): GroupDraft => ({ notes: [] });
 function CategoryEditor({
   tags,
   onChange,
-  abbreviations,
+  labels,
   grammar,
 }: {
   tags: Tag[];
   onChange: (tags: Tag[]) => void;
-  abbreviations: AbbreviationView[];
+  labels: LabelView[];
   grammar: Grammar | null;
 }) {
   const { t } = useTranslation();
@@ -488,9 +488,9 @@ function CategoryEditor({
    * bundle, never an accumulation — and committing pushes it into `tags`.
    */
   const [path, setPath] = useState<Tag | null>(null);
-  const lookup = abbreviationLookup(abbreviations);
+  const lookup = labelLookup(labels);
   const chosen = new Set(tags.map(tagKey));
-  const options = abbreviations.filter(
+  const options = labels.filter(
     (a) => a.tag !== undefined && a.long !== undefined && !chosen.has(tagKey(a.tag)),
   );
   const parsed = parseTagInput(manual);
@@ -733,14 +733,14 @@ export function EntryEditorDialog({
   const [todoItems, setTodoItems] = useState<string[]>(initial?.todo ?? []);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** The target language's abbreviation pairs — suggestions + conflict flags. */
-  const [abbreviations, setAbbreviations] = useState<AbbreviationView[]>([]);
+  /** The target language's labelled tags — suggestions + conflict flags. */
+  const [labels, setLabels] = useState<LabelView[]>([]);
   /**
    * The target language's grammar, resolved from its current record — what
    * drives the category editor's progressive narrowing (a derived view of
    * layers 1–2, never a separate declaration). Null while loading or when
    * the record cannot be resolved, in which case the editor degrades to the
-   * flat picker over bound abbreviations, exactly as at layer 1.
+   * flat picker over bound labels, exactly as at layer 1.
    */
   const [grammar, setGrammar] = useState<Grammar | null>(null);
   /** Current entries in the target language sharing a spelling with a fresh entry, for the duplicate warning. */
@@ -761,12 +761,12 @@ export function EntryEditorDialog({
   // The suggestions are an assist: failures stay silent and the editor
   // simply offers none.
   useEffect(() => {
-    setAbbreviations([]);
+    setLabels([]);
     if (targetTag === null) return;
     let cancelled = false;
-    fetchAbbreviations(targetTag)
+    fetchLabels(targetTag)
       .then((list) => {
-        if (!cancelled) setAbbreviations(list);
+        if (!cancelled) setLabels(list);
       })
       .catch(() => {});
     return () => {
@@ -1169,7 +1169,7 @@ export function EntryEditorDialog({
             <CategoryEditor
               tags={categories}
               onChange={setCategories}
-              abbreviations={abbreviations}
+              labels={labels}
               grammar={grammar}
             />
           </fieldset>
@@ -1183,7 +1183,7 @@ export function EntryEditorDialog({
               forms={otherForms}
               onChange={setOtherForms}
               axes={formAxes}
-              abbreviations={abbreviations}
+              labels={labels}
             />
           </fieldset>
 

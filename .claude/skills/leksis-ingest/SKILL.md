@@ -168,9 +168,13 @@ coexist on one item:
 An entry record therefore contains **no reader-facing grammatical text at
 all**. There is no `annotations` field, no `{long, short}` pair anywhere in
 `eu.leksis.entry`, and nothing on an entry that says "noun". A bot that has a
-source abbreviation and no tag for it has two legal moves: emit prose in
-`notes`, or bind a tag for it on the language record. It may not write the
-abbreviation into a category.
+source abbreviation and no tag for it has three legal moves: emit prose in
+`notes`; declare it on the language record as a **lexicographic label set** if
+it is register, domain or editorial usage (`arch.`, `neol.`, "by extension") —
+a feature flagged `lexicographic`, whose values are ordinary tags a category may
+then carry; or declare it as a **plain abbreviation** (`grammar.abbreviations`,
+`{short, long}`) if it stands for no tag at all, like `udb.` for "un dra
+bennak". It may never write the abbreviation itself into a category.
 
 Why: a label written on an entry is one the language cannot govern — invisible
 to the worklist, uncorrectable in one place, free to drift between two
@@ -453,7 +457,7 @@ This is not bookkeeping. It is the only way the two record types can agree:
 - the language record's `grammar` needs the source's abbreviations to exist at
   all — a print dictionary's front matter *is* the binding declaration;
 - the entry records need the reverse lookup — every `n.` in the source body
-  must become the same tag every time, or the abbreviations read model fills
+  must become the same tag every time, or the labels read model fills
   with near-duplicates nobody can merge.
 
 Generate the `grammar` **from** the map; never hand-write the two in parallel.
@@ -753,7 +757,7 @@ and it is cheap — take the correct shape rather than a compatible one.
    - `GET https://leksis.eu/api/languages` — your language is listed;
    - `GET https://leksis.eu/api/languages/<tag>/dashboard` — entry counter,
      todo queue, activity feed, and **`grammarIssues`: this must be empty**;
-   - `GET https://leksis.eu/api/languages/<tag>/abbreviations` — every label
+   - `GET https://leksis.eu/api/languages/<tag>/labels` — every label
      your language record bound, each with a usage `count` (zero is normal for
      a label declared before use) and `conflictsWith`; plus every tag your
      entries use that **nothing has named**, which appear as rows with a
@@ -767,7 +771,7 @@ and it is cheap — take the correct shape rather than a compatible one.
    resolves the record content from the PDS — this exercises the full path,
    including tag rendering (a chip styled as unbound is a tag you did not
    bind). The language dashboard (`/language/<tag>`) shows the counters, the
-   grammar repair worklist, the abbreviations with conflicts, and the todo
+   grammar repair worklist, the labels with conflicts, and the todo
    queue your records feed.
 
 If records are on the PDS but never appear in the index, they failed AppView

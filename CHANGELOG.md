@@ -4,6 +4,86 @@ All notable changes to Leksis. Each section is one loop — a unit of work, not 
 unit of time: the content loops grow the dictionary outward, the grammar loops
 (the morphology arc) grow the entry deeper, and the two interleave.
 
+## Labelled tags — lexicographic labels, abbreviations, and identity on the tag
+
+The front matter of a dictionary is more than grammar. A language can now declare
+**lexicographic label sets** (register, domain, editorial usage — "archaic",
+"neologism", "by extension") and **plain abbreviations** ("udb." for "un dra
+bennak"), beside the parts of speech, features and inflection classes it already
+declared. And the read model behind all of them is re-keyed: **the tag is the
+identity, the label is what it is called**. See **ADR-0010**.
+
+> **Additive to the lexicon, breaking for the API and the database.** No entry
+> record changes and no bot republish. The `abbreviations` collection and its
+> endpoint are renamed `labels`; `db:init` drops the old collection and rebuilds
+> the new one from `languages` and `entries`.
+
+### Lexicon & types
+
+- **`grammar.features[].lexicographic`** — marks a feature as a lexicographic
+  label set. Structurally a minted feature with values, so its values are
+  ordinary tags an entry or a sense may carry; the flag withholds only
+  participation in the grammatical layers. "By extension" is not something a word
+  *is* nor something its forms *vary over*, so it is never an inherent feature,
+  an axis, a layout dimension or part of a named combination.
+- **`grammar.abbreviations`** — `[{short, long, references?}]`. A shallow row
+  standing for **no tag at all**. Both strings are required, unlike a label's
+  optional `short`, because the short form *is* the identity; no `scheme`, since
+  the only possible provenance is this language's own tradition.
+- **A flag rather than a sixth array** for the lexicographic sets: the machinery
+  is a feature's exactly, and a fact keeps one home.
+- Two new issues, reported and never rejected: `lexicographic-in-grammar` (a
+  label set used where the grammatical layers expect grammar) and
+  `duplicate-abbreviation` (two rows sharing the short form that identifies
+  them).
+
+### The read model, re-keyed
+
+- **`abbreviations` → `labels`**, and "a tagged abbreviation" → **a labelled
+  tag**. The doc `_key` is now `(language, canonical row key)` and nothing else,
+  so **ArangoDB's primary key enforces one row per tag per language** — no extra
+  index, because it *is* the key.
+- **Renaming a label keeps its usage.** Keyed on the pair, "n." → "an." used to
+  destroy one row and create another; it is an in-place update now.
+- **Two atoms named identically stay two rows** and flag each other as
+  conflicting, instead of silently collapsing into one. `conflictsBetween` was
+  widened accordingly: the same full form clashes however either row is
+  abbreviated.
+- **The join is free.** A declaration and the entry usage of the same tag compute
+  the same key, so `syncEntryTags` no longer looks the row up, and the
+  "declarations before usage" ordering in the rebuild stops being load-bearing.
+- Abbreviations reach the model through `grammarRows` like every other row, so
+  the **API cost was zero endpoints** — the fourth layer running.
+
+### Interface
+
+- The dialog is retitled **"Grammar & labels"**: it declares three kinds of thing
+  now, and "Grammatical labels" named one.
+- Two new doors on its root level, beside parts of speech, features and
+  inflection classes: **Lexicographic labels** (the same three levels as a
+  class — nothing is fetched from UD, since UD defines none of this) and
+  **Abbreviations** (two levels, not three: there is nothing underneath a row
+  that is not a set of options).
+- The exclusion from layers 2–4 is rendered **as navigation**: lexicographic sets
+  are simply absent from the inherence and axis pickers, never disabled.
+- Which section a feature belongs to is **derived from the row**, so reopening
+  the dialog puts it back where it was.
+- The dashboard's badge now names what a row *is* — part of speech, value,
+  combination, abbreviation — instead of saying "grammar" at all of them.
+
+### Fixed
+
+- **A grammar holding only abbreviations was silently dropped on publish**: the
+  editor checked three of the object's arrays before deciding it had anything to
+  write.
+- The language doc's cached label rows are **migrated forward, not away**
+  (`toDeclaredLabel`). They are what a rebuild uses instead of resolving every
+  record from its PDS, so renaming the field alone would have erased every label
+  in production until each language record was republished.
+- Stale copy retired: the dashboard no longer says abbreviations are "harvested"
+  from entries (single-sourced since ADR-0008), and the lexicon's `grammar`
+  description no longer says layout "will be added".
+
 ## Grammar layer — layer 4: the shape of the tables
 
 A language can now say **what its paradigms look like** — which axis runs down

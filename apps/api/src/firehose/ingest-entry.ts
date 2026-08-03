@@ -12,7 +12,7 @@ import {
   type Tag,
 } from "@leksis/types";
 import { db } from "../db";
-import { syncEntryTags } from "./abbreviations";
+import { syncEntryTags } from "./labels";
 import type { IngestResult } from "./ingest-language";
 
 // Decomposition of eu.leksis.entry records into the `entries` collection.
@@ -44,10 +44,10 @@ interface EntryDoc {
   /**
    * Distinct grammatical tags this version uses, at all three altitudes —
    * lexeme (`categories`), sense (a definition node's `categories`) and form
-   * (an `otherForms` tag). Kept so the abbreviations read model can be
+   * (an `otherForms` tag). Kept so the labels read model can be
    * maintained across version transitions and deletions without re-fetching
    * records, and it is what lets that model show a tag in use which no
-   * language binding has given a label yet.
+   * language declaration has named yet.
    */
   tags: Tag[];
   createdAt: string;

@@ -1,9 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  formatAbbreviationRef,
+  formatLabelRef,
   formatTagVerbatim,
-  type AbbreviationView,
+  type LabelView,
   type DashboardActivityDay,
   type DashboardFeedItem,
   type LanguageDashboardResponse,
@@ -15,7 +15,7 @@ import { endonym } from "../components/LanguageSelector";
 import { GrammarBindingDialog } from "../components/GrammarBindingDialog";
 import { LanguageRecordDialog, type LanguageRecordMode } from "../components/LanguageRecordDialog";
 import { LanguageSearchBar } from "../components/LanguageSearchBar";
-import { fetchAbbreviations, fetchLanguageDashboard, fetchLanguages } from "../lib/api";
+import { fetchLabels, fetchLanguageDashboard, fetchLanguages } from "../lib/api";
 import { fetchLanguageRecord } from "../lib/atproto-record";
 import { forgetLanguageGrammar } from "../lib/language-grammar";
 
@@ -128,14 +128,14 @@ type LoadState = "loading" | "ready" | "not-found" | "failed";
  * record and to name languages in this language (both via
  * LanguageRecordDialog, which rewrites eu.leksis.language records on the
  * editor's own PDS), the activity grid + recent-changes feed, the harvested
- * abbreviations with their conflicts, and the to-be-completed review queue.
+ * labels with their conflicts, and the to-be-completed review queue.
  * Entries themselves stay reachable through search only.
  */
 export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps) {
   const { t, i18n } = useTranslation();
   const { profile } = useSession();
   const [dashboard, setDashboard] = useState<LanguageDashboardResponse | null>(null);
-  const [abbreviations, setAbbreviations] = useState<AbbreviationView[]>([]);
+  const [labels, setLabels] = useState<LabelView[]>([]);
   const [namedIn, setNamedIn] = useState<LanguageView[]>([]);
   const [record, setRecord] = useState<LeksisLanguageRecord | null>(null);
   const [state, setState] = useState<LoadState>("loading");
@@ -147,9 +147,9 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
   /** The binding editor — this language's own grammar declaration. */
   const [grammarOpen, setGrammarOpen] = useState(false);
   // A row with no `long` is a tag entries use that nothing has named here yet:
-  // the translation worklist, kept out of the abbreviation list proper.
-  const labelled = abbreviations.filter((a) => a.long !== undefined);
-  const unboundTags = abbreviations.filter((a) => a.long === undefined && a.tag !== undefined);
+  // the naming worklist, kept out of the label list proper.
+  const labelled = labels.filter((a) => a.long !== undefined);
+  const unboundTags = labels.filter((a) => a.long === undefined && a.tag !== undefined);
   /** True while the full flagged-for-review list dialog is open. */
   const [todoOpen, setTodoOpen] = useState(false);
   /** Record URI written to the PDS but not yet seen back from the AppView. */
@@ -159,7 +159,7 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
     let cancelled = false;
     setState("loading");
     setDashboard(null);
-    setAbbreviations([]);
+    setLabels([]);
     setNamedIn([]);
     setRecord(null);
     setDialog(null);
@@ -174,9 +174,9 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
         setDashboard(found);
         setState("ready");
         // Best-effort side data — failures never block the dashboard.
-        fetchAbbreviations(tag)
+        fetchLabels(tag)
           .then((list) => {
-            if (!cancelled) setAbbreviations(list);
+            if (!cancelled) setLabels(list);
           })
           .catch(() => {});
         fetchLanguages(tag)
@@ -345,9 +345,10 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
               <h2 className="text-sm font-semibold text-content">
                 {t("languagePage.abbreviationsTitle")}
               </h2>
-              {/* Layer 0 (free abbreviations harvested from entries) and layer 1
-                  (the grammar a language declares) are the same shelf to a
-                  contributor, so the binding editor opens from here. */}
+              {/* A dictionary's front matter is one shelf to a contributor —
+                  grammatical tags, lexicographic labels and plain
+                  abbreviations alike — so the editor that declares all of them
+                  opens from here. */}
               <button
                 type="button"
                 onClick={() => setGrammarOpen(true)}
@@ -366,8 +367,8 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
               </p>
             ) : (
               <ul className="mt-2 space-y-1.5">
-                {labelled.map((abbreviation, i) => {
-                  const conflicted = abbreviation.conflictsWith.length > 0;
+                {labelled.map((row, i) => {
+                  const conflicted = row.conflictsWith.length > 0;
                   return (
                     <li key={i} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                       <span
@@ -375,34 +376,39 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
                           }`}
                       >
                         {conflicted && <span aria-hidden="true">⚠ </span>}
-                        {abbreviation.short ?? abbreviation.long}
+                        {row.short ?? row.long}
                       </span>
-                      {abbreviation.short !== undefined && (
-                        <span className="text-sm text-content">{abbreviation.long}</span>
+                      {row.short !== undefined && (
+                        <span className="text-sm text-content">{row.long}</span>
                       )}
                       {/* A bound pair is the language's own declaration, so it
                           is listed even at ×0 — the count is usage, not
                           existence. */}
-                      {abbreviation.bound && (
+                      {/* The badge names what the row *is*, since the list now
+                          holds three quite different things; the tag itself
+                          stays on hover, for the rows that have one. */}
+                      {row.bound && (
                         <span
                           className="rounded border border-primary/50 px-1.5 py-0.5 text-[0.65rem] uppercase tracking-wide text-primary"
                           title={
-                            abbreviation.tag === undefined
+                            row.tag === undefined
                               ? undefined
                               : t("languagePage.abbreviationBound", {
-                                  tag: formatTagVerbatim(abbreviation.tag),
+                                  tag: formatTagVerbatim(row.tag),
                                 })
                           }
                         >
-                          {t("languagePage.abbreviationBoundBadge")}
+                          {row.kind === undefined
+                            ? t("languagePage.abbreviationBoundBadge")
+                            : t(`languagePage.labelKind.${row.kind}`)}
                         </span>
                       )}
-                      <span className="text-xs text-content-subtle">×{abbreviation.count}</span>
+                      <span className="text-xs text-content-subtle">×{row.count}</span>
                       {conflicted && (
                         <span className="text-xs text-red-600">
                           {t("languagePage.abbreviationsConflict", {
-                            pairs: abbreviation.conflictsWith
-                              .map(formatAbbreviationRef)
+                            pairs: row.conflictsWith
+                              .map(formatLabelRef)
                               .join(", "),
                           })}
                         </span>
