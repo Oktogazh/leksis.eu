@@ -171,6 +171,16 @@ its rows here in the same loop.
 | L-15 | layer 3 `axes` on a POS | with ≥2 values, in a **non-alphabetical** order, so order is visibly the language's |
 | L-16 | layer 3 axis on a **combination** — non-rectangular | an axis declared for one refined category and never for its sibling |
 | L-17 | axis value that is **multivalue** | one option spanning two values (`Fem,Masc`), for the "spans the axis" state |
+| L-50 | layer 4 `layout`, one table | a layout on a bound POS: one axis down, one across, cells derived from the axes' own value order |
+| L-51 | **nested** dimensions | two axes on one dimension, so an outer header spans several lines — the case a flat grid cannot express |
+| L-52 | several blocks, told apart by `fixed` | two tables of one category differing only in a pinned value (a mood, a tense) |
+| L-53 | a **named** pinned combination | the pinned pair also bound in `bindings` → the block caption is **one** chip, not two decomposed ones |
+| L-54 | `exclude`, complete address | one cell removed inside a grid; its line survives on the other value |
+| L-55 | `exclude`, **partial** address | one row naming fewer coordinates than a cell → a whole line or column dropped, not printed empty. No editor writes these, so only a fixture covers them |
+| L-56 | a `list` block marked `summary` | the "rosa, rosae" case: printed beside the headword with the full table behind the expander |
+| L-57 | a list item on a **non-axis** value | a form printed under a value that is bound but declared no axis — legitimate, and must not be reported |
+| L-58 | layout on a **combination**, non-rectangular | a layout for one refined category and none for its sibling, so the sibling degrades to the flat list |
+| L-59 | axes but **no layout** | a category with declared axes and no layout row → the flat list. The fallback the layer must never break, and the only row here that is verified by *absence* |
 
 ### 3.2 Language records — `qtm` (bare) and `qto` (defective)
 
@@ -186,9 +196,21 @@ its rows here in the same loop.
 | L-34 | `single-item-binding` | `qto`: a one-atom row in `bindings` |
 | L-35 | `inherent-axis-conflict` | `qto`: the same (category, feature) declared both ways |
 | L-36 | `empty-axis` | `qto`: an axis row with no values |
+| L-37 | `layout-unknown-axis` | `qto`: a table dimension naming a feature the category declares no axis of |
+| L-38 | `layout-repeated-axis` | `qto`: one feature on both dimensions of a table |
+| L-39 | `layout-foreign-coordinate` | `qto`: an `exclude` coordinate outside the block's grid — the exclusion that silently removes nothing |
+| L-40 | `empty-layout-block` | `qto`: a table with no dimensions, **and** a list with no items |
+| L-41 | `layout-too-large` | `qto`: axes multiplying past `MAX_LAYOUT_CELLS` (4096) → the block draws nothing and says why |
 
-All of L-30…L-36 land in **one** `qto` record — they are rows in one `grammar`
+All of L-30…L-41 land in **one** `qto` record — they are rows in one `grammar`
 object, and the dashboard's repair worklist should show them all at once.
+
+Two of these are worth constructing deliberately rather than by accident. L-39
+is the only issue kind that reports something *harmless but useless*, so it is
+the one most likely to be dismissed as noise — the fixture exists to prove the
+worklist says it. L-41 needs four axes of sixteen values to trip the cap, which
+is more vocabulary than the rest of `qto` holds; bind it under a feature nothing
+else uses, so it cannot distort another row.
 
 ### 3.3 Entry records
 
@@ -220,8 +242,11 @@ object, and the dashboard's repair worklist should show them all at once.
 | E-24 | withdrawal + redirect | `deleted` + `redirectTo` pointing at E-22's survivor |
 | E-25 | volume | one entry with ~8 definitions and ~6 other forms — layout stress, and the ceiling on how big any single fixture gets |
 | E-26 | the bare language | 2–3 `qtm` entries (covers L-21/L-22) |
+| E-27 | forms filling a **laid-out** table | one entry whose `otherForms` cover most cells of L-50's table, with **at least one cell deliberately empty** — an empty cell and an excluded one must not look the same |
+| E-28 | a form carrying **more** than its cell address | the inherent gender, or a part of speech, repeated on the form's tag → it must still land in its cell (the placement's superset tolerance) |
+| E-29 | a form matching **no cell** | a form tagged on a declared axis whose value combination the layout does not address → the leftover list *below* the table. Distinct from E-18, where the language declares no axis at all |
 
-That is ~28 entries. Stay under 40.
+That is ~31 entries. Stay under 40.
 
 ---
 
@@ -295,6 +320,74 @@ skill exists to prevent.
 
 ---
 
+## 7. Pending UI verification — the debt this set cannot pay
+
+Every fixture above is a **record**, so it proves what a *reader* sees. It proves
+nothing about the **authoring surfaces**, because those sit behind a session:
+`App.tsx` sends a logged-out visitor to `/`, so the grammar editor and the entry
+editor are unreachable without one. A fixture cannot log in.
+
+So the list below is verification **debt**, not a test plan for this bot. It is
+recorded here because this is where "what a later browsing session must do"
+lives, and because an unverified authoring flow is exactly the thing that ships
+broken and is noticed months later by a contributor.
+
+**What is needed first:** a test account (its own PDS account, like the fixture
+bot's, but for *driving the UI* rather than publishing from a script), and a
+session an agent can restore. Until then nothing below can be checked by anyone,
+including a human — the local dev flow has the same gate.
+
+**One caveat that will otherwise waste a session.** Local OAuth builds its client
+id from `window.location`, so a **deep link on a cold load throws**
+(`Invalid loopback client ID: Value must not contain a path component`) and the
+login form never works. Load `http://127.0.0.1:5173/` first, log in, *then*
+navigate in-app — or fix `resolveClientId` in `apps/web/src/auth/client.ts` to
+pass the origin instead of the location, which is ADR-0007's carried-forward
+action item.
+
+### 7.1 Grammar editor — layer 4, the Layout tab (unverified, shipped)
+
+| # | Flow | What must be true |
+|---|---|---|
+| U-01 | the tab appears | a fourth tab beside Primitives / Categories / Axes; entering it lands on the layout root |
+| U-02 | the cascade as navigation | a language with **no axes** is told to declare axes first and offered nothing to lay out; only categories with a declared axis are offered |
+| U-03 | declaring a layout | picking a category creates it **with one empty table** and opens that block; the footer refuses to publish, naming `empty-layout-block` |
+| U-04 | assigning dimensions | axis chips move onto "down the table" / "across the table"; putting one on the second dimension **takes it off the first** |
+| U-05 | nesting order | ↑/↓ reorder a dimension's axes, and the grid's header spans change to match |
+| U-06 | pinning a constant | pinning an unplaced axis captions the block and adds the value to every cell's identifier |
+| U-07 | the derived grid | each cell shows its identifier in UD form (`Case=Gen\|Number=Sing`), in the axes' **declared order**, and the grid scrolls inside its own box rather than widening the dialog |
+| U-08 | excluding a cell | clicking a cell strikes it through; clicking again restores it — the round trip is the point, since a one-way exclusion would be a trap |
+| U-09 | list blocks | one value per axis, plus the manual identifier field; items reorder and delete |
+| U-10 | the summary flag | marking a block shows it as "beside the headword" in the block list and in the resolved preview |
+| U-11 | the preview | the category level draws every block through the *shipped* resolver — an excluded cell is absent there while still clickable in the editor |
+| U-12 | removing blocks | removing the last block **withdraws the layout** and returns to the root |
+| U-13 | publishing | the rewritten record round-trips: reopen the dialog and the layout is as authored, `grammarIssues` empty on the dashboard |
+| U-14 | the no-orphan guard | withdrawing an axis a layout uses is refused at publish, naming the layout row |
+| U-15 | mobile | the whole tab at 375px, including the grid's horizontal scroll |
+
+### 7.2 Grammar editor — layer 4's sibling, the Inflection classes section
+
+| # | Flow | What must be true |
+|---|---|---|
+| U-20 | the third root section | Inflection classes sits beside Parts of speech and Features, counting what is declared |
+| U-21 | no suggestions | declaring a class makes **no request** to universaldependencies.org — check the network panel, not just the absence of a list |
+| U-22 | minting is pre-ticked | a new class, and every value of a minted feature, opens with the mint box already checked and asking for a reference |
+| U-23 | the breadcrumb | a class's trail reads Grammar › Inflection classes › … , and a UD feature's still reads … › Features › … |
+| U-24 | nothing is hidden | the class also appears under Features, and unbinding it returns to the classes level |
+
+### 7.3 Carried forward from earlier layers
+
+ADR-0008's action item 4 — a full browser pass on the Axes tab, an entry
+authored with a form tag, and both viewers — was deferred by decision and is
+still owed. Do it in the same session as §7.1: the same login, the same fixture
+language.
+
+**When the account exists, work through these and delete what passes.** A row
+left here after it has been checked is worse than no list, for the reason a stale
+manifest is: it sends the next session to re-do work that is already done.
+
+---
+
 ## Canonical sources
 
 - **`leksis-ingest`** skill — lexicon shapes, tagging model, PDS mechanics,
@@ -308,3 +401,8 @@ skill exists to prevent.
   abbreviations endpoints serve, i.e. what a fixture is asserted against
 - `docs/design/grammatical-tagging.md` + `docs/adr/0006-*`, `0007-*`, `0008-*` —
   the features the matrix must cover
+- `packages/types/src/grammar.ts` — `resolveLayout`, `placeForms`,
+  `MAX_LAYOUT_CELLS`: what a layout fixture is actually asserted against, since
+  the viewer and the designer both draw from it
+- `apps/web/src/components/GrammarBindingDialog.tsx` — the authoring surfaces
+  §7 owes a pass to

@@ -720,6 +720,27 @@ function coordsContained(coords: readonly LayoutCoord[], keys: ReadonlySet<strin
 }
 
 /**
+ * Whether a block's exclusions remove the cell at these coordinates — the rule
+ * the renderer applies, exported because the designer has to show the same
+ * truth. A designer previews a block with its exclusions **set aside**, so that
+ * an excluded cell stays visible and clickable rather than vanishing with no way
+ * back, and then asks this which of those cells are excluded.
+ *
+ * Containment, not equality: an exclusion naming fewer coordinates than a cell
+ * removes every cell that contains it, which is how one row removes a whole
+ * slice.
+ */
+export function excludesCell(
+  block: { exclude?: LayoutCell[] },
+  coords: readonly LayoutCoord[],
+): boolean {
+  const keys = new Set(coords.map((coord) => valueMatchKey(coord.feature, coord.value)));
+  return (block.exclude ?? []).some(
+    (cell) => cell.coords.length > 0 && coordsContained(cell.coords, keys),
+  );
+}
+
+/**
  * The layout that applies to an entry carrying these categories, or none.
  *
  * Matched by containment, as an axis is: a layout declared on `{NOUN}` serves an
@@ -902,18 +923,10 @@ function resolveTableBlock(
 
   const rowLines = leafLines(rowAxes);
   const columnLines = leafLines(columnAxes);
-  const excluded = (line: readonly GrammarValue[], column: readonly GrammarValue[]): boolean => {
-    if (block.exclude === undefined) return false;
-    const keys = new Set(
-      [...line, ...column].map((value) => valueMatchKey(value.feature, value.value)),
-    );
-    // An entry with no coordinates would exclude the whole table; the lexicon
-    // forbids one, and a record that carries one anyway is ignored rather than
-    // allowed to empty a paradigm.
-    return block.exclude.some(
-      (cell) => cell.coords.length > 0 && coordsContained(cell.coords, keys),
-    );
-  };
+  // An exclusion with no coordinates would empty the whole table; the lexicon
+  // forbids one, and `excludesCell` ignores a record that carries one anyway.
+  const excluded = (line: readonly GrammarValue[], column: readonly GrammarValue[]): boolean =>
+    excludesCell(block, [...line, ...column]);
 
   // A line or column with nothing left in it is dropped, and the headers are
   // built from what survived — which is why they are built here and not from
@@ -1047,6 +1060,54 @@ export function placeForms<T extends { tag: Tag }>(
     else put(best.key, form);
   }
   return { placed, leftover };
+}
+
+/** Everything a viewer needs to draw one entry's paradigm. */
+export interface LayoutView<T> {
+  /** The blocks to draw, resolved; empty when nothing applies. */
+  blocks: ResolvedLayoutBlock[];
+  /** Cell join key → the forms in it. */
+  placed: Map<string, T[]>;
+  /** Forms no cell claimed — the flat list beside or below the blocks. */
+  leftover: T[];
+  /** Whether any cell holds a form: the test for drawing a table at all. */
+  filled: boolean;
+}
+
+/**
+ * The whole viewer path in one call — find the layout that applies to these
+ * categories, resolve it, and place the entry's forms in its cells.
+ *
+ * It exists so that the component drawing a paradigm contains no arithmetic: one
+ * generator serves the viewer now and the exporters later, and what a reader sees
+ * can be checked without a browser.
+ *
+ * **The degradation is total, and deliberately expressed as one shape.** No
+ * grammar (the record would not load, the language declared none), no layout for
+ * this category, or a layout that resolves to no cells at all: each returns no
+ * blocks and every form as a leftover — which *is* the flat list, today's
+ * behaviour and the fallback this layer must never break. A caller that renders
+ * `leftover` whenever `blocks` is empty cannot get the fallback wrong.
+ */
+export function layoutView<T extends { tag: Tag }>(
+  grammar: Grammar | undefined,
+  categories: readonly Tag[],
+  forms: readonly T[],
+): LayoutView<T> {
+  const flat: LayoutView<T> = {
+    blocks: [],
+    placed: new Map<string, T[]>(),
+    leftover: [...forms],
+    filled: false,
+  };
+  if (grammar === undefined) return flat;
+  const layout = layoutFor(grammar, categories);
+  if (layout === undefined) return flat;
+  const blocks = resolveLayout(grammar, layout);
+  const cells = blocks.flatMap(blockCells);
+  if (cells.length === 0) return flat;
+  const { placed, leftover } = placeForms(cells, forms);
+  return { blocks, placed, leftover, filled: placed.size > 0 };
 }
 
 /**

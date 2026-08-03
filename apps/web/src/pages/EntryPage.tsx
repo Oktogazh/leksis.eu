@@ -4,14 +4,17 @@ import {
   abbreviationLookup,
   type AbbreviationView,
   type EntryView,
+  type Grammar,
   type LanguageView,
   type LeksisEntryRecord,
 } from "@leksis/types";
 import { EntryEditorDialog } from "../components/CreateEntryPanel";
-import { DefinitionList, TagChips, TagLabel } from "../components/EntryPreview";
+import { DefinitionList, TagChips } from "../components/EntryPreview";
+import { EntryParadigm } from "../components/ParadigmView";
 import { endonym } from "../components/LanguageSelector";
 import { fetchAbbreviations, fetchEntry, searchEntries } from "../lib/api";
 import { fetchEntryRecord } from "../lib/atproto-record";
+import { fetchLanguageGrammar } from "../lib/language-grammar";
 
 const SYNC_POLL_MS = 3_000;
 const SYNC_POLL_MAX_TRIES = 20; // ~60s of PDS → Jetstream → ArangoDB latency
@@ -72,6 +75,12 @@ export function EntryPage({
   const [homonyms, setHomonyms] = useState<EntryView[]>([]);
   /** The language's abbreviation pairs, for the ⚠ conflict flags. */
   const [abbreviations, setAbbreviations] = useState<AbbreviationView[]>([]);
+  /**
+   * The language's declared grammar, which is what lays this entry's forms out.
+   * Best-effort like the rest of the side data: absent means the flat list, and
+   * the paradigm's fallback chain treats that as an ordinary state.
+   */
+  const [grammar, setGrammar] = useState<Grammar | undefined>(undefined);
   const [state, setState] = useState<LoadState>("loading");
   const [proposing, setProposing] = useState(false);
   /** The redirect target's own view, resolved for display when this entry was deleted as a duplicate. */
@@ -86,6 +95,7 @@ export function EntryPage({
     setRecord(null);
     setHomonyms([]);
     setAbbreviations([]);
+    setGrammar(undefined);
     setRedirectTarget(null);
 
     (async () => {
@@ -115,6 +125,12 @@ export function EntryPage({
             if (!cancelled) setAbbreviations(list);
           })
           .catch(() => {});
+        // Hydration: the language's own declaration is what turns this entry's
+        // list of forms into its paradigm. It never rejects, so there is nothing
+        // to catch — an absent grammar is the flat list.
+        fetchLanguageGrammar(found.languageID).then((declared) => {
+          if (!cancelled) setGrammar(declared);
+        });
         const content = await fetchEntryRecord(found.recordURI);
         if (cancelled) return;
         if (content === null) return setState("record-gone");
@@ -259,21 +275,17 @@ export function EntryPage({
               </ul>
             )}
             {record.otherForms !== undefined && record.otherForms.length > 0 && (
-              <ul
-                className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm"
-                aria-label={t("entry.otherFormsLabel")}
-              >
-                {/* The list's order is the entry author's for now; declaring
-                    it belongs to the language is layer 4's business. */}
-                {record.otherForms.map((form, i) => (
-                  <li key={i} className="text-content">
-                    <span className="mr-1 font-mono text-xs text-content-muted">
-                      <TagLabel tag={form.tag} lookup={abbreviationLookup(abbreviations)} />
-                    </span>
-                    {form.form}
-                  </li>
-                ))}
-              </ul>
+              <div className="mt-3">
+                {/* Laid out the way the language says, and a flat list when it
+                    has said nothing — the fallback this layer must never
+                    break. */}
+                <EntryParadigm
+                  grammar={grammar}
+                  categories={record.categories}
+                  forms={record.otherForms}
+                  lookup={abbreviationLookup(abbreviations)}
+                />
+              </div>
             )}
           </header>
 

@@ -4,6 +4,76 @@ All notable changes to Leksis. Each section is one loop — a unit of work, not 
 unit of time: the content loops grow the dictionary outward, the grammar loops
 (the morphology arc) grow the entry deeper, and the two interleave.
 
+## Grammar layer — layer 4: the shape of the tables
+
+A language can now say **what its paradigms look like** — which axis runs down
+the table, which runs across, one table or several, what a reader sees without
+asking — and an entry's hand-entered forms arrive in that shape instead of a flat
+list. See **ADR-0009**.
+
+> **Additive.** No entry record changes and no bot republish. A language that
+> declares no layout behaves exactly as before: the flat list, which is the
+> fallback this layer was required not to break.
+
+### Lexicon & types
+
+- **`grammar.layout`** — `[{category, blocks[]}]`, a block being a **table**
+  (axis feature names per dimension, outermost first) or a **list** (explicit
+  addresses in order). Both may pin constants with `fixed` and be marked
+  `summary`.
+- **Cells are derived, never stored**: the cartesian product of the assigned
+  axes' declared values *is* the cell set. A stored matrix would be a second copy
+  of layer 3's value lists, free to drift from them.
+- **Non-rectangularity, three composable ways**: several blocks with different
+  `fixed` constants (one table per mood and tense), `exclude` for holes inside a
+  grid, and a list block for what no grid reaches — a Latin infinitive, gerund
+  and supine.
+- **`summary` is a flag per block**, not indices on the layout: reordering blocks
+  would silently renumber indices. Mark nothing and every block shows.
+- **Coordinates are bare and re-qualified before use.** `coordTag` puts the
+  minting scheme back from the `values` row that bound it, or a Breton
+  `Number=Sgv` cell would neither find its label nor match the form it addresses.
+  The join itself (`featsMatchKey`) is scheme- and POS-blind, since a bot and the
+  editor write the same form differently.
+- **Placement**: exact, then containment — a form carrying *more* than the address
+  still lands, most specific cell first; one carrying *less* stays a **leftover**
+  printed below the blocks. Nothing is ever dropped.
+- **Five new issue kinds** (`layout-unknown-axis`, `layout-repeated-axis`,
+  `layout-foreign-coordinate`, `empty-layout-block`, `layout-too-large`), reusing
+  `unbound-atom`/`duplicate` where the repair is identical. `MAX_LAYOUT_CELLS`
+  (4096) is counted before the product is built.
+- **`layoutView`** composes the whole viewer path in one call, so the component
+  drawing a paradigm holds no arithmetic and every degradation is one shape.
+
+### AppView
+
+- **No change at all** — third layer running. Verified against a throwaway
+  ArangoDB with real ingest: a coherent layout indexes, a defective one indexes
+  *and* reports its issues, a malformed block is rejected whole, and the
+  abbreviations model is untouched (a layout carries no labels).
+
+### Web
+
+- **Layout tab** in the binding editor: pick a category (only those with a
+  declared axis are offered), order its blocks, and edit one block — axes onto
+  each dimension with ↑↓ for nesting, value chips to pin a constant, and a
+  **derived grid whose every cell shows its identifier** in UD form. Clicking a
+  cell excludes it; clicking again puts it back, because the grid is resolved with
+  the exclusions set aside.
+- **The category level previews the whole layout through the shipped resolver**,
+  so the preview cannot drift from the page it previews.
+- **Inflection classes** — a third root section beside Parts of speech and
+  Features. Same machinery, but nothing is fetched from UD and the mint box starts
+  ticked: a class, and every value of a minted feature, is necessarily the
+  language's own. No storage change — a class *is* a minted feature.
+- **The entry page hydrates with its language's grammar** (pointer from the
+  AppView, record from the author's PDS, cached per tag) and draws the paradigm:
+  summary blocks beside the headword, the rest behind an expander, leftovers
+  below. A cell the language says cannot exist and a cell nobody has filled in
+  render **differently**.
+- Every failure degrades to the flat list — no record, no grammar, no layout, no
+  matching category, nothing filled.
+
 ## Grammar layer — layer 3: axes, and labels that live on the language
 
 A language can now say what a word's **forms** vary over — which features, over

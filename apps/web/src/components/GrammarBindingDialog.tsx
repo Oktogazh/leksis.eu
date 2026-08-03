@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  applicableAxes,
+  excludesCell,
   grammarDiff,
   grammarLookup,
   featureDocUrl,
   formatTagVerbatim,
+  parseTagInput,
   posTag,
+  resolveLayout,
   resolveTag,
   tagKey,
   uposDocUrl,
@@ -19,23 +23,44 @@ import {
   type Grammar,
   type GrammarLabel,
   type GrammarReference,
+  type LayoutAddress,
+  type LayoutCoord,
   type LeksisLanguageRecord,
+  type ResolvedAxis,
+  type ResolvedLayoutBlock,
+  type ResolvedLayoutTable,
   type Tag,
 } from "@leksis/types";
+import { BlockCaption, ParadigmList, ParadigmTable } from "./ParadigmView";
 import { fetchFeatureNames, fetchFeatureValues, type UdValue } from "@leksis/ud";
 import { useSession } from "../auth/SessionProvider";
 import { fetchCurrentLanguageRecord } from "../lib/api";
 import { fetchLanguageRecord } from "../lib/atproto-record";
 import {
   addAxis,
+  addBlock,
   addInherent,
+  addLayout,
+  addListItem,
   axisRows,
+  blockWithoutExclusions,
   classRows,
   featureRows,
   findAxis,
+  layoutRow,
   moveAxisValue,
+  moveBlock,
+  moveBlockAxis,
+  moveListItem,
   removeAxis,
+  removeBlock,
+  removeLayout,
+  removeListItem,
+  setBlockFixed,
   toggleAxisValue,
+  toggleBlockAxis,
+  toggleBlockSummary,
+  toggleExcludedCell,
   findCombination,
   findFeature,
   findPos,
@@ -99,10 +124,16 @@ type Path =
   // order the values each varies over.
   | { at: "l3root" }
   | { at: "l3category"; category: Tag }
-  | { at: "l3feature"; category: Tag; feature: string };
+  | { at: "l3feature"; category: Tag; feature: string }
+  // Layer 4 — a category, then one of its blocks. Two levels rather than three:
+  // a block is not reached through a feature, it *arranges* several of them.
+  | { at: "l4root" }
+  | { at: "l4category"; category: Tag }
+  | { at: "l4block"; category: Tag; index: number };
 
 /** Which tab a path belongs to — the tab strip is derived, never stored. */
-function pathTab(path: Path): "primitives" | "combinations" | "axes" {
+function pathTab(path: Path): "primitives" | "combinations" | "axes" | "layout" {
+  if (path.at.startsWith("l4")) return "layout";
   if (path.at.startsWith("l3")) return "axes";
   return path.at.startsWith("l2") ? "combinations" : "primitives";
 }
@@ -370,7 +401,9 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
       ? [{ label: t("grammar.crumbL2Root"), go: { at: "l2root" } }]
       : tab === "axes"
         ? [{ label: t("grammar.crumbL3Root"), go: { at: "l3root" } }]
-        : [{ label: t("grammar.crumbRoot"), go: { at: "root" } }];
+        : tab === "layout"
+          ? [{ label: t("grammar.crumbL4Root"), go: { at: "l4root" } }]
+          : [{ label: t("grammar.crumbRoot"), go: { at: "root" } }];
   if (path.at === "pos" || path.at === "posForm") {
     crumbs.push({ label: t("grammar.posLevel"), go: { at: "pos" } });
     if (path.at === "posForm") crumbs.push({ label: path.value, go: path });
@@ -399,9 +432,27 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
         go: { at: "l3feature", category: path.category, feature: path.feature },
       });
     }
+  } else if (path.at === "l4category" || path.at === "l4block") {
+    crumbs.push({
+      label: categoryText(path.category),
+      go: { at: "l4category", category: path.category },
+    });
+    if (path.at === "l4block") {
+      const block = layoutRow(draft, path.category)?.blocks[path.index];
+      crumbs.push({
+        label:
+          block?.kind === "list" ? t("grammar.l4BlockList") : t("grammar.l4BlockTable"),
+        go: path,
+      });
+    }
   } else if (path.at === "classes") {
     crumbs.push({ label: t("grammar.classesLevel"), go: { at: "classes" } });
-  } else if (path.at !== "root" && path.at !== "l2root" && path.at !== "l3root") {
+  } else if (
+    path.at !== "root" &&
+    path.at !== "l2root" &&
+    path.at !== "l3root" &&
+    path.at !== "l4root"
+  ) {
     // Which section a feature sits under is **derived from the row**, not
     // remembered: a class is a minted feature, so a minted one leads back to
     // the classes level and a UD one to the features level. The trail is then
@@ -1187,6 +1238,453 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
     );
   }
 
+  // ---- layer 4 levels ---------------------------------------------------
+
+  /**
+   * The categories a layout can be declared for: exactly those with a declared
+   * axis. A layout arranges axes, so a category with none has nothing to
+   * arrange — the cascade as navigation once more, and the reason this level
+   * points at the Axes tab instead of showing an empty designer.
+   */
+  function renderL4Root() {
+    const declared = draft.layout ?? [];
+    const seen = new Set<string>();
+    const candidates: Tag[] = [];
+    for (const axis of draft.axes ?? []) {
+      const key = tagKey(axis.category);
+      if (seen.has(key) || layoutRow(draft, axis.category) !== undefined) continue;
+      seen.add(key);
+      candidates.push(axis.category);
+    }
+    return (
+      <>
+        <p className="mb-3 text-xs text-content-subtle">{t("grammar.l4RootHint")}</p>
+        {(draft.axes ?? []).length === 0 ? (
+          <p className="text-sm text-content-muted">{t("grammar.l4NoAxes")}</p>
+        ) : (
+          <>
+            {declared.length > 0 && (
+              <ul className="space-y-1.5">
+                {declared.map((row) => (
+                  <li key={tagKey(row.category)}>
+                    <button
+                      type="button"
+                      onClick={() => setPath({ at: "l4category", category: row.category })}
+                      className={levelButton}
+                    >
+                      <span className="text-sm text-content">{categoryText(row.category)}</span>
+                      <span className="text-xs text-content-subtle">
+                        {t("grammar.l4BlockCount", { count: row.blocks.length })}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {candidates.length > 0 && (
+              <div className="mt-4 border-t pt-3">
+                <p className="text-xs font-medium text-content">{t("grammar.l4AddTitle")}</p>
+                <ul className="mt-2 flex flex-wrap gap-1.5">
+                  {candidates.map((category) => (
+                    <li key={tagKey(category)}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDraft(addLayout(draft, category));
+                          setPath({ at: "l4category", category });
+                        }}
+                        className="rounded-full border bg-surface-muted/60 px-2.5 py-1 text-xs text-content hover:border-primary hover:text-primary"
+                      >
+                        + {categoryText(category)}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-1 text-xs text-content-subtle">{t("grammar.l4AddHint")}</p>
+              </div>
+            )}
+          </>
+        )}
+      </>
+    );
+  }
+
+  /** One category's blocks, in order, with a preview of what a reader will see. */
+  function renderL4Category(category: Tag) {
+    const row = layoutRow(draft, category);
+    if (row === undefined) return null;
+    const resolved = resolveLayout(draft, row);
+    return (
+      <>
+        <div className="mb-3">
+          <p className="text-sm font-medium text-content">{categoryText(category)}</p>
+          <p className="mt-1 text-xs text-content-subtle">{t("grammar.l4CategoryHint")}</p>
+        </div>
+        <ol className="space-y-1.5">
+          {row.blocks.map((block, index) => (
+            <li key={index} className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPath({ at: "l4block", category, index })}
+                className={`${levelButton} flex-1`}
+              >
+                <span className="flex min-w-0 items-baseline gap-2">
+                  <span className="text-sm text-content">
+                    {block.kind === "table" ? t("grammar.l4BlockTable") : t("grammar.l4BlockList")}
+                  </span>
+                  <span className="truncate font-mono text-xs text-content-subtle">
+                    {blockSummaryText(block)}
+                  </span>
+                </span>
+                {block.summary === true && (
+                  <span className="shrink-0 text-xs text-primary">
+                    {t("grammar.l4SummaryBadge")}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                disabled={index === 0}
+                onClick={() => setDraft(moveBlock(draft, category, index, -1))}
+                aria-label={t("grammar.l4MoveEarlier")}
+                className="px-1 text-content-subtle hover:text-primary disabled:opacity-30"
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                disabled={index === row.blocks.length - 1}
+                onClick={() => setDraft(moveBlock(draft, category, index, 1))}
+                aria-label={t("grammar.l4MoveLater")}
+                className="px-1 text-content-subtle hover:text-primary disabled:opacity-30"
+              >
+                ↓
+              </button>
+            </li>
+          ))}
+        </ol>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setDraft(addBlock(draft, category, "table"))}
+            className="rounded-lg border px-3 py-1.5 text-xs text-content hover:border-primary"
+          >
+            {t("grammar.l4AddTable")}
+          </button>
+          <button
+            type="button"
+            onClick={() => setDraft(addBlock(draft, category, "list"))}
+            className="rounded-lg border px-3 py-1.5 text-xs text-content hover:border-primary"
+          >
+            {t("grammar.l4AddList")}
+          </button>
+        </div>
+
+        {/* The preview runs through the *same* resolver the viewer will use, so
+            what is checked here is the shipped arithmetic and not a second
+            drawing of it. */}
+        <div className="mt-4 border-t pt-3">
+          <p className="text-xs font-medium text-content">{t("grammar.l4PreviewTitle")}</p>
+          <div className="mt-2 space-y-3">
+            {resolved.map((block, index) => (
+              <LayoutBlockView key={index} block={block} />
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4 border-t pt-3">
+          <button
+            type="button"
+            onClick={() => {
+              setDraft(removeLayout(draft, category));
+              setPath({ at: "l4root" });
+            }}
+            className="text-sm text-red-600 hover:text-red-700"
+          >
+            {t("grammar.l4WithdrawLayout")}
+          </button>
+        </div>
+      </>
+    );
+  }
+
+  /** A one-line description of a block, for the list above. */
+  function blockSummaryText(block: { kind: string; rows?: string[]; columns?: string[]; items?: { coords: LayoutCoord[] }[]; fixed?: LayoutCoord[] }): string {
+    const fixed = (block.fixed ?? []).map((c) => `${c.feature}=${c.value}`).join("|");
+    const body =
+      block.kind === "table"
+        ? [...(block.rows ?? []), ...(block.columns ?? [])].join(" × ")
+        : `${(block.items ?? []).length}`;
+    const text = [fixed, body].filter((part) => part !== "" && part !== "0").join(" · ");
+    return text === "" ? t("grammar.l4BlockEmpty") : text;
+  }
+
+  /**
+   * One block's editor. The grid is resolved with the block's **exclusions set
+   * aside**, so an excluded cell is still drawn and can be put back — a designer
+   * where excluding a cell removed the only way to undo it would be a trap.
+   */
+  function renderL4Block(category: Tag, index: number) {
+    const row = layoutRow(draft, category);
+    const block = row?.blocks[index];
+    if (row === undefined || block === undefined) return null;
+    const axes = applicableAxes(draft, [category]);
+
+    const summaryToggle = (
+      <label className="mt-4 flex items-start gap-2 border-t pt-3">
+        <input
+          type="checkbox"
+          className="mt-1"
+          checked={block.summary === true}
+          onChange={() => setDraft(toggleBlockSummary(draft, category, index))}
+        />
+        <span>
+          <span className="text-sm text-content">{t("grammar.l4SummaryToggle")}</span>
+          <span className="mt-0.5 block text-xs text-content-subtle">
+            {t("grammar.l4SummaryHint")}
+          </span>
+        </span>
+      </label>
+    );
+
+    const removeBlockButton = (
+      <div className="mt-4 border-t pt-3">
+        <button
+          type="button"
+          onClick={() => {
+            setDraft(removeBlock(draft, category, index));
+            setPath(row.blocks.length === 1 ? { at: "l4root" } : { at: "l4category", category });
+          }}
+          className="text-sm text-red-600 hover:text-red-700"
+        >
+          {t("grammar.l4RemoveBlock")}
+        </button>
+        {row.blocks.length === 1 && (
+          <p className="mt-1 text-xs text-content-subtle">{t("grammar.l4RemoveLast")}</p>
+        )}
+      </div>
+    );
+
+    if (block.kind === "list") {
+      const items = block.items ?? [];
+      return (
+        <>
+          <p className="mb-3 text-xs text-content-subtle">{t("grammar.l4ItemHint")}</p>
+          <p className="text-xs font-medium text-content">{t("grammar.l4ItemsTitle")}</p>
+          {items.length === 0 ? (
+            <p className="mt-2 text-sm text-content-muted">{t("grammar.l4NoItems")}</p>
+          ) : (
+            <ol className="mt-2 space-y-1.5">
+              {items.map((item, i) => (
+                <li
+                  key={i}
+                  className="flex items-center gap-2 rounded-lg border bg-surface px-3 py-2"
+                >
+                  <span className="w-5 text-xs text-content-subtle">{i + 1}.</span>
+                  <span className="min-w-0 flex-1 truncate font-mono text-xs text-content">
+                    {item.coords.map((c) => `${c.feature}=${c.value}`).join("|")}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={i === 0}
+                    onClick={() => setDraft(moveListItem(draft, category, index, i, -1))}
+                    aria-label={t("grammar.l4MoveEarlier")}
+                    className="px-1 text-content-subtle hover:text-primary disabled:opacity-30"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    disabled={i === items.length - 1}
+                    onClick={() => setDraft(moveListItem(draft, category, index, i, 1))}
+                    aria-label={t("grammar.l4MoveLater")}
+                    className="px-1 text-content-subtle hover:text-primary disabled:opacity-30"
+                  >
+                    ↓
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDraft(removeListItem(draft, category, index, i))}
+                    aria-label={t("grammar.l4RemoveItem")}
+                    className="px-1 text-content-subtle hover:text-red-600"
+                  >
+                    ×
+                  </button>
+                </li>
+              ))}
+            </ol>
+          )}
+          <AddressPicker
+            axes={axes}
+            onAdd={(coords) => setDraft(addListItem(draft, category, index, coords))}
+          />
+          {summaryToggle}
+          {removeBlockButton}
+        </>
+      );
+    }
+
+    const onRows = block.rows ?? [];
+    const onColumns = block.columns ?? [];
+    const placed = new Set([...onRows, ...onColumns]);
+    // Resolved without exclusions: every cell of the declared product is drawn,
+    // and `excludesCell` says which of them the record removes.
+    const grid = resolveLayout(draft, {
+      category,
+      blocks: [blockWithoutExclusions(block)],
+    })[0] as ResolvedLayoutTable;
+    const fixedFeatures = new Set((block.fixed ?? []).map((coord) => coord.feature));
+    /** A cell's coordinates minus the block's constants — what an exclusion names. */
+    const axisCoords = (cell: LayoutAddress): LayoutCoord[] =>
+      cell.coords.filter((coord) => !fixedFeatures.has(coord.feature));
+
+    return (
+      <>
+        {(["rows", "columns"] as const).map((dimension) => {
+          const on = dimension === "rows" ? onRows : onColumns;
+          return (
+            <div key={dimension} className="mb-3">
+              <p className="text-xs font-medium text-content">
+                {dimension === "rows" ? t("grammar.l4RowsTitle") : t("grammar.l4ColumnsTitle")}
+              </p>
+              <ol className="mt-1 flex flex-wrap items-center gap-1.5">
+                {on.map((feature, i) => (
+                  <li key={feature} className="flex items-center gap-1 rounded-full border bg-surface px-2 py-0.5">
+                    <span className="font-mono text-xs text-content">{feature}</span>
+                    <button
+                      type="button"
+                      disabled={i === 0}
+                      onClick={() =>
+                        setDraft(moveBlockAxis(draft, category, index, dimension, feature, -1))
+                      }
+                      aria-label={t("grammar.l4MoveEarlier")}
+                      className="text-content-subtle hover:text-primary disabled:opacity-30"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      disabled={i === on.length - 1}
+                      onClick={() =>
+                        setDraft(moveBlockAxis(draft, category, index, dimension, feature, 1))
+                      }
+                      aria-label={t("grammar.l4MoveLater")}
+                      className="text-content-subtle hover:text-primary disabled:opacity-30"
+                    >
+                      ↓
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDraft(toggleBlockAxis(draft, category, index, dimension, feature))
+                      }
+                      aria-label={t("grammar.l4RemoveItem")}
+                      className="text-content-subtle hover:text-red-600"
+                    >
+                      ×
+                    </button>
+                  </li>
+                ))}
+                {axes
+                  .filter((axis) => !placed.has(axis.feature.feature))
+                  .map((axis) => (
+                    <li key={axis.feature.feature}>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDraft(
+                            toggleBlockAxis(draft, category, index, dimension, axis.feature.feature),
+                          )
+                        }
+                        title={axis.feature.label.long}
+                        className="rounded-full border border-dashed px-2.5 py-1 font-mono text-xs text-content-muted hover:border-primary hover:text-primary"
+                      >
+                        + {axis.feature.feature}
+                      </button>
+                    </li>
+                  ))}
+              </ol>
+            </div>
+          );
+        })}
+        <p className="text-xs text-content-subtle">{t("grammar.l4DimensionHint")}</p>
+
+        {/* Pinning: an axis not on a dimension may be fixed to one value, which
+            is how one paradigm becomes several tables. */}
+        {axes.some((axis) => !placed.has(axis.feature.feature)) && (
+          <div className="mt-4 border-t pt-3">
+            <p className="text-xs font-medium text-content">{t("grammar.l4FixedTitle")}</p>
+            {axes
+              .filter((axis) => !placed.has(axis.feature.feature))
+              .map((axis) => {
+                const current = (block.fixed ?? []).find(
+                  (coord) => coord.feature === axis.feature.feature,
+                );
+                return (
+                  <div key={axis.feature.feature} className="mt-2">
+                    <p className="text-xs text-content-subtle">{axis.feature.label.long}</p>
+                    <ul className="mt-1 flex flex-wrap gap-1.5">
+                      {axis.values.map((value) => {
+                        const active = current?.value === value.value;
+                        return (
+                          <li key={value.value}>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setDraft(
+                                  setBlockFixed(
+                                    draft,
+                                    category,
+                                    index,
+                                    axis.feature.feature,
+                                    active ? null : value.value,
+                                  ),
+                                )
+                              }
+                              title={value.label.long}
+                              className={
+                                active
+                                  ? "rounded-full border border-primary bg-surface px-2.5 py-1 text-xs font-medium text-primary"
+                                  : "rounded-full border border-dashed px-2.5 py-1 text-xs text-content-muted hover:border-primary hover:text-primary"
+                              }
+                            >
+                              {value.label.short ?? value.label.long}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                );
+              })}
+            <p className="mt-1 text-xs text-content-subtle">{t("grammar.l4FixedHint")}</p>
+          </div>
+        )}
+
+        <div className="mt-4 border-t pt-3">
+          {placed.size === 0 ? (
+            <p className="text-sm text-content-muted">{t("grammar.l4NoDimensions")}</p>
+          ) : grid.cells.length === 0 ? (
+            <p className="text-sm text-content-muted">{t("grammar.l4TooLarge")}</p>
+          ) : (
+            <>
+              <p className="text-xs text-content-subtle">{t("grammar.l4CellHint")}</p>
+              <LayoutBlockView
+                block={grid}
+                excluded={(cell) => excludesCell(block, axisCoords(cell))}
+                onCell={(cell) =>
+                  setDraft(toggleExcludedCell(draft, category, index, axisCoords(cell)))
+                }
+              />
+            </>
+          )}
+        </div>
+        {summaryToggle}
+        {removeBlockButton}
+      </>
+    );
+  }
+
   function renderForm() {
     const subject =
       path.at === "posForm"
@@ -1391,6 +1889,12 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
         return renderL3Category(path.category);
       case "l3feature":
         return renderL3Feature(path.category, path.feature);
+      case "l4root":
+        return renderL4Root();
+      case "l4category":
+        return renderL4Category(path.category);
+      case "l4block":
+        return renderL4Block(path.category, path.index);
       default:
         return renderForm();
     }
@@ -1450,6 +1954,19 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
               }
             >
               {t("grammar.tabAxes")}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "layout"}
+              onClick={() => setPath({ at: "l4root" })}
+              className={
+                tab === "layout"
+                  ? "rounded-full border border-primary bg-surface px-3 py-1 text-xs font-medium text-primary"
+                  : "rounded-full border px-3 py-1 text-xs text-content-subtle hover:border-primary hover:text-primary"
+              }
+            >
+              {t("grammar.tabLayout")}
             </button>
           </div>
         </header>
@@ -1521,6 +2038,178 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
 
 const levelButton =
   "flex w-full items-center justify-between gap-3 rounded-lg border bg-surface px-3 py-2 text-left hover:border-primary";
+
+/** A cell's identifier, as UD writes it — what a contributor reads in the grid. */
+function addressText(cell: LayoutAddress): string {
+  return formatTagVerbatim(cell.tag);
+}
+
+/**
+ * One resolved block, drawn with identifiers in its cells — the designer's view
+ * of a paradigm, as against the reader's, which puts forms there instead. Both
+ * go through the same table component, so the preview cannot drift from the page
+ * it previews.
+ *
+ * `excluded`/`onCell` are the block editor's: clicking a cell is how a language
+ * says it has no such form.
+ */
+function LayoutBlockView({
+  block,
+  excluded,
+  onCell,
+}: {
+  block: ResolvedLayoutBlock;
+  excluded?: (cell: LayoutAddress) => boolean;
+  onCell?: (cell: LayoutAddress) => void;
+}) {
+  const { t } = useTranslation();
+  if (block.kind === "list") {
+    return (
+      <ParadigmList
+        list={block}
+        item={(address) => (
+          <span className="font-mono text-xs text-content-subtle">{addressText(address)}</span>
+        )}
+      />
+    );
+  }
+  // No lines at all: dimensions naming nothing the language still declares, or a
+  // block past the cell cap. Say so rather than drawing an empty frame.
+  if (block.cells.length === 0) {
+    return (
+      <div>
+        <BlockCaption caption={block.caption} />
+        <p className="text-sm text-content-muted">{t("grammar.l4BlockEmpty")}</p>
+      </div>
+    );
+  }
+  return (
+    <ParadigmTable
+      table={block}
+      cell={(address) => {
+        const off = excluded?.(address) === true;
+        const body = (
+          <span
+            className={
+              off ? "font-mono text-[10px] line-through opacity-50" : "font-mono text-[10px]"
+            }
+          >
+            {addressText(address)}
+          </span>
+        );
+        if (onCell === undefined) return body;
+        return (
+          <button
+            type="button"
+            onClick={() => onCell(address)}
+            title={off ? t("grammar.l4CellExcluded") : addressText(address)}
+            className="text-left hover:text-primary"
+          >
+            {body}
+          </button>
+        );
+      }}
+    />
+  );
+}
+
+/**
+ * Pick one value per axis to name a form — the list block's "add an address".
+ *
+ * One selector per axis rather than a narrowing tree, for the reason the entry
+ * editor's form tagger has: axes are orthogonal dimensions, and a cell address
+ * takes one value from each independently. The manual field is the
+ * degrade-to-manual path, so a language whose axes do not cover the form it
+ * wants to print is never stuck.
+ */
+function AddressPicker({
+  axes,
+  onAdd,
+}: {
+  axes: ResolvedAxis[];
+  onAdd: (coords: LayoutCoord[]) => void;
+}) {
+  const { t } = useTranslation();
+  const [picked, setPicked] = useState<Record<string, string>>({});
+  const [manual, setManual] = useState("");
+  const parsed = parseTagInput(manual);
+  const manualCoords: LayoutCoord[] = (parsed?.feats ?? []).map((feat) => ({
+    feature: feat.feature,
+    value: feat.value,
+  }));
+  const coords: LayoutCoord[] =
+    manualCoords.length > 0
+      ? manualCoords
+      : axes
+          .filter((axis) => picked[axis.feature.feature] !== undefined)
+          .map((axis) => ({
+            feature: axis.feature.feature,
+            value: picked[axis.feature.feature]!,
+          }));
+
+  return (
+    <div className="mt-4 border-t pt-3">
+      <p className="text-xs font-medium text-content">{t("grammar.l4AddItemTitle")}</p>
+      {axes.map((axis) => (
+        <div key={axis.feature.feature} className="mt-2">
+          <p className="text-xs text-content-subtle">{axis.feature.label.long}</p>
+          <ul className="mt-1 flex flex-wrap gap-1.5">
+            {axis.values.map((value) => {
+              const active = picked[axis.feature.feature] === value.value;
+              return (
+                <li key={value.value}>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPicked((current) => {
+                        const next = { ...current };
+                        if (active) delete next[axis.feature.feature];
+                        else next[axis.feature.feature] = value.value;
+                        return next;
+                      })
+                    }
+                    title={value.label.long}
+                    className={
+                      active
+                        ? "rounded-full border border-primary bg-surface px-2.5 py-1 text-xs font-medium text-primary"
+                        : "rounded-full border border-dashed px-2.5 py-1 text-xs text-content-muted hover:border-primary hover:text-primary"
+                    }
+                  >
+                    {value.label.short ?? value.label.long}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ))}
+      <label className="mt-3 block text-xs text-content-subtle" htmlFor="layout-manual">
+        {t("grammar.l4ManualLabel")}
+      </label>
+      <div className="mt-1 flex gap-2">
+        <input
+          id="layout-manual"
+          value={manual}
+          onChange={(e) => setManual(e.target.value)}
+          placeholder={t("grammar.l4ManualPlaceholder")}
+          className={inputClass}
+        />
+        <button
+          type="button"
+          disabled={coords.length === 0}
+          onClick={() => {
+            onAdd(coords);
+            setPicked({});
+            setManual("");
+          }}
+          className="shrink-0 rounded-lg border px-3 py-2 text-sm text-content hover:border-primary disabled:opacity-50"
+        >
+          {t("grammar.l4AddItem")}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 /**
  * What UD currently documents, offered so a contributor picks instead of

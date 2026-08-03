@@ -17,6 +17,7 @@ import { LanguageRecordDialog, type LanguageRecordMode } from "../components/Lan
 import { LanguageSearchBar } from "../components/LanguageSearchBar";
 import { fetchAbbreviations, fetchLanguageDashboard, fetchLanguages } from "../lib/api";
 import { fetchLanguageRecord } from "../lib/atproto-record";
+import { forgetLanguageGrammar } from "../lib/language-grammar";
 
 const SYNC_POLL_MS = 3_000;
 const SYNC_POLL_MAX_TRIES = 20; // ~60s of PDS → Jetstream → ArangoDB latency
@@ -648,6 +649,10 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
           onPublished={(uri) => {
             setGrammarOpen(false);
             setSyncingURI(uri);
+            // The entry pages cache this language's grammar for the session, so
+            // a layout edited here would otherwise keep laying entries out the
+            // old way until a reload.
+            forgetLanguageGrammar(tag);
           }}
         />
       )}

@@ -93,13 +93,20 @@ the arc must not stall loops 5 and 6.
 | 1 | Primitives — the atoms this language uses | ✅ ADR-0006 |
 | 2 | Inherent combinations — what a headword *is* | ✅ ADR-0007 |
 | 3 | Axes — what its forms *vary over* | ✅ ADR-0008 |
-| 4 | Layout — the shape of the tables | ← next |
-| 5 | Rules — generation filling the cells | |
+| 4 | Layout — the shape of the tables | ✅ ADR-0009 |
+| 5 | Rules — generation filling the cells | ← next |
 | 6 | Export — Hunspell, UniMorph, CoNLL-U | |
 
 > Confirm the actual current position from `CHANGELOG.md` + `git tag` at orient time (step 1) —
-> these ✅ marks are a convenience, not the source of truth. As of ADR-0008 the grammar arc is
-> through layer 3; content loop 5 (translations) is the next unbuilt content loop.
+> these ✅ marks are a convenience, not the source of truth. As of ADR-0009 the grammar arc is
+> through layer 4; content loop 5 (translations) is the next unbuilt content loop.
+>
+> **Two obligations trail the arc rather than blocking it.** No authoring surface of layers 3 or 4
+> has been driven in a browser — they sit behind a session, and the test account does not exist yet;
+> the flows are enumerated as **U-01…U-24 in the `leksis-testset` skill (§7)**, with the fixture rows
+> that will assert the reader's side. And the **published lexicons** lag the code: `grammar.layout`
+> is live in the app but `scripts/publish-lexicons.mjs` has not been run for it. Neither is a reason
+> to hold layer 5; both are reasons not to call layer 4 *verified*.
 
 > **Loop 1 was the hinge**: once the AppView consumes the firehose it must stay online and **real
 > data accumulates**. ADR-0001 action items #4 (deploy secrets) and #5 (off-box backups) were due
@@ -201,8 +208,8 @@ its home:
 
 *Alignment context, not a plan. Detailed planning is deliberately deferred to the top of each layer. This
 section exists so that (a) every loop picks shapes this arc can grow into, and (b) no session invents tagset
-details nobody has actually verified. **Layers 1, 2 and 3 shipped (ADR-0006, ADR-0007, ADR-0008); the next
-thing to build is layer 4.***
+details nobody has actually verified. **Layers 1 to 4 shipped (ADR-0006, ADR-0007, ADR-0008, ADR-0009); the
+next thing to build is layer 5.***
 
 ### Where it ends up
 
@@ -302,6 +309,9 @@ there is no separate class layer and no `appliesTo`** · **a (category, feature)
 axis** · **live UD candidate lists with degrade-to-manual** · **sense-level tagging on definition nodes** ·
 **`categories` order is the author's, `otherForms` order is the language's** ·
 **an axis names its values in order** · **a label lives on the language, never on an entry** (ADR-0008) ·
+**derived cells, never a stored matrix** · **a summary flag per block, not indices** · **bare coordinates,
+re-qualified before use** · **exact → containment → leftover** · **"no such form" ≠ "not entered yet"** ·
+**an inflection class is a minted feature and gets a door, not a mechanism** (ADR-0009) ·
 **index expansion at ingest for inflected-form search** (leaning, priced at layer 5).
 
 **Settled by the layer-1 build (ADR-0006), do not re-derive:** `grammar` is `pos` + `features` + `values`,
@@ -380,7 +390,7 @@ layer at its top; the scope says *what is in and out*, not *how*.
 | **1 — Primitives** | the atoms this language uses: 14 headword-eligible UPOS, feature *names*, feature *values*. **Minting lives here**, including inflection-class features and their values | **shipped** — see **ADR-0006**, which is authoritative over the design note for this layer |
 | **2 — Inherent combinations** | which features are **inherent** to a category, then the labelled headword categories that follow: masculine noun, first-declension feminine noun, transitive imperfective verb | **shipped** — see **ADR-0007**, authoritative over the design note for this layer |
 | **3 — Axes** | per category, which features **vary across its forms**, over which values, **in order** — the option set of the `otherForms` editor | **shipped** — see **ADR-0008**, authoritative over the design note for this layer |
-| **4 — Layout** | the *shape* of the inflection tables: which axis sits where, one table or several, their order, what is shown by default, and the order of the flat `otherForms` list — **not** chip order | **next** |
+| **4 — Layout** | the *shape* of the inflection tables: which axis sits where, one table or several, their order, what is shown by default, and the order of the flat `otherForms` list — **not** chip order | **shipped** — see **ADR-0009**, authoritative over the design note for this layer |
 | **5 — Rules** | Hunspell-shaped rules populating cells, overridden by the entry's own `otherForms`; its own lexicon | |
 | **6 — Export** | Hunspell `.aff`/`.dic`, UniMorph TSV, CoNLL-U — and XPOS as a *derived* output | |
 
@@ -464,7 +474,7 @@ space through it, not through exact matching. `otherForms[].annotation` became `
 bundle** — the cell address layer 5 will match by canonical key. The API cost was **zero** again, as at
 layer 2; treat any need for new indexing at layer 4 as a signal to re-check the design.
 
-**Layer 4 — Layout.** Layer 3 gives a category's *cell space*; it does **not** say what the table looks
+**Layer 4 — Layout. ✅ shipped (ADR-0009).** Layer 3 gives a category's *cell space*; it does **not** say what the table looks
 like, and axes alone underdetermine presentation — four axes could be one grid with nested headers or four
 separate tables. So, per category: which axis sits on which dimension, one table or several, the order the
 tables appear in, and **what is shown by default** — Latin dictionaries print the genitive and expect the
@@ -475,6 +485,26 @@ order-as-table-geometry to the language.
 **Ships alone and is immediately useful:** with no rules behind it, an entry's own hand-entered forms land
 in a proper grid instead of a flat list, and the fallback becomes exactly "no layout declared → flat list".
 *Out:* generation.
+
+**What layer 4 settled, and layer 5 inherits (ADR-0009), do not re-derive:** a `layout` row is
+`{category: Tag, blocks[]}`; a block is a **table** (axis feature *names* per dimension, outermost first) or
+a **list** (explicit addresses in order), either able to pin constants with `fixed` and be flagged
+`summary` — a flag per block, never indices on the layout. **Cells are derived, never stored**, so
+non-rectangularity comes from several blocks with different constants, `exclude` for holes, and a list block
+for what no grid reaches; that is the answer to "the inner shape", and layer 5 should fill cells rather than
+enumerate them. A coordinate is bare `{feature, value}` and is **re-qualified from its `values` row by
+`coordTag` before display or matching** — the step that makes minted vocabulary work, and the one to copy
+when a rule addresses a cell. The join is **scheme- and part-of-speech-blind** (`featsMatchKey`), because a
+bot and the editor write the same form differently. `placeForms` already matches **exact, then containment,
+most specific first**, and keeps the unplaced as **leftovers** — which is precisely the override layer 5
+needs, so a rule engine should generate into the *same* addresses and let this decide. Five new issue kinds
+(`layout-unknown-axis`, `layout-repeated-axis`, `layout-foreign-coordinate`, `empty-layout-block`,
+`layout-too-large`) with `MAX_LAYOUT_CELLS` at 4096; a layout whose category is unbound is **not inspected
+further**, one defect one issue. Two reader-facing rules are now fixed: a cell the language says **cannot
+exist** renders differently from one **nobody filled in**, and a block no form fills is **not drawn** — the
+second is layer 5's to revisit, since generation is exactly what makes an empty table stop being empty.
+The API cost was **zero** for the third layer running, but note layer 5 breaks that streak by design: its
+rules get their own lexicon, and ingest-time index expansion for inflected-form search is its cost to price.
 
 **Layer 5 — Rules.** A new `eu.leksis.paradigm` lexicon (not fields on the language record): Hunspell-like
 rules populating the cells layer 4 laid out. **The entry's own `otherForms` override any generated cell** —

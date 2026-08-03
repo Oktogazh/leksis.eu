@@ -7,12 +7,15 @@ built on the AT Protocol and ArangoDB. See [leksis.eu](https://leksis.eu).
 > tags and [docs/adr](docs/adr) are the source of truth for what exists.
 > Content loops 1–4 are live (languages, entries, definitions, tree-shaped
 > definitions with a grammatical-tag worklist); translations are the next
-> unbuilt content loop. In parallel the **morphology arc** is through layer 3:
+> unbuilt content loop. In parallel the **morphology arc** is through layer 4:
 > a language declares its grammatical primitives, which features are inherent
-> to a category, and which vary across its forms — see
+> to a category, which vary across its forms, and the shape of the tables those
+> forms are laid out in — see
 > [ADR-0006](docs/adr/0006-grammar-layer-primitives.md),
-> [ADR-0007](docs/adr/0007-grammar-layer-inherent-combinations.md) and
-> [ADR-0008](docs/adr/0008-grammar-layer-axes-and-single-sourced-labels.md).
+> [ADR-0007](docs/adr/0007-grammar-layer-inherent-combinations.md),
+> [ADR-0008](docs/adr/0008-grammar-layer-axes-and-single-sourced-labels.md) and
+> [ADR-0009](docs/adr/0009-grammar-layer-layout.md). Generation from rules is
+> layer 5 and not built: a paradigm shows only the forms an entry carries.
 >
 > Work advances in **loops — units of work, not units of time.** An earlier
 > plan framed these as calendar weeks; that framing is retired.

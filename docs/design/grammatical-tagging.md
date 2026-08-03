@@ -189,9 +189,14 @@ eu.leksis.language.grammar = {
   // ---- layer 3, AS SHIPPED (ADR-0008) ----
   axes:     [ { category: Tag, feature: string, values: string[] } ],              // L3 — what varies, over what, in order
 
-  // ---- layer 4, still design ----
-  layout:   [ { category: Tag, ... } ]                                             // L4 — inner shape TBD
+  // ---- layer 4, AS SHIPPED (ADR-0009) ----
+  layout:   [ { category: Tag, blocks: [ Block ] } ]                               // L4 — the shape of the tables
 }
+
+// Block = { kind: "table", fixed?: [Coord], summary?: bool, rows?: [name], columns?: [name], exclude?: [Cell] }
+//       | { kind: "list",  fixed?: [Coord], summary?: bool, items: [Cell] }
+// Coord = { feature, value }   (bare — no scheme, re-qualified from the `values` row before use)
+// Cell  = { coords: [Coord] }  (an object because a lexicon takes no array of arrays)
 ```
 
 `[shipped]` **Layer 1 authors `pos` + `features` + `values`; `bindings` is layer 2's, and holds
@@ -312,7 +317,7 @@ Each layer draws its options from the layer below, and each must ship and be use
 | **1 Primitives** ✅ | the atoms this language uses: 14 UPOS, feature *names*, feature *values*; minting | `grammar.pos/features/values` |
 | **2 Inherent combinations** ✅ | which features are **inherent** to a category, and the resulting labelled headword categories | `grammar.inherent`, `grammar.bindings` |
 | **3 Axes** ✅ | which features **vary across the forms** of a category, over which values, in order | `grammar.axes` |
-| **4 Layout** ← next | table shape, order, default visibility; `otherForms` list order | `grammar.layout` |
+| **4 Layout** ✅ | table shape, order, default visibility; `otherForms` list order | `grammar.layout` |
 | **5 Rules** | Hunspell-like generation filling cells | `eu.leksis.paradigm` |
 | **6 Export** | Hunspell, UniMorph TSV, CoNLL-U, XPOS as derived output | — |
 
@@ -427,7 +432,16 @@ counterexample resolves through the keying: `Number` is an *axis* for `{NOUN}` a
 `otherForms[].annotation` also pluralises to a bundle here — a form's label is "gen. pl." in real
 dictionaries. Inflected-form search must keep working unchanged. *Out:* generated forms.
 
-### Layer 4 — Layout
+### Layer 4 — Layout ✅ shipped
+
+> **Implemented; see ADR-0009 for what was actually decided.** Kept here for the reasoning. Four deltas from
+> the text below: **cells are derived, never stored** — a block names axis *features* per dimension and their
+> declared values make the grid, so non-rectangularity is expressed by several blocks with different `fixed`
+> constants, plus `exclude` for holes and a list block for what no grid reaches; **what is shown by default**
+> is a `summary` **flag per block**, not a list of indices, because reordering blocks would renumber indices;
+> a coordinate is **bare and re-qualified from the `values` row before use**, which is what makes minted
+> vocabulary match at all; and a form is placed **exact-then-containment**, with anything unplaced kept as a
+> **leftover** rather than dropped.
 
 Layer 3 gives the cell space; it does **not** say what the table looks like, and **axes alone underdetermine
 presentation** — four axes could be one grid with nested headers or four separate tables. So, per category:
@@ -439,6 +453,14 @@ chips.
 **Ships alone and is immediately useful:** with no rules behind it, an entry's own hand-entered forms land in
 a proper grid instead of a flat list. The old "no paradigm → flat list" fallback becomes exactly "no layout
 declared → flat list". *Out:* generation.
+
+`[shipped]` Two things the build added that this section did not anticipate, both because a reader needs
+them. **A cell the language says cannot exist and a cell nobody has filled in must render differently** — an
+em dash against a faint dot — or `exclude` does no visible work; a line or column left entirely excluded is
+dropped and the headers above it re-span. And **the entry page resolves the language record from its PDS** to
+get the layout at all: that is not a breach of "viewers never pay the PDS round trip" (ADR-0007), which was
+about *labels* — those still come from the indexed `abbreviations` model — because a layout is **content**,
+and content was always PDS-resolved.
 
 ### Layer 5 — Rules
 
@@ -655,8 +677,11 @@ compatibility claim honest.
   accept the nesting `grammar` needs (record → ref → object → array → ref → ref), and **no official
   `app.bsky`/`com.atproto` lexicon uses an inline `type: "object"` property** — the convention is a named
   def plus a ref, which is what shipped.
-- **The `layout` sub-object's inner shape** (layer 4) — deliberately undesigned until a real conjugation
-  table has been drawn by hand.
+- ~~**The `layout` sub-object's inner shape** (layer 4).~~ **Closed by ADR-0009** — axis-mapped blocks with
+  derived cells (§ layer 4 above). What it leaves open is narrower and inherited: `layoutFor` matches by
+  containment, so an entry spelling "n. f." as **two chips** never matches a layout declared on the
+  combination `{NOUN, Gender=Fem}` and degrades to the `{NOUN}` one. That is `applicableAxes`'s shipped
+  semantics from layer 3, not layout's, and Breton — which binds `n.` and `f.` separately — will meet it.
 - ~~**Whether the entry-level annotation site should also accept a tag.**~~ **Dissolved by ADR-0008** — the
   site is gone. What remains open: a whole-entry label that is not a grammatical category has only prose
   `notes` or a minted feature.
