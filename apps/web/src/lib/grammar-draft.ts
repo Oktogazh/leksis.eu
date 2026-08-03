@@ -39,6 +39,25 @@ export function featureRows(grammar: Grammar): GrammarFeature[] {
 }
 
 /**
+ * The features this language declared itself — what the inflection-class
+ * section lists.
+ *
+ * An inflection class **is a minted feature and nothing more**: a Latin
+ * declension or a French conjugation group is a feature whose name and whose
+ * values this language declares, because neither UD nor UniMorph defines a
+ * paradigm object for it to borrow. So there is no class mechanism to store and
+ * this is a *view* over `features`, never a second home.
+ *
+ * The set is therefore "minted features", which will also catch one minted for
+ * something that is not a class at all. That imprecision is deliberate and
+ * cheap: both sections edit the same rows, so the cost is a row appearing in
+ * two places rather than a fact having two homes.
+ */
+export function classRows(grammar: Grammar): GrammarFeature[] {
+  return featureRows(grammar).filter((row) => row.scheme !== undefined);
+}
+
+/**
  * The bound values of one feature — the reason `values` rows carry their
  * feature rather than being folded into bundles: this is a lookup.
  */

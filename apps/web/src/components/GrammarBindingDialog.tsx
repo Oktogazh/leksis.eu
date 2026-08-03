@@ -30,6 +30,7 @@ import {
   addAxis,
   addInherent,
   axisRows,
+  classRows,
   featureRows,
   findAxis,
   moveAxisValue,
@@ -76,8 +77,14 @@ type Path =
   | { at: "pos" }
   | { at: "posForm"; value: string }
   | { at: "features" }
+  // Inflection classes: the same three levels as a feature, reached through
+  // their own door because UD has nothing to suggest for them. `minting` says a
+  // form was opened through that door, which is the only thing the shared
+  // levels cannot work out for themselves — a class not yet bound has no row to
+  // read a scheme from.
+  | { at: "classes" }
   | { at: "feature"; feature: string }
-  | { at: "featureForm"; feature: string }
+  | { at: "featureForm"; feature: string; minting?: boolean }
   | { at: "values"; feature: string }
   | { at: "valueForm"; feature: string; value: string }
   // Layer 2 — the same shape one level up: pick a category, declare which
@@ -191,16 +198,22 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
   }, [path.at, udFeatures.length]);
 
   const valuesFeature = path.at === "values" ? path.feature : null;
+  const valuesFeatureMinted =
+    valuesFeature !== null && findFeature(draft, valuesFeature)?.scheme !== undefined;
   useEffect(() => {
     if (valuesFeature === null) return;
-    const controller = new AbortController();
     setUdValues([]);
+    // A minted feature is this language's own — an inflection class, or a name
+    // UD has no term for — so UD documents no values for it and the request is
+    // not made rather than made and thrown away.
+    if (valuesFeatureMinted) return;
+    const controller = new AbortController();
     setUdLoading(true);
     fetchFeatureValues(valuesFeature, controller.signal)
       .then((result) => setUdValues(result.values))
       .finally(() => setUdLoading(false));
     return () => controller.abort();
-  }, [valuesFeature]);
+  }, [valuesFeature, valuesFeatureMinted]);
 
   /**
    * The no-orphan guard. Only defects this edit *introduces* block the write:
@@ -224,9 +237,17 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
     else if (next.at === "featureForm") existing = findFeature(draft, next.feature);
     else if (next.at === "valueForm") existing = findValue(draft, next.feature, next.value);
     else if (next.at === "l2combinationForm") existing = findCombination(draft, next.tag);
+    // A new row starts with the mint box ticked wherever minting is the only
+    // coherent answer: an inflection class, which UD has no term for, and any
+    // value of a feature that is itself minted — UD cannot document a value of
+    // a feature it does not define. Everywhere else it starts unticked, so
+    // minting stays a deliberate act.
+    const mintedByDefault =
+      (next.at === "featureForm" && next.minting === true) ||
+      (next.at === "valueForm" && findFeature(draft, next.feature)?.scheme !== undefined);
     setForm(
       existing === undefined
-        ? emptyLabel
+        ? { ...emptyLabel, minted: mintedByDefault }
         : {
             long: existing.label.long,
             short: existing.label.short ?? "",
@@ -378,8 +399,23 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
         go: { at: "l3feature", category: path.category, feature: path.feature },
       });
     }
+  } else if (path.at === "classes") {
+    crumbs.push({ label: t("grammar.classesLevel"), go: { at: "classes" } });
   } else if (path.at !== "root" && path.at !== "l2root" && path.at !== "l3root") {
-    crumbs.push({ label: t("grammar.featuresLevel"), go: { at: "features" } });
+    // Which section a feature sits under is **derived from the row**, not
+    // remembered: a class is a minted feature, so a minted one leads back to
+    // the classes level and a UD one to the features level. The trail is then
+    // still right when the dialog is reopened, and there is no section state to
+    // keep in step with the draft.
+    const asClass =
+      path.at !== "features" &&
+      (findFeature(draft, path.feature)?.scheme !== undefined ||
+        (path.at === "featureForm" && path.minting === true));
+    crumbs.push(
+      asClass
+        ? { label: t("grammar.classesLevel"), go: { at: "classes" } }
+        : { label: t("grammar.featuresLevel"), go: { at: "features" } },
+    );
     if (path.at !== "features") {
       crumbs.push({ label: path.feature, go: { at: "feature", feature: path.feature } });
       if (path.at === "values" || path.at === "valueForm") {
@@ -410,7 +446,65 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
             </span>
           </button>
         </li>
+        <li>
+          <button type="button" onClick={() => setPath({ at: "classes" })} className={levelButton}>
+            <span className="font-medium text-content">{t("grammar.classesLevel")}</span>
+            <span className="text-xs text-content-subtle">
+              {t("grammar.classesCount", { count: classRows(draft).length })}
+            </span>
+          </button>
+        </li>
       </ul>
+    );
+  }
+
+  /**
+   * Inflection classes: a declension, a conjugation group, a mutation class.
+   *
+   * The machinery is a feature's exactly — one name, one label, several values —
+   * and that is the point: a class is a **minted feature and nothing more**, so
+   * it needs no storage of its own and the entry editor already offers it
+   * through layer 2 without knowing this section exists. What differs is only
+   * what a contributor is shown: **nothing is fetched from UD**, because UD
+   * defines no paradigm object, so a class and every one of its members is
+   * necessarily this language's own declaration. No minted badge either — here
+   * it would be on every row, saying nothing.
+   */
+  function renderClasses() {
+    const rows = classRows(draft);
+    return (
+      <>
+        <p className="mb-3 text-xs text-content-subtle">{t("grammar.classesHint")}</p>
+        {rows.length === 0 ? (
+          <p className="text-sm text-content-muted">{t("grammar.classesEmpty")}</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {rows.map((row) => (
+              <li key={row.feature}>
+                <button
+                  type="button"
+                  onClick={() => setPath({ at: "feature", feature: row.feature })}
+                  className={levelButton}
+                >
+                  <span className="flex min-w-0 items-baseline gap-2">
+                    <span className="font-mono text-sm text-content">{row.feature}</span>
+                    <span className="truncate text-xs text-content-subtle">{row.label.long}</span>
+                  </span>
+                  <span className="text-xs text-content-subtle">
+                    {t("grammar.valuesCount", { count: valueRows(draft, row.feature).length })}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <AddRow
+          placeholder={t("grammar.addClassPlaceholder")}
+          pattern={FEATURE_NAME_PATTERN}
+          hint={t("grammar.addClassHint")}
+          onAdd={(feature) => openForm({ at: "featureForm", feature, minting: true })}
+        />
+      </>
     );
   }
 
@@ -579,7 +673,9 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
               title={values.length > 0 ? t("grammar.unbindBlocked") : undefined}
               onClick={() => {
                 setDraft(removeFeature(draft, feature, bound.scheme));
-                setPath({ at: "features" });
+                // Back to the section it was reached through, which is the one
+                // that lists it: a minted feature is an inflection class.
+                setPath(bound.scheme === undefined ? { at: "features" } : { at: "classes" });
               }}
               className="text-sm text-red-600 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -596,9 +692,17 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
 
   function renderValues(feature: string) {
     const values = valueRows(draft, feature);
+    // A minted feature's values are the members of an inflection class (or of
+    // whatever else this language named): necessarily minted themselves, and
+    // with nothing in UD to offer.
+    const minted = findFeature(draft, feature)?.scheme !== undefined;
     return (
       <>
-        <p className="mb-3 text-xs text-content-subtle">{t("grammar.valuesHint", { feature })}</p>
+        <p className="mb-3 text-xs text-content-subtle">
+          {minted
+            ? t("grammar.classValuesHint", { feature })
+            : t("grammar.valuesHint", { feature })}
+        </p>
         {values.length === 0 ? (
           <p className="text-sm text-content-muted">{t("grammar.valuesEmpty")}</p>
         ) : (
@@ -614,7 +718,9 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
                     <span className="font-mono text-sm text-content">
                       {feature}={row.value}
                     </span>
-                    {row.scheme !== undefined && (
+                    {/* Under a minted feature every value is minted, so the
+                        badge would be on every row and say nothing. */}
+                    {row.scheme !== undefined && !minted && (
                       <span className="text-xs text-amber-600">{t("grammar.mintedBadge")}</span>
                     )}
                   </span>
@@ -624,14 +730,16 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
             ))}
           </ul>
         )}
-        <Candidates
-          title={t("grammar.udValues")}
-          loading={udLoading}
-          items={udValues
-            .filter((v) => findValue(draft, feature, v.value) === undefined)
-            .map((v) => ({ key: v.value, label: v.value, hint: v.gloss }))}
-          onPick={(value) => openForm({ at: "valueForm", feature, value })}
-        />
+        {!minted && (
+          <Candidates
+            title={t("grammar.udValues")}
+            loading={udLoading}
+            items={udValues
+              .filter((v) => findValue(draft, feature, v.value) === undefined)
+              .map((v) => ({ key: v.value, label: v.value, hint: v.gloss }))}
+            onPick={(value) => openForm({ at: "valueForm", feature, value })}
+          />
+        )}
         <AddRow
           placeholder={t("grammar.addValuePlaceholder")}
           pattern={FEATURE_VALUE_PATTERN}
@@ -1265,6 +1373,8 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
         return renderPos();
       case "features":
         return renderFeatures();
+      case "classes":
+        return renderClasses();
       case "feature":
         return renderFeature(path.feature);
       case "values":
