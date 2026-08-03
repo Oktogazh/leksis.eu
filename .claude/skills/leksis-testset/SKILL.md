@@ -334,8 +334,16 @@ broken and is noticed months later by a contributor.
 
 **What is needed first:** a test account (its own PDS account, like the fixture
 bot's, but for *driving the UI* rather than publishing from a script), and a
-session an agent can restore. Until then nothing below can be checked by anyone,
-including a human — the local dev flow has the same gate.
+session an agent can restore.
+
+**The test account now exists.** Handle `testaccount.leksis.eu`, password
+`testaccount.leksis.eu`. It is a real PDS account created for exactly this
+purpose — logging into the web app and driving the authoring surfaces (grammar
+editor, entry editor) that a fixture record can never reach. The password is
+not a secret worth guarding: access to the PDS is IP-gated at the Caddy layer,
+so the account is unreachable from outside the VPS's allowed sources regardless
+of the password. Use it to work through §7.1/§7.2 below; do not create a second
+test account without reason to.
 
 **One caveat that will otherwise waste a session.** Local OAuth builds its client
 id from `window.location`, so a **deep link on a cold load throws**

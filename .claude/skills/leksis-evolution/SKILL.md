@@ -102,11 +102,13 @@ the arc must not stall loops 5 and 6.
 > through layer 4; content loop 5 (translations) is the next unbuilt content loop.
 >
 > **Two obligations trail the arc rather than blocking it.** No authoring surface of layers 3 or 4
-> has been driven in a browser — they sit behind a session, and the test account does not exist yet;
-> the flows are enumerated as **U-01…U-24 in the `leksis-testset` skill (§7)**, with the fixture rows
-> that will assert the reader's side. And the **published lexicons** lag the code: `grammar.layout`
-> is live in the app but `scripts/publish-lexicons.mjs` has not been run for it. Neither is a reason
-> to hold layer 5; both are reasons not to call layer 4 *verified*.
+> has been driven in a browser — they sit behind a session. The test account now exists
+> (`testaccount.leksis.eu`, see `leksis-testset` §7 for credentials and scope) so this is no longer
+> blocked on account creation, only on doing the pass; the flows are enumerated as
+> **U-01…U-24 in the `leksis-testset` skill (§7)**, with the fixture rows that will assert the
+> reader's side. And the **published lexicons** lag the code: `grammar.layout` is live in the app but
+> `scripts/publish-lexicons.mjs` has not been run for it. Neither is a reason to hold layer 5; both
+> are reasons not to call layer 4 *verified*.
 
 > **Loop 1 was the hinge**: once the AppView consumes the firehose it must stay online and **real
 > data accumulates**. ADR-0001 action items #4 (deploy secrets) and #5 (off-box backups) were due
