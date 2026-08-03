@@ -290,6 +290,16 @@
       "value": "value",
       "combination": "combination",
       "abbreviation": "abbreviation"
+    },
+    "labels": {
+      "tabCombinations": "Named categories",
+      "pickFeature": "Pick one above to see the labels it declares — a feature is the question, its values are the answers.",
+      "noValues": "Nothing named under this one yet.",
+      "colShort": "Short",
+      "colLabel": "Full form",
+      "colTag": "Tag",
+      "colUses": "Entries",
+      "edit": "Declare or rename a label"
     }
   },
   "entry": {

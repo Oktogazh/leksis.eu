@@ -267,6 +267,11 @@ export function removeInherent(grammar: Grammar, row: GrammarInherent): Grammar 
   });
 }
 
+/** The combinations a language has named, in record order. */
+export function combinationRows(grammar: Grammar): GrammarCombination[] {
+  return grammar.bindings ?? [];
+}
+
 /** The named combination matching this tag, if any. */
 export function findCombination(grammar: Grammar, tag: Tag): GrammarCombination | undefined {
   const key = tagKey(tag);

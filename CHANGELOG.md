@@ -68,8 +68,21 @@ identity, the label is what it is called**. See **ADR-0010**.
   are simply absent from the inherence and axis pickers, never disabled.
 - Which section a feature belongs to is **derived from the row**, so reopening
   the dialog puts it back where it was.
-- The dashboard's badge now names what a row *is* — part of speech, value,
-  combination, abbreviation — instead of saying "grammar" at all of them.
+- The dashboard's list becomes a **shelf**: one tab per kind of thing a language
+  names, in the editor's own order, so the badge that used to say what a row
+  *is* one row at a time is the tab the row lives on. The three tabs whose rows
+  are *sets of options* — features, inflection classes, lexicographic labels —
+  ask for a feature before showing anything, since `Gender` is a question and
+  `Gender=Fem` an answer; its values then arrive as a table ordered by full form
+  or by how many entries use them. An inflection class appears under both
+  Features and Inflection classes, exactly as it does in the editor: it is a
+  minted feature and nothing more.
+- **The shelf's structure is read from the language record, its counts from the
+  `labels` model** — ADR-0010's own asymmetry, a language supplying the label and
+  an entry only the usage, so the two meet on the canonical key they already
+  share and the tabs cost **no endpoint, no index and no ingest change**. Where
+  the record cannot be resolved the section degrades to the flat list, badge
+  included, as the editor button already degrades to disabled.
 
 ### Fixed
 

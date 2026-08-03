@@ -1,7 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  formatLabelRef,
   formatTagVerbatim,
   type LabelView,
   type DashboardActivityDay,
@@ -13,6 +12,7 @@ import {
 import { useSession } from "../auth/SessionProvider";
 import { endonym } from "../components/LanguageSelector";
 import { GrammarBindingDialog } from "../components/GrammarBindingDialog";
+import { LabelShelf } from "../components/LabelShelf";
 import { LanguageRecordDialog, type LanguageRecordMode } from "../components/LanguageRecordDialog";
 import { LanguageSearchBar } from "../components/LanguageSearchBar";
 import { fetchLabels, fetchLanguageDashboard, fetchLanguages } from "../lib/api";
@@ -147,8 +147,7 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
   /** The binding editor — this language's own grammar declaration. */
   const [grammarOpen, setGrammarOpen] = useState(false);
   // A row with no `long` is a tag entries use that nothing has named here yet:
-  // the naming worklist, kept out of the label list proper.
-  const labelled = labels.filter((a) => a.long !== undefined);
+  // the naming worklist, kept out of the shelf proper.
   const unboundTags = labels.filter((a) => a.long === undefined && a.tag !== undefined);
   /** True while the full flagged-for-review list dialog is open. */
   const [todoOpen, setTodoOpen] = useState(false);
@@ -361,63 +360,14 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
             <p className="mt-1 text-xs text-content-subtle">
               {t("languagePage.abbreviationsHint")}
             </p>
-            {labelled.length === 0 ? (
-              <p className="mt-2 text-sm text-content-muted">
-                {t("languagePage.abbreviationsEmpty")}
-              </p>
-            ) : (
-              <ul className="mt-2 space-y-1.5">
-                {labelled.map((row, i) => {
-                  const conflicted = row.conflictsWith.length > 0;
-                  return (
-                    <li key={i} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                      <span
-                        className={`rounded-full border bg-surface-muted/60 px-2.5 py-0.5 font-mono text-xs text-content ${conflicted ? "border-red-400" : ""
-                          }`}
-                      >
-                        {conflicted && <span aria-hidden="true">⚠ </span>}
-                        {row.short ?? row.long}
-                      </span>
-                      {row.short !== undefined && (
-                        <span className="text-sm text-content">{row.long}</span>
-                      )}
-                      {/* A bound pair is the language's own declaration, so it
-                          is listed even at ×0 — the count is usage, not
-                          existence. */}
-                      {/* The badge names what the row *is*, since the list now
-                          holds three quite different things; the tag itself
-                          stays on hover, for the rows that have one. */}
-                      {row.bound && (
-                        <span
-                          className="rounded border border-primary/50 px-1.5 py-0.5 text-[0.65rem] uppercase tracking-wide text-primary"
-                          title={
-                            row.tag === undefined
-                              ? undefined
-                              : t("languagePage.abbreviationBound", {
-                                  tag: formatTagVerbatim(row.tag),
-                                })
-                          }
-                        >
-                          {row.kind === undefined
-                            ? t("languagePage.abbreviationBoundBadge")
-                            : t(`languagePage.labelKind.${row.kind}`)}
-                        </span>
-                      )}
-                      <span className="text-xs text-content-subtle">×{row.count}</span>
-                      {conflicted && (
-                        <span className="text-xs text-red-600">
-                          {t("languagePage.abbreviationsConflict", {
-                            pairs: row.conflictsWith
-                              .map(formatLabelRef)
-                              .join(", "),
-                          })}
-                        </span>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
+            {/* One shelf per kind of thing a language names — the badge that
+                used to sit on every row is the tab it is on now. */}
+            <LabelShelf
+              grammar={record?.grammar}
+              labels={labels}
+              languageTag={tag}
+              onEdit={() => setGrammarOpen(true)}
+            />
 
             {unboundTags.length > 0 && (
               <div className="mt-4 rounded-lg border border-dashed border-amber-500/60 p-3">
