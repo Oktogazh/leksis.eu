@@ -19,7 +19,7 @@ there is no long-lived unreleased state, so every step must leave master deploya
 1. **Orient** — establish where the project stands (evolution skill step 1).
 2. **Propose** — before any non-trivial change, state what you intend to change, in which files, and why. Wait for confirmation on anything beyond the agreed step.
 3. **Implement the smallest slice** — one step at a time; each step leaves the repo typechecking and deployable. No "while I was here" additions: unplanned work is proposed, not slipped in.
-4. **Verify** — per `.claude/skills/verify/SKILL.md`. A change is done when the affected flow has been exercised and proof shown, not when it compiles.
+4. **Verify** — per `.claude/skills/verify/SKILL.md`. A change is done when the affected flow has been exercised and proof shown, not when it compiles. You can also use the **leksis-testset** skill to run the testset on the affected flow.
 5. **Record** — match the change to its home (CHANGELOG / ADR / skill update) per evolution skill step 4.
 
 
