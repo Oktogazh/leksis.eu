@@ -499,8 +499,14 @@ async function reanchorRelation(database: Database, doc: StoredRelation): Promis
   const { sides, state } = await anchorSides(dbLookup(database), doc.sides);
   if (anchorUnchanged(doc, sides, state)) return;
 
+  // `stateChangedAt` is when this relation last entered its current state, which
+  // is what the repair worklist orders by: a relation that parks today deserves
+  // attention today, however old the version that parked is.
+  const stateChangedAt = doc.state === state ? undefined : new Date().toISOString();
   await database.query(aql`
-    UPDATE ${doc._key} WITH { sides: ${sides}, state: ${state} } IN relations
+    UPDATE ${doc._key}
+      WITH ${{ sides, state, ...(stateChangedAt ? { stateChangedAt } : {}) }}
+      IN relations
   `);
   await rebuildRelationEdges(database, { ...doc, sides, state });
   console.log(`firehose: relation "${doc.relationKey}" re-anchored ${doc.state} → ${state}`);

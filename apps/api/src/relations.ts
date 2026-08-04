@@ -10,6 +10,7 @@ import {
   type TranslateResponse,
   type TranslationEntry,
   type TranslationHop,
+  type TranslationSense,
   type TranslationSenseGroup,
   type TranslationTarget,
 } from "@leksis/types";
@@ -31,6 +32,16 @@ const TRANSLATE_SOURCE_LIMIT = 20;
 const TRANSLATE_PATHS_PER_SENSE = 200;
 /** Parked relations served on one language dashboard. */
 const PARKED_LIMIT = 100;
+/** Relations served for one entry, live and parked separately. */
+const ENTRY_RELATIONS_LIMIT = 200;
+/**
+ * Wall-clock and memory ceilings on the traversal. `/translate` is public and
+ * unauthenticated, and simple-path enumeration grows with the graph's degree,
+ * so the query is bounded by the server rather than trusted to be small: a
+ * request that would occupy the database for minutes fails instead.
+ */
+const TRANSLATE_MAX_RUNTIME_S = 5;
+const TRANSLATE_MEMORY_LIMIT = 256 * 1024 * 1024;
 
 /**
  * A side, joined to its entry's current version. Written once because the entry
@@ -46,13 +57,17 @@ const sideView = aql`
         RETURN e
     )
     RETURN {
-      entryKey: side.entryKey,
+      entryKey: entry == null ? null : side.entryKey,
       languageID: side.languageID,
       place: side.place,
       orthography: entry.orthography[0],
       recordedOrthography: side.orthography
     }
 `;
+// `entryKey` is nulled when no current entry doc exists, which is the type's own
+// invariant: ingest keeps the last resolved key on the side so it can re-anchor,
+// but serving it would hand a client a link that 404s. What remains for such a
+// side is `recordedOrthography` — the whole reason the record denormalizes it.
 
 interface RelationRow {
   relationKey: string;
@@ -80,28 +95,41 @@ function toRelationView(row: RelationRow): RelationView {
  * parked relation has no edges at all.
  */
 export async function getEntryRelations(entryKey: string): Promise<EntryRelationsResponse> {
-  const cursor = await db.query<RelationRow>(aql`
-    FOR r IN relations
-      FILTER r.current == true AND ${entryKey} IN r.sides[*].entryKey
-      LET ordered = r.sides[0].entryKey == ${entryKey} ? r.sides : REVERSE(r.sides)
-      LET sides = (${sideView})
-      SORT LENGTH(sides[0].place), sides[0].place, sides[1].languageID, sides[1].orthography
-      RETURN {
-        relationKey: r.relationKey,
-        kind: r.kind,
-        state: r.state,
-        recordURI: r.recordURI,
-        authorDID: r.authorDID,
-        indexedAt: r.indexedAt,
-        sides
-      }
-  `);
-  const rows = await cursor.all();
-  return {
-    entryKey,
-    relations: rows.filter((r) => r.state === "live").map(toRelationView),
-    parked: rows.filter((r) => r.state !== "live").map(toRelationView),
+  // Live and parked are capped separately: one bot importing thousands of
+  // translations for a common word must not crowd the repair strip out of the
+  // response, nor make the entry page's request grow without bound.
+  const fetch = async (live: boolean): Promise<RelationView[]> => {
+    const cursor = await db.query<RelationRow>(aql`
+      FOR r IN relations
+        FILTER r.current == true AND ${entryKey} IN r.sides[*].entryKey
+        FILTER ${live ? aql`r.state == "live"` : aql`r.state != "live"`}
+        SORT r.indexedAt DESC
+        LIMIT ${live ? ENTRY_RELATIONS_LIMIT : PARKED_LIMIT}
+        LET ordered = r.sides[0].entryKey == ${entryKey} ? r.sides : REVERSE(r.sides)
+        LET sides = (${sideView})
+        RETURN {
+          relationKey: r.relationKey,
+          kind: r.kind,
+          state: r.state,
+          recordURI: r.recordURI,
+          authorDID: r.authorDID,
+          indexedAt: r.indexedAt,
+          sides
+        }
+    `);
+    // Reading order comes from the shared place comparator, not from AQL's array
+    // ordering: AQL would put sense [2] before sense [1,1], which is not the
+    // order the entry itself is displayed in.
+    return (await cursor.all())
+      .map(toRelationView)
+      .sort(
+        (a, b) =>
+          compareDefinitionPlaces(a.sides[0].place, b.sides[0].place) ||
+          compareStrings(a.sides[1].languageID, b.sides[1].languageID) ||
+          compareStrings(a.sides[1].orthography ?? "", b.sides[1].orthography ?? ""),
+      );
   };
+  return { entryKey, relations: await fetch(true), parked: await fetch(false) };
 }
 
 /** One vertex of a returned path. Attributes are null when a vertex is missing. */
@@ -143,19 +171,40 @@ function betterPath(a: PathRow, b: PathRow): number {
   return a.hops - b.hops || a.coarseHops - b.coarseHops;
 }
 
+/** Byte order, matching how AQL sorts orthographies everywhere else. */
+function compareStrings(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 /**
- * Whether the assertion that reached `vertices[index]` covered every sense of
- * that word.
+ * Whether an edge was coarse **on the end that is this vertex**.
  *
  * The flags are stored relative to the edge's own `_from`/`_to`, while the
  * traversal is `ANY` and so crosses half its edges backwards — hence the
  * comparison rather than a plain read.
  */
-function coarseAt(path: PathRow, index: number): boolean {
-  const edge = path.edges[index - 1];
-  const vertex = path.vertices[index];
+function coarseOnEdge(
+  edge: PathRow["edges"][number] | undefined,
+  vertex: PathVertex | undefined,
+): boolean {
   if (!edge || !vertex) return false;
   return edge.from === vertex.id ? edge.coarseFrom : edge.coarseTo;
+}
+
+/**
+ * Whether **either** assertion touching `vertices[index]` covered every sense of
+ * that word — the one the path arrived by, or the one it left by.
+ *
+ * Both matter to a reader: "via *vers*, all senses" is just as true when the
+ * imprecise claim is the one the chain departed on, and reading only the
+ * incoming edge would print a precise-looking hop for the case §4.2 most wants
+ * disclosed.
+ */
+function coarseAt(path: PathRow, index: number): boolean {
+  const vertex = path.vertices[index];
+  return (
+    coarseOnEdge(path.edges[index - 1], vertex) || coarseOnEdge(path.edges[index], vertex)
+  );
 }
 
 /**
@@ -180,7 +229,8 @@ export async function getTranslations(
   const empty: TranslateResponse = { query: q, from, to, depth: clamped, entries: [] };
   if (q === "") return empty;
 
-  const cursor = await db.query<SourceRow>(aql`
+  const cursor = await db.query<SourceRow>(
+    aql`
     LET sources = (
       FOR e IN entries
         FILTER e.current == true AND e.deleted != true AND e.languageID == ${from}
@@ -202,7 +252,10 @@ export async function getTranslations(
           SORT s.place
           LET paths = (
             FOR v, e, p IN 1..${clamped} ANY s._id relationEdges
-              PRUNE v.languageID == ${to}
+              PRUNE e != null AND (
+                v.languageID == ${to}
+                OR v.entryKey IN SLICE(p.vertices, 0, LENGTH(p.vertices) - 1)[*].entryKey
+              )
               OPTIONS { order: "bfs", uniqueVertices: "path" }
               FILTER v != null AND v.languageID == ${to}
               FILTER p.edges[*].traversable ALL == true
@@ -233,22 +286,56 @@ export async function getTranslations(
           RETURN { place: s.place, paths }
       )
       RETURN { entry: src, groups }
-  `);
+    `,
+    // The path LIMIT counts *filtered* results, so it binds the traversal only
+    // when the target language is richly reachable; when it is not, enumeration
+    // runs to exhaustion. These ceilings are what actually bounds a public,
+    // unauthenticated request: past them it fails loudly instead of occupying
+    // the database.
+    { maxRuntime: TRANSLATE_MAX_RUNTIME_S, memoryLimit: TRANSLATE_MEMORY_LIMIT },
+  );
   const sources = await cursor.all();
   if (sources.length === 0) return empty;
 
-  // Every hop the answer will print, resolved in one query: the client is given
-  // orthographies and record pointers, and fetches the definitions itself.
+  // The best path per (source sense → target sense). Provenance is earned by a
+  // sense, not by a word: two senses of one target can be reached by very
+  // different chains, and one badge for the entry would describe the best of
+  // them and vouch for the rest.
+  type Chosen = Map<string, Map<string, PathRow>>;
+  const chosenPerGroup: Chosen[] = [];
   const referenced = new Set<string>();
   for (const src of sources) {
     for (const group of src.groups) {
+      const byTarget: Chosen = new Map();
       for (const path of group.paths) {
-        for (const vertex of path.vertices) {
-          if (vertex.entryKey !== null) referenced.add(vertex.entryKey);
+        // A vertex can be missing if a sense row was removed while an edge still
+        // pointed at it. Such a path is dropped rather than shown with a hole in
+        // it — a wrong translation is worse than a missing one.
+        if (path.vertices.some((v) => v.id === null || v.entryKey === null)) continue;
+        const target = path.vertices[path.vertices.length - 1]!;
+        const key = target.entryKey!;
+        const senses = byTarget.get(key) ?? new Map<string, PathRow>();
+        const sensePath = senses.get(placePathKey(target.place ?? []));
+        if (!sensePath || betterPath(path, sensePath) < 0) {
+          senses.set(placePathKey(target.place ?? []), path);
+        }
+        byTarget.set(key, senses);
+      }
+      // Only the paths that survived selection are printed, so only their hops
+      // need resolving.
+      for (const senses of byTarget.values()) {
+        for (const path of senses.values()) {
+          for (const vertex of path.vertices) {
+            if (vertex.entryKey !== null) referenced.add(vertex.entryKey);
+          }
         }
       }
+      chosenPerGroup.push(byTarget);
     }
   }
+
+  // Every hop the answer will print, resolved in one query: the client is given
+  // orthographies and record pointers, and fetches the definitions itself.
   const metaCursor = await db.query<EntryMeta>(aql`
     FOR e IN entries
       FILTER e.entryKey IN ${[...referenced]} AND e.current == true
@@ -262,66 +349,74 @@ export async function getTranslations(
   `);
   const meta = new Map((await metaCursor.all()).map((row) => [row.entryKey, row]));
 
-  const entries: TranslationEntry[] = sources.map((src) => {
-    const senses: TranslationSenseGroup[] = src.groups.map((group) => {
-      // Group by target entry: several senses of one word, or several routes to
-      // the same sense, are one answer to the reader.
-      const byTarget = new Map<string, { best: PathRow; places: Map<string, number[]> }>();
-      for (const path of group.paths) {
-        // A vertex can be missing if a sense row was removed while an edge
-        // still pointed at it. Such a path is dropped rather than shown with a
-        // hole in it.
-        if (path.vertices.some((v) => v.id === null || v.entryKey === null)) continue;
-        const target = path.vertices[path.vertices.length - 1]!;
-        const key = target.entryKey!;
-        if (!meta.has(key)) continue;
-        const found = byTarget.get(key);
-        if (!found) {
-          byTarget.set(key, {
-            best: path,
-            places: new Map([[placePathKey(target.place ?? []), target.place ?? []]]),
-          });
-          continue;
-        }
-        found.places.set(placePathKey(target.place ?? []), target.place ?? []);
-        if (betterPath(path, found.best) < 0) found.best = path;
-      }
+  /** The intermediate words of one path, or null if any of them is unnameable. */
+  const buildVia = (path: PathRow): TranslationHop[] | null => {
+    const via: TranslationHop[] = [];
+    for (let i = 1; i < path.vertices.length - 1; i++) {
+      const vertex = path.vertices[i]!;
+      const hopMeta = meta.get(vertex.entryKey!);
+      // A chain with a hop it cannot name is a hole in the reader's only trust
+      // surface, so the path goes rather than the name.
+      if (!hopMeta) return null;
+      via.push({
+        entryKey: vertex.entryKey!,
+        languageID: vertex.languageID ?? hopMeta.languageID,
+        orthography: hopMeta.orthography[0] ?? "",
+        place: vertex.place ?? [],
+        coarse: coarseAt(path, i),
+      });
+    }
+    return via;
+  };
 
-      const targets: TranslationTarget[] = [...byTarget.entries()].map(([key, { best, places }]) => {
-        const info = meta.get(key)!;
-        const via: TranslationHop[] = [];
-        for (let i = 1; i < best.vertices.length - 1; i++) {
-          const vertex = best.vertices[i]!;
-          const hopMeta = meta.get(vertex.entryKey!);
-          via.push({
-            entryKey: vertex.entryKey!,
-            languageID: vertex.languageID ?? hopMeta?.languageID ?? "",
-            orthography: hopMeta?.orthography[0] ?? "",
-            place: vertex.place ?? [],
-            coarse: coarseAt(best, i),
+  let group = 0;
+  const entries: TranslationEntry[] = sources.map((src) => {
+    const senses: TranslationSenseGroup[] = src.groups.map((sourceSense) => {
+      const byTarget = chosenPerGroup[group++]!;
+      const targets: TranslationTarget[] = [];
+      for (const [key, sensePaths] of byTarget) {
+        const info = meta.get(key);
+        if (!info) continue;
+        const reached: TranslationSense[] = [];
+        for (const [, path] of sensePaths) {
+          const via = buildVia(path);
+          if (via === null) continue;
+          const target = path.vertices[path.vertices.length - 1]!;
+          reached.push({
+            place: target.place ?? [],
+            hops: path.hops,
+            coarseHops: path.coarseHops,
+            via,
+            // The final hop's own coarseness — no `via` entry carries it,
+            // because the target is not an intermediate.
+            coarse: coarseOnEdge(path.edges[path.edges.length - 1], target),
           });
         }
-        return {
+        if (reached.length === 0) continue;
+        reached.sort((a, b) => compareDefinitionPlaces(a.place, b.place));
+        const best = reached.reduce((a, b) =>
+          a.hops - b.hops || a.coarseHops - b.coarseHops <= 0 ? a : b,
+        );
+        targets.push({
           entryKey: info.entryKey,
           languageID: info.languageID,
           orthography: info.orthography,
           recordURI: info.recordURI,
           authorDID: info.authorDID,
-          senses: [...places.values()].sort(compareDefinitionPlaces),
+          senses: reached,
           hops: best.hops,
           coarseHops: best.coarseHops,
-          via,
-        };
-      });
+        });
+      }
       targets.sort(
         (a, b) =>
           a.hops - b.hops ||
           a.coarseHops - b.coarseHops ||
-          (a.orthography[0] ?? "").localeCompare(b.orthography[0] ?? ""),
+          compareStrings(a.orthography[0] ?? "", b.orthography[0] ?? ""),
       );
       // An empty group is kept: it is how the reader sees which parts of their
       // word the dictionary cannot translate yet.
-      return { place: group.place, targets };
+      return { place: sourceSense.place, targets };
     });
     return { ...src.entry, senses };
   });
@@ -354,19 +449,19 @@ export async function getRelationCounts(tag: string): Promise<Record<RelationSta
  * language reaches it.
  */
 export async function getUntranslatedSenseCount(tag: string): Promise<number> {
+  // Counted from the edges inward rather than by probing each sense: one pass
+  // over a derived collection instead of an index lookup per sense, which on a
+  // large language is the difference between one query and a hundred thousand
+  // probes on a public route.
   const cursor = await db.query<number>(aql`
-    RETURN LENGTH(
-      FOR s IN senses
-        FILTER s.languageID == ${tag}
-        LET reached = FIRST(
-          FOR v, e IN 1..1 ANY s._id relationEdges
-            FILTER e.traversable == true AND e.languages[0] != e.languages[1]
-            LIMIT 1
-            RETURN 1
-        )
-        FILTER reached == null
-        RETURN 1
-    )
+    LET total = LENGTH(FOR s IN senses FILTER s.languageID == ${tag} RETURN 1)
+    LET translated = LENGTH(UNIQUE(
+      FOR e IN relationEdges
+        FILTER e.traversable == true AND e.languages[0] != e.languages[1]
+        FILTER e.languages[0] == ${tag} OR e.languages[1] == ${tag}
+        RETURN e.languages[0] == ${tag} ? e._from : e._to
+    ))
+    RETURN total - translated
   `);
   return (await cursor.next()) ?? 0;
 }
@@ -382,7 +477,10 @@ export async function getParkedRelations(tag: string): Promise<RelationView[]> {
   const cursor = await db.query<RelationRow>(aql`
     FOR r IN relations
       FILTER r.current == true AND r.state != "live" AND ${tag} IN r.sides[*].languageID
-      SORT r.indexedAt DESC
+      // Ordered by when it PARKED, not when its version was indexed: a relation
+      // that drifted today but was published a year ago must not sort below the
+      // cap and become permanently invisible on the one list meant to surface it.
+      SORT NOT_NULL(r.stateChangedAt, r.indexedAt) DESC
       LIMIT ${PARKED_LIMIT}
       LET ordered = r.sides[0].languageID == ${tag} ? r.sides : REVERSE(r.sides)
       LET sides = (${sideView})

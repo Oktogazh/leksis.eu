@@ -441,6 +441,96 @@ revives it.
 
 ---
 
+## 5b. Handover — the read surface's outstanding defects
+
+**Status: slice 3 shipped in `1291a2c` with a defect that breaks §5's definition of
+done. The fix is written and verified but was left UNCOMMITTED** in
+`apps/api/src/relations.ts`, `apps/api/src/index.ts` and
+`packages/types/src/relation.ts`. Read this section before touching the read path;
+either commit that work after re-reviewing it, or redo it deliberately.
+
+### The defect: `uniqueVertices: "path"` forbids repeating a *vertex*, not an *entry*
+
+A path may therefore **re-enter a word it already passed through, at another of
+its senses, and continue from there** — laundering the sense jump §0 forbids
+across two hops. §3.4's claim that meaning-preservation is structural holds *per
+visit*; nothing in the query forbade a second visit.
+
+One **coarse** relation is enough to build the bridge, and coarse relations are
+exactly what §3.1 expects from bulk-importing bots. With `vers[] ≡ Vers(de)`
+("all senses of *vers*"), every sense of *vers* gains an edge to the same German
+vertex, so *verse* and *worms* become two hops apart. Reproduced against the
+committed query on local fixtures, at a `depth` a client may ask for:
+
+```
+gwerzenn.1 → vers.1 → Vers.1 → vers.3 → worms.1     ← the answer §5 forbids
+gwerzenn.1 → vers.1 → Vers.1 → vers.2 → toward.1
+```
+
+**The fix** is to prune expansion as soon as an entry repeats, rather than only
+when a *sense* repeats:
+
+```aql
+PRUNE e != null AND (
+  v.languageID == @to
+  OR v.entryKey IN SLICE(p.vertices, 0, LENGTH(p.vertices) - 1)[*].entryKey
+)
+```
+
+`PRUNE` stops expansion but still emits the vertex, which is what keeps the one
+legitimate repeat — a **same-entry synonym**, where the source entry *is* the
+target — while cutting every continuation through a second sense of an
+intermediate word. With it, the same query returns `verse` and nothing else. The
+`e != null` guard matters independently: without it the prune fires at depth 0,
+so **`from === to` returned nothing at all** even with a live same-language
+edge, silently answering "no equivalents" to the synonym search that
+**a synonym is a translation whose languages are equal** promises.
+
+### The rest of the review, all fixed in the same uncommitted work
+
+- **Unbounded traversal on a public endpoint.** `LIMIT` counts *filtered*
+  results, so it does not bound enumeration when the target language is poorly
+  reachable; the query now carries `maxRuntime` and `memoryLimit`. Reviving
+  `/translate` without them exposes an unauthenticated request that can occupy
+  the database for minutes.
+- **The via-chain disclosed only the *incoming* assertion's coarseness**, so a
+  coarse *departure* from an intermediate word printed as a precise hop — the
+  one thing §4.2 most wants disclosed. A hop is now coarse if **either**
+  adjacent assertion was, and the target's own coarseness is carried on the
+  sense it reached.
+- **Provenance was attributed to a target entry but earned by one of its
+  senses**: `senses` accumulated every sense reached while `hops`/`via`
+  described only the best path, so a sense three coarse hops away was presented
+  as direct. `TranslationTarget.senses` is now `TranslationSense[]`, each
+  carrying its own `hops`/`coarseHops`/`via`.
+- **`RelationSideView.entryKey` contradicted its own contract** — non-null for
+  an entry with no document, so a client following it links to a 404. It is now
+  nulled, leaving `recordedOrthography` as the display, which is the whole
+  reason a side denormalizes it.
+- **`GET /entries/:key/relations` was uncapped**; live and parked are now capped
+  separately so a bulk import cannot crowd the repair strip out of the response.
+- **`untranslatedSenses` probed one index lookup per sense** of the language on
+  every dashboard load; it is now one pass over the edges.
+- **`?depth=` (present but empty)** narrowed the search to direct relations,
+  because `Number("")` is 0.
+- **Reading order** used AQL array ordering (`[2]` before `[1,1]`) instead of the
+  shared `compareDefinitionPlaces`; the ranking tiebreak used `localeCompare`
+  under the *server's* locale.
+- **A hop whose entry cannot be named** was served blank rather than dropped.
+- **The parked queue sorted by `indexedAt`**, so a relation that parked today but
+  was published long ago fell below the cap permanently. Relations now carry
+  `stateChangedAt`, set when re-anchoring changes the state.
+
+### What is still genuinely open
+
+- **`place: []` relations are the most fragile thing in the network**: appending
+  one sense to either entry parks every whole-entry relation touching it, and
+  §3.1 expects bots to write exactly those. Worth a volume estimate before the
+  worklist slice sizes its queue.
+- The traversal has no regression test. `apps/api/src/scripts/verify-network.ts`
+  covers the *ingest* lifecycle (46 assertions) and is where a read-path case
+  belongs — start with the sense-jump fixture above, which is three records.
+
 ## 6. Seams — reserved, not built
 
 ### 6.1 The weighted semantic network

@@ -360,9 +360,39 @@ export interface TranslationHop {
   /** The sense the path travelled through — its canonical place. */
   place: number[];
   /**
-   * Whether the assertion that reached this word covered **every** sense of
-   * it, rather than the one named. Disclosed because it is precisely the
-   * assumption a reader would want to check ("via *vers*, all senses").
+   * Whether **either** assertion touching this word — the one that reached it
+   * or the one the path left by — covered every sense of it rather than the one
+   * named. Both count: from the reader's side either is the same unchecked
+   * assumption, and it is precisely the one they would want to check ("via
+   * *vers*, all senses").
+   */
+  coarse: boolean;
+}
+
+/**
+ * One sense of a target entry, with the provenance of **its own** best path.
+ *
+ * Provenance is per sense rather than per entry because two senses of one word
+ * can be reached by very different chains — one direct and precise, another
+ * three coarse hops away. A single badge for the entry would describe the best
+ * of them and silently vouch for the rest.
+ */
+export interface TranslationSense {
+  /** The target sense's canonical place. */
+  place: number[];
+  /** Hops on this sense's shortest path; 1 = a direct assertion. */
+  hops: number;
+  /** Coarse hops on that path. */
+  coarseHops: number;
+  /**
+   * The intermediate words of that path, in order — empty for a direct
+   * assertion. The trust surface: until voting exists, *how* a translation was
+   * reached is the only quality signal a reader has.
+   */
+  via: TranslationHop[];
+  /**
+   * Whether the assertion that reached this sense covered every sense of the
+   * target entry — the final hop's own coarseness, which no `via` entry carries.
    */
   coarse: boolean;
 }
@@ -375,18 +405,12 @@ export interface TranslationTarget {
   /** at:// URI of the current record — the client resolves it for the content. */
   recordURI: string;
   authorDID: string;
-  /** The target's senses this source sense reaches, in reading order. */
-  senses: number[][];
-  /** Hops on the shortest path; 1 = a direct assertion. */
+  /** The senses reached, in reading order, each with its own provenance. */
+  senses: TranslationSense[];
+  /** Best hop count over `senses` — the first ranking key. */
   hops: number;
-  /** Coarse hops on that path — the second ranking key. */
+  /** Coarse hops on that same best path — the second ranking key. */
   coarseHops: number;
-  /**
-   * The intermediate words of the best path, in order — empty for a direct
-   * assertion. The trust surface: until voting exists, *how* a translation was
-   * reached is the only quality signal a reader has.
-   */
-  via: TranslationHop[];
 }
 
 /**

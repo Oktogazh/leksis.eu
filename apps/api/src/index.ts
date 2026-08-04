@@ -121,8 +121,11 @@ app.get("/translate", async (c) => {
   if (!isValidLanguageTag(from) || !isValidLanguageTag(to)) {
     return c.json({ error: "invalid language tag" }, 400);
   }
-  const requestedDepth = Number(c.req.query("depth") ?? TRANSLATE_DEFAULT_DEPTH);
-  const depth = Number.isFinite(requestedDepth) ? requestedDepth : TRANSLATE_DEFAULT_DEPTH;
+  // An empty `depth=` is absent, not zero: Number("") is 0, which would clamp to
+  // a one-hop search and silently answer a narrower question than was asked.
+  const requested = c.req.query("depth");
+  const parsed = requested === undefined || requested.trim() === "" ? NaN : Number(requested);
+  const depth = Number.isFinite(parsed) ? parsed : TRANSLATE_DEFAULT_DEPTH;
   try {
     // getTranslations clamps the depth to the server's cap.
     return c.json(await getTranslations(c.req.query("q") ?? "", from, to, depth));
