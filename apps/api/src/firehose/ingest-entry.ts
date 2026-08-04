@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { aql } from "arangojs";
 import {
+  collectLeafPlaces,
   isLeafPlace,
   isValidDefinitionPlace,
   isValidLanguageTag,
@@ -14,6 +15,7 @@ import {
 import { db } from "../db";
 import { syncEntryTags } from "./labels";
 import type { IngestResult } from "./ingest-language";
+import { reviveUnresolvedRelations, syncEntrySenses } from "./ingest-relation";
 
 // Decomposition of eu.leksis.entry records into the `entries` collection.
 // The record on the author's PDS is the source of truth for content; the
@@ -50,6 +52,15 @@ interface EntryDoc {
    * language declaration has named yet.
    */
   tags: Tag[];
+  /**
+   * Canonical places of this version's definition leaves — its senses. Cached
+   * at ingest, exactly as `tags` is, so the semantic network can expand a
+   * relation's place prefix and detect that a tree was restructured **without
+   * ever fetching a record from a PDS**. Small (a place is at most three small
+   * integers) and derived: an entry version indexed before this field existed
+   * carries none, and gets them when its author republishes.
+   */
+  places: number[][];
   createdAt: string;
   indexedAt: string;
   current: boolean;
@@ -60,6 +71,7 @@ interface ParsedEntry {
   orthography: string[];
   /** Spellings of the entry's other grammatical forms, indexed for search. */
   otherForms: string[];
+  places: number[][];
   subject: string | null;
   todo: boolean;
   deleted: boolean;
@@ -99,13 +111,14 @@ function parseTags(value: unknown): Tag[] | null {
 }
 
 /**
- * Validate the definitions tree and harvest what the read model needs: each
- * node's sense-level `categories` tags. A node whose place ends non-zero is a
- * leaf (text required); a node ending in 0 is a group (no text). The
- * whole-tree invariants are checked by `validateDefinitions`. Returns null
- * when the list is invalid.
+ * Validate the definitions tree and harvest what the read models need: each
+ * node's sense-level `categories` tags, and the canonical places of the
+ * leaves — the version's senses, which the semantic network addresses. A node
+ * whose place ends non-zero is a leaf (text required); a node ending in 0 is a
+ * group (no text). The whole-tree invariants are checked by
+ * `validateDefinitions`. Returns null when the list is invalid.
  */
-function collectDefinitionTags(value: unknown): Tag[] | null {
+function parseDefinitions(value: unknown): { tags: Tag[]; places: number[][] } | null {
   if (!Array.isArray(value) || value.length === 0) return null;
   const definitions: EntryDefinition[] = [];
   const tags: Tag[] = [];
@@ -132,7 +145,8 @@ function collectDefinitionTags(value: unknown): Tag[] | null {
       ...(leaf ? { text } : {}),
     });
   }
-  return validateDefinitions(definitions) === "ok" ? tags : null;
+  if (validateDefinitions(definitions) !== "ok") return null;
+  return { tags, places: collectLeafPlaces(definitions) };
 }
 
 /**
@@ -202,8 +216,8 @@ function parseRecord(record: unknown): ParsedEntry | null {
   const otherForms = parseOtherForms(r.otherForms);
   if (otherForms === null) return null;
 
-  const definitionTags = collectDefinitionTags(r.definitions);
-  if (definitionTags === null) return null;
+  const definitions = parseDefinitions(r.definitions);
+  if (definitions === null) return null;
 
   // Entry-level free-text notes and references are record-only content: they
   // are validated for well-formedness (so a malformed record is rejected
@@ -226,7 +240,7 @@ function parseRecord(record: unknown): ParsedEntry | null {
   // `Number=Plur` on a plural is as much a gap in a language's declaration as
   // an unnamed `NOUN` on a headword.
   const tags = new Map<string, Tag>();
-  for (const tag of [...categories, ...definitionTags, ...otherForms.tags]) {
+  for (const tag of [...categories, ...definitions.tags, ...otherForms.tags]) {
     tags.set(tagKey(tag), tag);
   }
 
@@ -277,6 +291,7 @@ function parseRecord(record: unknown): ParsedEntry | null {
     languageID,
     orthography,
     otherForms: otherForms.forms,
+    places: definitions.places,
     subject,
     todo,
     deleted,
@@ -386,6 +401,10 @@ export async function ingestEntry(
     deletionReason: parsed.deletionReason,
     redirectTo: parsed.redirectTo,
     tags: parsed.tags,
+    // Stored even on a withdrawn version, like `tags`: the doc stays a
+    // faithful mirror of the record, and a restoration needs them back. What a
+    // withdrawal suppresses is the *senses* derived from them, below.
+    places: parsed.places,
     createdAt: parsed.createdAt,
     indexedAt: new Date().toISOString(),
     current: true,
@@ -402,6 +421,14 @@ export async function ingestEntry(
   // deleted version declares none, even though its own `tags` stay stored on
   // the doc in case the entry is restored.
   await syncEntryTags(db, entryKey, doc.languageID, parsed.deleted ? [] : doc.tags);
+  // The semantic network follows the same transition. A withdrawn version
+  // offers no senses, so its own relations park and it stops being reachable
+  // as a translation — a withdrawal is a claim that these senses should not be
+  // offered.
+  await syncEntrySenses(db, entryKey, doc.languageID, parsed.deleted ? [] : doc.places);
+  // A relation may have arrived before the entry version it pins: Jetstream
+  // delivers records in arbitrary order. This is the join that revives it.
+  await reviveUnresolvedRelations(db, recordURI);
   console.log(
     `firehose: indexed entry "${doc.orthography[0]}" [${doc.entryKey}] (${current ? "new version" : "new entry"}) from ${authorDID}`,
   );
@@ -437,6 +464,8 @@ export async function ingestEntryDelete(recordURI: string): Promise<void> {
     recordURI: string;
     languageID: string;
     tags: Tag[] | null;
+    places: number[][] | null;
+    deleted: boolean;
   }>(aql`
     FOR e IN entries
       FILTER e.entryKey == ${entryKey}
@@ -446,7 +475,9 @@ export async function ingestEntryDelete(recordURI: string): Promise<void> {
       RETURN {
         recordURI: NEW.recordURI,
         languageID: NEW.languageID,
-        tags: NEW.tags
+        tags: NEW.tags,
+        places: NEW.places,
+        deleted: NEW.deleted == true
       }
   `);
   const promoted = await promotedCursor.next();
@@ -456,8 +487,19 @@ export async function ingestEntryDelete(recordURI: string): Promise<void> {
   // again once re-published.
   if (promoted) {
     await syncEntryTags(db, entryKey, promoted.languageID, promoted.tags ?? []);
+    // Same for its senses, and with them the relations pinning this entry: a
+    // reversion to a version whose tree matches an assertion revives it, a
+    // reversion away from it parks it. Versions indexed before `places` was
+    // stored contribute none and park their relations until republished.
+    await syncEntrySenses(
+      db,
+      entryKey,
+      promoted.languageID,
+      promoted.deleted ? [] : (promoted.places ?? []),
+    );
   } else {
     await syncEntryTags(db, entryKey, null, []);
+    await syncEntrySenses(db, entryKey, null, []);
   }
   console.log(
     promoted

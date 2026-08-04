@@ -304,12 +304,21 @@ one BFS traversal over the anonymous edge collection:
 
 ```aql
 FOR v, e, p IN 1..@maxDepth ANY @senseId relationEdges
-  OPTIONS { order: "bfs", uniqueVertices: "path" }
   PRUNE v.languageID == @target
-  FILTER v.languageID == @target
-  FILTER p.edges[*].kind NONE == "antonym"
+  OPTIONS { order: "bfs", uniqueVertices: "path" }
+  FILTER v != null AND v.languageID == @target
+  FILTER p.edges[*].traversable ALL == true
   RETURN p
 ```
+
+> Three corrections, made when slice 3 ran this against ArangoDB 3.12; the shape
+> above is the one that works. **`PRUNE` precedes `OPTIONS`** — the reverse order
+> is a syntax error, not a stylistic choice. The kind filter is **positive**
+> (`traversable ALL == true`, a boolean the edge carries) rather than
+> `NONE == "antonym"`: excluding the one bad kind by name would *traverse* any
+> kind this AppView does not know, contradicting §2.1's rule that an unknown kind
+> is never traversed. And `v` is null-guarded, because an edge can briefly outlive
+> the sense row it points at.
 
 `PRUNE` on the target language stops expansion at the first hit per path (a translation is not a
 transit station); the `NONE == "antonym"` path filter is optimizer-recognized (§1.1). Sense-level
@@ -413,12 +422,12 @@ Each slice leaves master typechecking and deployable alone, per the working meth
 the verify skill, with fixture records from the `leksis-testset` bot (which gains coverage rows for
 every reader-facing state this loop ships: live, via-chain, stale, antonym).
 
-1. **Lexicon + types** — `lexicons/eu.leksis.relation.json`; relation types, validation and
+1. **Lexicon + types** ✅ — `lexicons/eu.leksis.relation.json`; relation types, validation and
    canonical-prefix helpers in `packages/types` (full `npm run typecheck`). Nothing consumes yet.
-2. **Ingest** — `places` on entry docs; `relations`, `senses`, `relationEdges` collections +
+2. **Ingest** ✅ — `places` on entry docs; `relations`, `senses`, `relationEdges` collections +
    `db:init`; the lifecycle of §3.3. Proof: fixture relations flow through Jetstream into edges;
    a restructured fixture entry parks its relation.
-3. **Read surface** — `/translate`, `/entries/:key/relations`, dashboard widening. Proof: curl
+3. **Read surface** ✅ — `/translate`, `/entries/:key/relations`, dashboard widening. Proof: curl
    against fixture data.
 4. **Reader UI** — search-bar target mode, translation results with path disclosure, entry-page
    relations.
@@ -466,21 +475,40 @@ join point they all share.
 - **Ranking tiebreak pre-voting**: coarse-hop count is the first tiebreak (§3.4, settled). What
   remains open is the *second*: among paths equal on both hops and coarseness, does the count of
   parallel current assertions rank higher? Proposed yes, but decided when real data exists to look at.
-- **A relation pinning a soft-deleted entry** (`deleted: true` — withdrawn from search but still
-  reachable at its entryKey). Parking it treats a withdrawal as drift, which is roughly right;
-  serving it contradicts the withdrawal. Proposed: park as `stale`, since a withdrawn entry is
-  exactly a claim that its senses should not be offered. Decided at slice 2, where the interaction
-  with `redirectTo` (does a relation follow the redirect?) also has to be answered.
+- ~~**A relation pinning a soft-deleted entry**~~ **Decided at slice 2: park as `stale`, and do not
+  follow `redirectTo`.** A withdrawn entry contributes no `senses` rows, so the leaf set under any
+  prefix is empty and the drift comparison parks the relation with no special case. The redirect is
+  deliberately not followed: re-pointing an assertion at another entry without its author is the
+  meaning drift the whole mechanism exists to prevent, so a human re-affirms it through the editor.
 - **Text drift** is accepted as a structure-only residual (§3.3); revisit when voting can price it.
-- **Unresolved-side revival mechanics**: index-join on entry ingest (proposed) vs a periodic sweep —
-  measured at slice 2.
-- **Depth/limit defaults** (`maxDepth` 3, cap 5, `K_SHORTEST_PATHS` limit): proposals, tuned on
-  fixture data.
+- ~~**Unresolved-side revival mechanics**~~ **Decided at slice 2: the index-join, no sweep.** Entry
+  ingest resolves relations pinning the arriving record through `sides[*].recordURI`, and entry
+  version transitions re-anchor by `sides[*].entryKey`. One case needed adding: an entry whose every
+  version was deleted and is then republished at the same rkey is re-indexed under a **new**
+  entryKey, so a side whose cached entryKey has no current version re-resolves its *identity* (never
+  its cached expansion) before parking.
+- **Depth/limit defaults**: `maxDepth` 3 with a server cap of 5 shipped at slice 3, alongside two
+  caps the note had not named — 20 source entries per search, 200 paths per source sense. The
+  `K_SHORTEST_PATHS` limit is still open, since the path panel is deferred to the UI slice.
 - **The prefix picker's UX** on deep trees, and where the whole-entry option lives visually.
-- **Whether `/translate` folds into `GET /entries`** as a parameter or stays its own endpoint.
-- **`places` backfill** for entry versions indexed before slice 2: one-off PDS fetch in `db:init`
-  vs bot republish — pre-1.0, either is cheap; pick at slice 2.
-- **The untranslated-senses counter's exact definition** (any live edge vs any equivalence edge).
+- ~~**Whether `/translate` folds into `GET /entries`**~~ **Decided at slice 3: its own endpoint.**
+  Different response shape, different cost profile, and it requires both languages where `/entries`
+  degrades to searching all of them.
+- ~~**`places` backfill**~~ **Decided at slice 2: bot republish, no migration code.** `db:init` only
+  rebuilds from docs that already carry `places`; a relation pinning a version indexed before the
+  field existed parks as `unresolved` until its author republishes (the sanctioned pre-1.0 cost).
+- ~~**The untranslated-senses counter's exact definition**~~ **Decided at slice 3: a sense no live,
+  traversable, cross-language equivalence edge reaches.** Antonyms are excluded because an antonym is
+  not a translation, and same-language equivalences because a synonym is not one either — counting
+  one would report a sense as covered while no other language reaches it.
+
+**Two divergences from this note, settled in code and to be carried into the loop's ADR.** An
+unknown `kind` is indexed **live with a non-traversable edge**, not "parked" as §2.1 loosely says: it
+therefore renders on the entry page, which is what §2.1's own "indexed but never traversed" asks for,
+while `state` stays a statement about resolvability alone. And edges carry `coarseFrom`/`coarseTo`
+beside `coarse`, so the via-chain can name *which* word's senses were lumped; since the traversal is
+`ANY` and crosses half its edges backwards, a consumer must compare the edge's `_from` against the
+vertex it arrived from before reading either flag.
 
 ---
 

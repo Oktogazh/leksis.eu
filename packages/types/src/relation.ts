@@ -14,7 +14,7 @@
 // named in these comments.
 
 import { isValidLanguageTag } from "./bcp47.js";
-import { ENTRY_DEFINITIONS_MAX_DEPTH } from "./entry.js";
+import { ENTRY_DEFINITIONS_MAX_DEPTH, isLeafPlace, type EntryDefinition } from "./entry.js";
 
 /** AT Proto collection NSID for semantic relation records. */
 export const LEKSIS_RELATION_COLLECTION = "eu.leksis.relation";
@@ -130,6 +130,72 @@ export function isValidPlacePrefix(value: unknown): value is number[] {
 }
 
 /**
+ * Canonical string form of a place, for document keys and set comparison:
+ * the non-zero indices joined with dots ("2.1"). The empty place — the whole
+ * entry — is the empty string, which is why it is never used as a sense key.
+ */
+export function placePathKey(place: readonly number[]): string {
+  return canonicalizePlacePrefix(place).join(".");
+}
+
+/**
+ * Key of a sense vertex: the entry's stable key and the sense's canonical
+ * place, e.g. "br-gwerzenn-1b76.2.1". Deterministic on purpose — re-anchoring
+ * a relation after an entry version transition is then a pure key computation,
+ * with no lookup of the sense row itself.
+ *
+ * ArangoDB's `_key` charset allows the dot, and both halves are already
+ * constrained to it: an entryKey is ASCII-slugged at minting and a place is
+ * integers.
+ */
+export function senseKey(entryKey: string, place: readonly number[]): string {
+  return `${entryKey}.${placePathKey(place)}`;
+}
+
+/**
+ * The canonical places of a definition list's leaves — what an entry document
+ * caches as `places`, and the only thing relation ingest needs from an entry's
+ * content. Group nodes are absent: a heading is not a sense.
+ *
+ * **Deduplicated**, because canonicalization can collapse two raw places onto
+ * one address: a defective-but-valid record may carry both `[1]` and `[0,1]`,
+ * which display identically and are therefore one sense here. Two leaves
+ * sharing an address share a vertex — the same over-matching, safe-failure
+ * behaviour `placePrefixMatches` documents.
+ */
+export function collectLeafPlaces(definitions: readonly EntryDefinition[]): number[][] {
+  const byKey = new Map<string, number[]>();
+  for (const def of definitions) {
+    if (!isLeafPlace(def.place)) continue;
+    const place = canonicalizePlacePrefix(def.place);
+    byKey.set(place.join("."), place);
+  }
+  return [...byKey.values()];
+}
+
+/**
+ * Whether two sets of leaf places are the same set — the drift comparison of
+ * **pin to the version, compare the subtree, park what drifted**.
+ *
+ * Order is irrelevant and both sides are canonicalized, so a record
+ * re-serialized with padded places compares equal. The comparison is
+ * deliberately **structure-only**: definition texts are not in the database,
+ * and a typo fix must not park a translation. An in-place rewrite that changes
+ * a sense's meaning without changing the tree therefore goes unnoticed — an
+ * accepted residual, priced when voting can score it.
+ */
+export function leafSetsEqual(
+  a: readonly (readonly number[])[],
+  b: readonly (readonly number[])[],
+): boolean {
+  const keysA = new Set(a.map(placePathKey));
+  const keysB = new Set(b.map(placePathKey));
+  if (keysA.size !== keysB.size) return false;
+  for (const key of keysA) if (!keysB.has(key)) return false;
+  return true;
+}
+
+/**
  * Whether a prefix addresses a given definition leaf — true when the prefix,
  * canonically, is a prefix of (or equal to) the leaf's canonical place. An
  * empty prefix matches every leaf.
@@ -222,6 +288,149 @@ export type RelationState = "live" | "stale" | "unresolved" | "oversize";
  * records arrive from the firehose in arbitrary order.
  */
 export type RelationError = "sides" | "entry-uri" | "language" | "place" | "self";
+
+/**
+ * One end of a relation as the API serves it: what the record said, plus what
+ * the AppView resolved it to.
+ *
+ * `orthography` comes from the referenced entry's current version and is the
+ * one to display; `recordedOrthography` is the record's own denormalized
+ * spelling and exists for exactly one case — a side whose entry cannot be
+ * resolved, where it is all a worklist has to print.
+ */
+export interface RelationSideView {
+  /** null when this side's entry is not (or no longer) indexed. */
+  entryKey: string | null;
+  languageID: string;
+  /** The canonical place prefix the record named; [] = the whole entry. */
+  place: number[];
+  /** Canonical spelling of the entry's current version; null when unresolved. */
+  orthography: string | null;
+  /** The spelling the record carried; null when it carried none. */
+  recordedOrthography: string | null;
+}
+
+/**
+ * One relation version as served. Definition texts and the relation's own
+ * `notes` are absent by design: the client resolves the record from its
+ * author's PDS, exactly as it does for an entry.
+ */
+export interface RelationView {
+  relationKey: string;
+  /** null = equivalence; "antonym"; or a kind this AppView does not know. */
+  kind: string | null;
+  state: RelationState;
+  /** at:// URI of this version's record — the client resolves it for the notes. */
+  recordURI: string;
+  authorDID: string;
+  indexedAt: string;
+  /**
+   * The two sides. Where the request is about one entry or one language, that
+   * one is `sides[0]`, so a reader never has to work out which end is theirs.
+   */
+  sides: [RelationSideView, RelationSideView];
+}
+
+/** Response shape of GET /entries/:key/relations. */
+export interface EntryRelationsResponse {
+  entryKey: string;
+  /**
+   * The relations this entry can currently be shown with, in reading order of
+   * its own senses. Whole-entry relations (`sides[0].place` empty) sort first
+   * and belong on the entry header.
+   */
+  relations: RelationView[];
+  /**
+   * Parked relations touching this entry — the repair strip. A relation is
+   * here rather than absent because **a wrong translation is worse than a
+   * missing one**: it is withheld from results and shown as work to do.
+   */
+  parked: RelationView[];
+}
+
+/**
+ * One hop of a translation path: a word the chain passed through, or the word
+ * it ended at.
+ */
+export interface TranslationHop {
+  entryKey: string;
+  languageID: string;
+  /** Canonical spelling of the hop's current entry version. */
+  orthography: string;
+  /** The sense the path travelled through — its canonical place. */
+  place: number[];
+  /**
+   * Whether the assertion that reached this word covered **every** sense of
+   * it, rather than the one named. Disclosed because it is precisely the
+   * assumption a reader would want to check ("via *vers*, all senses").
+   */
+  coarse: boolean;
+}
+
+/** One target entry reached from one sense of the source entry. */
+export interface TranslationTarget {
+  entryKey: string;
+  languageID: string;
+  orthography: string[];
+  /** at:// URI of the current record — the client resolves it for the content. */
+  recordURI: string;
+  authorDID: string;
+  /** The target's senses this source sense reaches, in reading order. */
+  senses: number[][];
+  /** Hops on the shortest path; 1 = a direct assertion. */
+  hops: number;
+  /** Coarse hops on that path — the second ranking key. */
+  coarseHops: number;
+  /**
+   * The intermediate words of the best path, in order — empty for a direct
+   * assertion. The trust surface: until voting exists, *how* a translation was
+   * reached is the only quality signal a reader has.
+   */
+  via: TranslationHop[];
+}
+
+/**
+ * The target entries reached from one sense of the source entry.
+ *
+ * **A result is reported relative to the sense you searched from**, so a sense
+ * with no equivalent in the target language is present with an empty `targets`
+ * list rather than omitted: that is what makes partial coverage legible
+ * without a "partial" flag.
+ */
+export interface TranslationSenseGroup {
+  /** The source sense's canonical place. */
+  place: number[];
+  targets: TranslationTarget[];
+}
+
+/** One source entry matching the query. */
+export interface TranslationEntry {
+  entryKey: string;
+  languageID: string;
+  orthography: string[];
+  recordURI: string;
+  authorDID: string;
+  /** One group per sense of the entry, in reading order. */
+  senses: TranslationSenseGroup[];
+}
+
+/** Response shape of GET /translate?q=&from=&to=&depth=. */
+export interface TranslateResponse {
+  query: string;
+  from: string;
+  to: string;
+  /** The depth actually used, after clamping. */
+  depth: number;
+  entries: TranslationEntry[];
+}
+
+/**
+ * Default and maximum traversal depth. A translation is not a transit station:
+ * every hop is another author's judgement, so the chain is kept short, and the
+ * server caps what a client may ask for.
+ */
+export const TRANSLATE_DEFAULT_DEPTH = 3;
+export const TRANSLATE_MAX_DEPTH = 5;
 
 export function validateRelation(
   record: Pick<LeksisRelationRecord, "sides">,

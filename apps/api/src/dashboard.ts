@@ -8,6 +8,7 @@ import type {
   LanguageDashboardResponse,
 } from "@leksis/types";
 import { db } from "./db";
+import { getParkedRelations, getRelationCounts, getUntranslatedSenseCount } from "./relations";
 
 // Per-language dashboard read path. Everything here is answerable from the
 // version docs alone (entries + languages): counts, the todo review queue,
@@ -150,5 +151,10 @@ export async function getLanguageDashboard(
     feed,
     activity: await activityCursor.all(),
     grammarIssues,
+    // The semantic network's side of the dashboard: what this language has
+    // translated, and the drift waiting to be repaired.
+    relationCounts: await getRelationCounts(tag),
+    untranslatedSenses: await getUntranslatedSenseCount(tag),
+    parkedRelations: await getParkedRelations(tag),
   };
 }

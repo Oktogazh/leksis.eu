@@ -7,6 +7,7 @@
 // language" review list reuses GET /languages?locale=.
 
 import type { GrammarIssue } from "./grammar.js";
+import type { RelationState, RelationView } from "./relation.js";
 
 /** The dashboard's language: the current eu.leksis.language record ref. */
 export interface DashboardLanguage {
@@ -71,4 +72,21 @@ export interface LanguageDashboardResponse {
    * or when the language declares none.
    */
   grammarIssues: GrammarIssue[];
+  /**
+   * Current relations with a side in this language, by lifecycle state. Only
+   * `live` ones are in the graph; the rest are the repair worklist's size.
+   */
+  relationCounts: Record<RelationState, number>;
+  /**
+   * Senses of this language's current entries that no live equivalence
+   * assertion reaches — what is left to translate. Antonyms do not count: an
+   * antonym is not a translation.
+   */
+  untranslatedSenses: number;
+  /**
+   * The parked queue, capped. A parked relation lists on **both** sides'
+   * languages, since either side's editor may be the one who can repair it;
+   * `sides[0]` is always this language's side.
+   */
+  parkedRelations: RelationView[];
 }

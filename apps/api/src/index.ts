@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import {
   isValidLanguageTag,
   normalizeLanguageTag,
+  TRANSLATE_DEFAULT_DEPTH,
   type LabelsResponse,
   type EntriesResponse,
   type HealthResponse,
@@ -12,6 +13,7 @@ import { listLabels } from "./labels";
 import { getLanguageDashboard } from "./dashboard";
 import { pingDb } from "./db";
 import { getEntry, searchEntries } from "./entries";
+import { getEntryRelations, getTranslations } from "./relations";
 import { getCurrentLanguageRecord, listLanguages } from "./languages";
 import { startJetstream } from "./firehose/jetstream";
 
@@ -105,6 +107,38 @@ app.get("/entries", async (c) => {
     return c.json(body);
   } catch (err) {
     console.error("GET /entries failed:", err);
+    return c.json({ error: "database unavailable" }, 503);
+  }
+});
+
+// Translation search. The source language and a target are both required: with
+// no target the search is monolingual, which is GET /entries. Invalid tags are
+// refused rather than degraded, because a translation search silently answering
+// about the wrong language is worse than an error.
+app.get("/translate", async (c) => {
+  const from = normalizeLanguageTag(c.req.query("from") ?? "");
+  const to = normalizeLanguageTag(c.req.query("to") ?? "");
+  if (!isValidLanguageTag(from) || !isValidLanguageTag(to)) {
+    return c.json({ error: "invalid language tag" }, 400);
+  }
+  const requestedDepth = Number(c.req.query("depth") ?? TRANSLATE_DEFAULT_DEPTH);
+  const depth = Number.isFinite(requestedDepth) ? requestedDepth : TRANSLATE_DEFAULT_DEPTH;
+  try {
+    // getTranslations clamps the depth to the server's cap.
+    return c.json(await getTranslations(c.req.query("q") ?? "", from, to, depth));
+  } catch (err) {
+    console.error("GET /translate failed:", err);
+    return c.json({ error: "database unavailable" }, 503);
+  }
+});
+
+app.get("/entries/:key/relations", async (c) => {
+  try {
+    const entry = await getEntry(c.req.param("key"));
+    if (!entry) return c.json({ error: "entry not found" }, 404);
+    return c.json(await getEntryRelations(entry.key));
+  } catch (err) {
+    console.error("GET /entries/:key/relations failed:", err);
     return c.json({ error: "database unavailable" }, 503);
   }
 });

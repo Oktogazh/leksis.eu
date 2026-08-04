@@ -99,7 +99,9 @@ the arc must not stall loops 5 and 6.
 
 > Confirm the actual current position from `CHANGELOG.md` + `git tag` at orient time (step 1) —
 > these ✅ marks are a convenience, not the source of truth. As of ADR-0009 the grammar arc is
-> through layer 4; content loop 5 (translations) is the next unbuilt content loop.
+> through layer 4; content loop 5 (translations) is **in progress** — its lexicon, ingest and read
+> surface are built (`docs/design/semantic-network.md` §5 slices 1–3), and the reader and writer
+> interfaces are what remain.
 >
 > **Two obligations trail the arc rather than blocking it.** No authoring surface of layers 3 or 4
 > has been driven in a browser — they sit behind a session. The test account now exists

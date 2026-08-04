@@ -12,12 +12,14 @@
 // Requires ARANGO_URL / ARANGO_DB / ARANGO_USER / ARANGO_PASSWORD in the env.
 
 import { aql, Database } from "arangojs";
+import { CollectionType } from "arangojs/collection";
 import type { LanguageTranslation, Tag } from "@leksis/types";
 import {
   buildLabelDocs,
   toDeclaredLabel,
   type DeclaredLabel,
 } from "../firehose/labels";
+import { rebuildSemanticNetwork } from "../firehose/ingest-relation";
 import { syncLocalLanguages } from "../firehose/local-languages";
 
 const url = process.env.ARANGO_URL ?? "http://127.0.0.1:8529";
@@ -36,8 +38,14 @@ const documentCollections = [
   "localLanguages",
   "entries",
   "labels",
+  "relations",
+  "senses",
   "firehoseState",
 ];
+// The semantic network's edge collection (loop 5). `relationEdges` joins
+// `senses` vertices; both are derived from `relations` + `entries` and are
+// rebuilt wholesale at the bottom of this script.
+const edgeCollections = ["relationEdges"];
 // Superseded by the record-centric model (Loop 2): definitions live on the
 // entry records themselves, and translation edges will be redesigned in
 // Loop 5. Both were created empty in week 1 and never written to.
@@ -71,6 +79,16 @@ async function main() {
       console.log(`created document collection "${name}"`);
     } else {
       console.log(`document collection "${name}" already exists`);
+    }
+  }
+
+  for (const name of edgeCollections) {
+    const col = db.collection(name);
+    if (!(await col.exists())) {
+      await col.create({ type: CollectionType.EDGE_COLLECTION });
+      console.log(`created edge collection "${name}"`);
+    } else {
+      console.log(`edge collection "${name}" already exists`);
     }
   }
 
@@ -170,6 +188,72 @@ async function main() {
   });
   console.log('ensured indexes on "labels"');
 
+  // Relations are versioned like entries (many docs per relationKey, one
+  // current). Two more indexes carry the semantic network's lifecycle: an
+  // entry version transition re-anchors the relations touching that entry
+  // (by resolved entryKey), and a newly indexed entry version revives the
+  // relations that pinned it before it arrived (by the pinned recordURI —
+  // Jetstream delivers records in arbitrary order).
+  await db.collection("relations").ensureIndex({
+    type: "persistent",
+    name: "idx_relationkey_current",
+    fields: ["relationKey", "current"],
+    unique: false,
+  });
+  await db.collection("relations").ensureIndex({
+    type: "persistent",
+    name: "idx_recorduri",
+    fields: ["recordURI"],
+    unique: false,
+  });
+  await db.collection("relations").ensureIndex({
+    type: "persistent",
+    name: "idx_side_entrykey",
+    fields: ["sides[*].entryKey"],
+    unique: false,
+  });
+  await db.collection("relations").ensureIndex({
+    type: "persistent",
+    name: "idx_side_recorduri",
+    fields: ["sides[*].recordURI"],
+    unique: false,
+  });
+  // The dashboard counts and queues a language's relations from either side.
+  await db.collection("relations").ensureIndex({
+    type: "persistent",
+    name: "idx_side_language",
+    fields: ["sides[*].languageID"],
+    unique: false,
+  });
+  console.log('ensured indexes on "relations"');
+
+  // Sense vertices are rebuilt per entry and counted per language (the
+  // untranslated-senses figure). Their _key is deterministic, so nothing looks
+  // one up by any other identity.
+  await db.collection("senses").ensureIndex({
+    type: "persistent",
+    name: "idx_entrykey",
+    fields: ["entryKey"],
+    unique: false,
+  });
+  await db.collection("senses").ensureIndex({
+    type: "persistent",
+    name: "idx_language",
+    fields: ["languageID"],
+    unique: false,
+  });
+  console.log('ensured indexes on "senses"');
+
+  // Edges are rewritten one relation at a time; `_from`/`_to` are indexed by
+  // ArangoDB itself, which is what traversal uses.
+  await db.collection("relationEdges").ensureIndex({
+    type: "persistent",
+    name: "idx_relationkey",
+    fields: ["relationKey"],
+    unique: false,
+  });
+  console.log('ensured indexes on "relationEdges"');
+
   // Backfill the localLanguages read model from language docs indexed before
   // the languages/localLanguages split, which still carry `translations`.
   // Legacy fields are left in place (archive, never migrate destructively);
@@ -238,6 +322,20 @@ async function main() {
     `rebuilt "labels": ${labelDocs.length} row(s) ` +
       `from ${declaredRows.length} language grammar(s) (${namedCount} named) ` +
       `and ${usageRows.length} current entry version(s)`,
+  );
+
+  // Rebuild the semantic network's derived collections the same way, and for
+  // the same reason: `senses` and `relationEdges` are recomputed from
+  // `relations` + `entries`, so a re-run self-heals them. Every current
+  // relation is re-anchored from scratch rather than trusting its stored pin —
+  // an entry version this deploy no longer has must park its relations, not
+  // keep serving edges nothing supports.
+  const network = await rebuildSemanticNetwork(db);
+  console.log(
+    `rebuilt the semantic network: ${network.senses} sense(s), ${network.edges} edge(s) from ` +
+      `${network.states.live} live relation(s) ` +
+      `(parked: ${network.states.stale} stale, ${network.states.unresolved} unresolved, ` +
+      `${network.states.oversize} oversize)`,
   );
 
   console.log("database init complete.");

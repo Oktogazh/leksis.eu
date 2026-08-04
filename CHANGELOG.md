@@ -4,6 +4,104 @@ All notable changes to Leksis. Each section is one loop — a unit of work, not 
 unit of time: the content loops grow the dictionary outward, the grammar loops
 (the morphology arc) grow the entry deeper, and the two interleave.
 
+## The semantic network — translations as a graph of senses
+
+Content loop 5. A word's translations are no longer a gap in the model: they are
+**relations between senses**, published as records by whoever knows them, and
+walked by the AppView to answer "what is this word in that language" even when
+nobody has asserted the pair directly. Breton *gwerzenn* reaches English *verse*
+through French *vers* — and never through *vers* meaning "worms" or "toward",
+because a path enters and leaves an intermediate word through the *same* sense.
+See `docs/design/semantic-network.md`.
+
+> **This entry covers the backend: the record, the ingest lifecycle and the read
+> surface.** The reader and writer interfaces are the loop's remaining slices, so
+> nothing in the web app consumes any of it yet. Additive throughout — no entry
+> record changes, though an entry version indexed before this ships carries no
+> `places` and parks its relations until its author republishes (pre-1.0, a bot
+> republish).
+
+### The lexicon — `eu.leksis.relation`
+
+- **One record, two sides, no direction.** Equivalence is symmetric, so it is one
+  standalone record rather than a field on either entry: two directions cannot
+  disagree, and adding a translation republishes nobody's entry.
+- **A synonym is a translation whose languages are equal** — no separate kind and
+  no separate machinery. `kind` is absent for equivalence, `"antonym"` for the one
+  relation that is stored and displayed but **never traversed**, since an antonym
+  step inverts meaning. An unrecognised kind is indexed and shown, never
+  traversed: a kind a later version introduces cannot corrupt results.
+- **A side names senses, not words** — an `at://` URI of an entry record *version*
+  plus a **canonical place prefix**, where `[]` means every sense. Never an
+  AppView-minted key.
+- Denormalised `languageID`/`orthography` on a side are display fallback only,
+  and are the one thing a worklist can print for a side that cannot be resolved.
+- Versioned exactly as entries are: `subject`, last-write-wins across authors,
+  archival, and removal from the index when the record leaves its author's PDS.
+
+### The graph
+
+- **`senses`** — one vertex per definition leaf of every current entry version.
+  **The vertex is the sense**: that is what makes indirect translation
+  meaning-preserving, structurally rather than by a check. Materialising *every*
+  leaf (not only the related ones) keeps a vertex key a pure computation and gives
+  the untranslated-senses counter away for free.
+- **`relationEdges`** — the cartesian product of the two sides' expanded sense
+  sets, for **live relations only**. Overlapping prefixes on one entry drop the
+  degenerate self-loops and keep the real pairs.
+- **`relations`** — the versioned mirror, one doc per version, carrying each
+  side's expansion against the version it pinned.
+- **`entries` gains `places`** — the canonical places of a version's definition
+  leaves, cached at ingest exactly as `tags` already is, so a prefix can be
+  expanded and drift detected **without fetching any record from a PDS**.
+- **Expansion dissolves nesting; there are no subset edges.** Two relations naming
+  overlapping sense sets of one entry meet on the same vertex. An edge between a
+  group and its leaves is never added: it would be traversable in the *widening*
+  direction, letting a path climb out of sense II and descend into sense III.
+
+### Ingest — pin to the version, compare the subtree, park what drifted
+
+- A relation is **live** only while, for each side, the leaf set under the prefix
+  is identical between the version it pinned and the entry's **current** version.
+  The comparison is **structure-only**: a typo fix must not park a translation.
+- **Park, never serve.** `stale` (restructured under the assertion),
+  `unresolved` (a side's entry not indexed, or withdrawn to nothing) and
+  `oversize` (past `MAX_RELATION_EDGES`, 256) have no edges at all and appear on
+  worklists instead — because **a wrong translation is worse than a missing one**.
+- Entry version transitions rebuild that entry's senses and re-anchor its
+  relations: a restructure parks them, a reversion revives them, with no record
+  fetched and nothing written to anyone's repository. A relation that arrives
+  before the entry it references is revived by the index join when that entry
+  appears — Jetstream delivers records in arbitrary order.
+- **A withdrawn entry parks its relations** and `redirectTo` is *not* followed:
+  re-pointing an assertion at another entry without its author is exactly the
+  drift the mechanism exists to prevent.
+- **Coarseness is recorded, not blocked.** A prefix covering more than one sense
+  is kept, flagged on the edge, ranked below precise assertions and disclosed in
+  the path — blocking it would discard translations that are usually right, and
+  hiding it would hand the reader a confident wrong answer.
+
+### The read surface
+
+- **`GET /translate?q=&from=&to=&depth=`** — one BFS traversal per source sense,
+  pruned at the target language, filtered to traversable edges. Results group by
+  **the sense you searched from, never the sense you landed on**, so a sense with
+  no equivalent shows as an empty group and partial coverage needs no flag.
+  Ranked **hops first, then coarse hops**. Each answer carries its via-chain,
+  hop by hop, with the coarse hops named — until voting exists, *how* a
+  translation was reached is the only quality signal a reader has. Depth defaults
+  to 3, capped at 5.
+- **`GET /entries/:key/relations`** — this entry's relations in reading order of
+  its own senses, plus its parked ones. Read from the records rather than the
+  edges, so whole-entry relations stay distinguishable from per-sense ones.
+- **The language dashboard** gains relation counters by state, the
+  untranslated-senses count, and the parked queue — a parked relation lists on
+  **both** sides' languages, since either side's editor may be able to repair it.
+- Definition texts and a relation's `notes` are **not served**: the client
+  resolves records from their authors' PDSs, exactly as it already does for an
+  entry. Unlike the grammar layers, this loop's API cost is deliberately non-zero
+   — the traversal cannot run anywhere but the AppView.
+
 ## Labelled tags — lexicographic labels, abbreviations, and identity on the tag
 
 The front matter of a dictionary is more than grammar. A language can now declare
