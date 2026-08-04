@@ -177,6 +177,17 @@ A side references senses by a **canonical place prefix**:
 - The canonicalisation and matching helpers live in `packages/types` beside the existing place
   utilities, and reuse them.
 
+**Expansion dissolves nesting; there are no subset edges.** A prefix is expanded into leaves *at
+ingest*, so two relations referencing overlapping sense sets of the same entry — one naming the whole
+entry, another naming sense II — meet on the *same* `senses` vertex and the path between them exists
+with no further machinery. Nothing in the graph ever stores "the whole entry" or "the group II" as a
+node, so the question of one reference containing another never reaches traversal time. This is the
+main reason the vertex is the leaf and not the reference set: under a reference-set design those two
+relations would sit on disjoint vertices and would need explicit containment edges to connect.
+Such edges must **not** be added, because an edge between a group and its leaves is traversable in
+the *widening* direction — a path could enter at II, climb to the whole entry, and descend into III,
+which is exactly the sense jump §0 forbids.
+
 ### 2.3 Versioning and identity
 
 Exactly the entries model. A `relationKey` is minted at creation —
@@ -230,8 +241,19 @@ keys deterministic, makes re-anchoring a pure key computation, and gives the das
 
 **`relationEdges`** — derived edge collection: one edge per (leaf under side A × leaf under side B)
 of every **live, current** relation version, `_from`/`_to` in `senses`, attributes
-`{relationKey, kind, languages: [a, b]}`. `MAX_RELATION_EDGES` caps the cartesian expansion of one
-relation (proposed 256); a relation exceeding it parks as `oversize` rather than flooding the graph.
+`{relationKey, kind, languages: [a, b], coarse}`. `MAX_RELATION_EDGES` caps the cartesian expansion
+of one relation (proposed 256); a relation exceeding it parks as `oversize` rather than flooding the
+graph.
+
+**Coarseness is recorded, not blocked.** An edge is `coarse: true` when the side it came from used a
+prefix that expanded to **more than one leaf** — most importantly `[]` against a polysemous entry.
+Such a reference asserts that *every* sense on that side corresponds, which is sometimes exactly
+right (genuine full equivalence) and sometimes just an author, or a bulk-importing bot, declining to
+be precise. The AppView cannot tell those apart, and blocking the edge would discard translations
+that are usually correct — so the assertion is kept and its coarseness is carried into ranking
+(§3.4) and disclosed in the via-chain (§4.2). This is the honest form of the tiering instinct: paths
+are tiered by **the precision of the assertions they cross**, never by containment relations between
+senses. It also gives the voting mechanism a concrete thing to score.
 
 Only `state: "live"` relations have edges. **Park, never serve**: stale, unresolved and oversize
 relations are absent from the graph and present on worklists — a translation the AppView cannot
@@ -293,8 +315,14 @@ FOR v, e, p IN 1..@maxDepth ANY @senseId relationEdges
 transit station); the `NONE == "antonym"` path filter is optimizer-recognized (§1.1). Sense-level
 vertices make meaning-preservation structural: a path enters and leaves an intermediate entry through
 the *same sense vertex*, so *vers* traversed via its "verse" sense can never continue from its
-"worms" sense. Results are grouped by target entry, deduplicated across source senses, ranked by hop
-count (§7 holds the tiebreak question). Proposed `maxDepth`: default 3, server cap 5.
+"worms" sense. Proposed `maxDepth`: default 3, server cap 5.
+
+**Ranking: hops first, then coarse hops.** Results are grouped by target entry, deduplicated across
+source senses, and ordered by path length, then by how many `coarse` edges the path crossed
+(`LENGTH(p.edges[* FILTER CURRENT.coarse])`). A precise two-hop path therefore outranks a coarse
+two-hop one, and a direct precise assertion outranks everything. This is the pre-voting quality
+signal; when scores arrive they replace it, and the traversal switches to `order: "weighted"`
+(§6.1) with coarseness folded into the cost rather than applied afterwards.
 
 **The path panel** — for one (source sense, target sense) pair the UI wants the alternatives:
 `K_SHORTEST_PATHS` between the two vertices with a `LIMIT`, per §1.1.
@@ -332,12 +360,25 @@ the mode.
 
 ### 4.2 Results — answers that explain themselves
 
-Translation results group by target entry. Each group shows the matched target senses and a
-provenance badge: **direct**, or **via …** with the chain expandable hop by hop — orthography,
-language, and the sense's displayed place label (I.2., II.…) at every hop, each hop linking to its
-entry page. The chain is the trust surface: until voting exists, *how* a translation was reached is
-the only quality signal a reader has, so it is never hidden more than one tap away. Wrong result →
-the badge menu offers "propose a correction", opening §4.4 pre-filled.
+**A result is reported relative to the sense you searched from, never the sense you landed on.** The
+outer grouping of a translation search is the *source* entry's own senses, each with the target
+entries reached from it. This is what makes partial coverage legible without a "partial" flag:
+a sense with no equivalent in the target language simply shows an empty group, so the reader sees
+which parts of their word the dictionary can translate and which it cannot.
+
+It also dissolves an asymmetry that looks alarming and is not. Where A's sense II reaches C but its
+sense I does not, searching A→C shows one answered group and one empty one — correctly partial —
+while searching C→A shows a single complete group, because from C's side the coverage *is* complete.
+The same edges, two differently shaped answers, both true: the two searches ask different questions.
+
+Within a source-sense group, each target entry shows the target senses reached and a provenance
+badge: **direct**, or **via …** with the chain expandable hop by hop — orthography, language, and
+the sense's displayed place label (I.2., II.…) at every hop, each hop linking to its entry page.
+A hop crossing a coarse edge (§3.1) says so in the chain — "via *vers*, all senses" — because that
+is precisely the assumption the reader would want to check. The chain is the trust surface: until
+voting exists, *how* a translation was reached is the only quality signal a reader has, so it is
+never hidden more than one tap away. Wrong result → the badge menu offers "propose a correction",
+opening §4.4 pre-filled.
 
 ### 4.3 The entry page
 
@@ -422,8 +463,14 @@ join point they all share.
 
 ## 7. Open questions — decided at build time or later, never silently
 
-- **Ranking tiebreak pre-voting**: among equal-hop results, does the count of parallel current
-  assertions rank higher? Proposed yes, but decided when real data exists to look at.
+- **Ranking tiebreak pre-voting**: coarse-hop count is the first tiebreak (§3.4, settled). What
+  remains open is the *second*: among paths equal on both hops and coarseness, does the count of
+  parallel current assertions rank higher? Proposed yes, but decided when real data exists to look at.
+- **A relation pinning a soft-deleted entry** (`deleted: true` — withdrawn from search but still
+  reachable at its entryKey). Parking it treats a withdrawal as drift, which is roughly right;
+  serving it contradicts the withdrawal. Proposed: park as `stale`, since a withdrawn entry is
+  exactly a claim that its senses should not be offered. Decided at slice 2, where the interaction
+  with `redirectTo` (does a relation follow the redirect?) also has to be answered.
 - **Text drift** is accepted as a structure-only residual (§3.3); revisit when voting can price it.
 - **Unresolved-side revival mechanics**: index-join on entry ingest (proposed) vs a periodic sweep —
   measured at slice 2.
@@ -443,9 +490,12 @@ join point they all share.
 one** · **one record, two sides, no direction** · **a synonym is a translation whose languages are
 equal** · **antonyms ride along but never traverse** · **sides are at:// URIs, denormalised fields
 are display fallback** · **a reference is a canonical place prefix, [] = every sense** ·
-**the vertex is the sense** · **the record is the truth, the edge is its shadow** ·
+**the vertex is the sense** · **expansion dissolves nesting; there are no subset edges** ·
+**the record is the truth, the edge is its shadow** ·
 **pin to the version, compare the subtree, park what drifted** · **structure-only drift comparison**
 · **park, never serve** · **subject-style versioning, one mechanism everywhere** ·
+**coarseness is recorded, not blocked** · **hops first, then coarse hops** ·
+**a result is reported relative to the sense you searched from** ·
 **paths are explained, not just answered** · **scores map to positive costs; invalid means absent** ·
 **cognates and etymology are future lexicons, not kinds**.
 

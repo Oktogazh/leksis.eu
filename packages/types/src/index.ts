@@ -2,10 +2,13 @@
 // Week 2: the API health contract and the PDS session shape.
 // Week 3 adds the eu.leksis.language contract and the shared BCP-47 validator;
 // week 4 adds the eu.leksis.entry contract; the grammar layer adds the tag
-// contract, UD's part-of-speech inventory and the language record's `grammar`.
+// contract, UD's part-of-speech inventory and the language record's `grammar`;
+// the translations loop adds the eu.leksis.relation contract behind the
+// semantic network.
 
 export * from "./language.js";
 export * from "./entry.js";
+export * from "./relation.js";
 export * from "./label.js";
 export * from "./dashboard.js";
 export * from "./profile.js";

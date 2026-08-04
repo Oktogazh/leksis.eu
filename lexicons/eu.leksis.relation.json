@@ -1,0 +1,75 @@
+{
+  "lexicon": 1,
+  "id": "eu.leksis.relation",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "One semantic relation between two sets of dictionary senses — the atom of the Leksis semantic network. A relation is symmetric and stands on its own: it is not a field on either entry, so the two directions can never disagree and neither entry has to be republished when a relation is added. Both sides address senses precisely (see #side), which is what lets the AppView chain relations across languages without changing meaning: a word translated through an intermediate language travels through one specific sense of that intermediate word, never through the word as a whole. Records prove authorship, not ownership: any user may publish a relation, and a record carrying a `subject` reference is a proposed new version of the relation that record belongs to — the AppView treats the latest version as current and archives previous ones.",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["sides", "createdAt"],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "maxLength": 64,
+            "knownValues": ["equivalence", "antonym"],
+            "description": "What this relation asserts. Absent means \"equivalence\" — the two sides mean the same thing — which covers both translation (the sides are in different languages) and synonymy (the sides are in the same language); there is no separate synonym relation, because a synonym is a translation whose two languages are equal. \"antonym\" asserts the opposite meaning: it is stored and displayed, but never traversed when chaining translations, since an antonym step inverts meaning. An unrecognised value is indexed and shown but never traversed, so a future kind cannot silently corrupt translation results. Cognates and etymological links are NOT kinds here: they relate words rather than senses, and get their own lexicons."
+          },
+          "sides": {
+            "type": "array",
+            "minLength": 2,
+            "maxLength": 2,
+            "items": { "type": "ref", "ref": "#side" },
+            "description": "Exactly two sides, in no meaningful order: the relation is symmetric, and swapping the sides expresses the same assertion. Both sides may name the same language (a synonym) but must not name the same senses of the same entry, which would assert nothing."
+          },
+          "notes": {
+            "type": "array",
+            "items": { "type": "string", "maxLength": 2048, "maxGraphemes": 1024 },
+            "description": "Free-text remarks about the relation itself — a register caveat, a note that the equivalence is only partial, a justification. Record-only content, never indexed."
+          },
+          "subject": {
+            "type": "string",
+            "format": "at-uri",
+            "description": "AT URI of the relation record version this record modifies. Absent for a brand-new relation; present on a proposed correction, so the AppView attaches this version to the existing relation and archives the previous one. Correcting a wrong translation, and re-affirming one whose entry has since been restructured, are both this: publishing a new version."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "Client-declared creation time of this record version."
+          }
+        }
+      }
+    },
+    "side": {
+      "type": "object",
+      "required": ["entry", "languageID", "place"],
+      "description": "One end of a relation: which senses, of which entry version, in which language.",
+      "properties": {
+        "entry": {
+          "type": "string",
+          "format": "at-uri",
+          "description": "AT URI of the eu.leksis.entry record version this side refers to — a specific version, deliberately, not an entry identity. Pinning the version is what lets the AppView notice that the entry's definition tree has since been restructured and withhold the relation instead of silently pointing it at a different meaning. Never an AppView-minted key (an entryKey): records reference the network, not this AppView's index."
+        },
+        "languageID": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Well-formed IETF BCP 47 tag of this side's language, normalized to lowercase. Denormalized from the referenced entry so the record is legible on its own; the AppView joins on `entry` alone."
+        },
+        "place": {
+          "type": "array",
+          "minLength": 0,
+          "maxLength": 3,
+          "items": { "type": "integer", "minimum": 0 },
+          "description": "Which senses of the entry this side refers to, as an address in the entry's definition tree (see eu.leksis.entry's `place`). An EMPTY array refers to every sense of the entry — the strongest and least precise claim a side can make, so it is written explicitly rather than by omitting the field. A leaf's address refers to that one sense; a group node's address refers to every sense beneath it. Zeros are padding and are ignored when matching, exactly as in display, so [0,2,0] (the group \"II.\") and [2] are the same address. A relation asserts that every sense on one side corresponds to every sense on the other."
+        },
+        "orthography": {
+          "type": "string",
+          "maxLength": 256,
+          "maxGraphemes": 128,
+          "description": "The entry's canonical spelling when the relation was authored, denormalized so the record reads on its own and so a client has something to show if the referenced entry cannot be resolved. Display fallback only, never matched on: it goes stale harmlessly when an entry is re-spelled."
+        }
+      }
+    }
+  }
+}
