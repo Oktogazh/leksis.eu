@@ -3,18 +3,28 @@ import type {
   LabelView,
   CurrentLanguageRecordResponse,
   EntriesResponse,
+  EntryRelationsResponse,
   EntryView,
   LanguageDashboardResponse,
   LanguagesResponse,
   LanguageView,
+  TranslateResponse,
 } from "@leksis/types";
 
 /*
- * Base URL for the API.
- * Precedence: explicit VITE_API_URL (e.g. point frontend dev at api production) → localhost port in dev → same-origin "/api" in production (Caddy proxies it)..
+ * Base URL for the API: same-origin "/api" everywhere.
+ *
+ * In production Caddy proxies /api/* to the Hono app; in dev Vite's server
+ * proxy does the same (see vite.config.ts), so the two environments have one
+ * shape rather than two. This is deliberate — pointing dev straight at
+ * :8080 makes every call cross-origin, and the API emits no CORS headers by
+ * design, so the browser blocks the lot.
+ *
+ * VITE_API_URL still overrides it, for the one case that needs a different
+ * origin: pointing a local frontend at the production API (which Caddy grants
+ * CORS per source IP via ALLOWED_IPS).
  */
-const API_BASE =
-  import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? "http://127.0.0.1:8080" : "/api");
+const API_BASE = import.meta.env.VITE_API_URL ?? "/api";
 
 
 /**
@@ -86,6 +96,44 @@ export async function fetchCurrentLanguageRecord(
     throw new Error(`GET /languages/${languageTag}/currentRecord failed: ${res.status}`);
   }
   return (await res.json()) as CurrentLanguageRecordResponse;
+}
+
+/**
+ * Translation search: the nearest equivalents of `query` in `to`, from every
+ * sense of the matching entries in `from`.
+ *
+ * Both language tags are required by the endpoint — a translation search
+ * silently answering about the wrong language is worse than an error, so it
+ * refuses rather than degrading. `depth` is left to the server's default: a
+ * reader has no way to judge how many other people's assertions a chain should
+ * be allowed to cross.
+ *
+ * `from === to` is a legitimate search, not a degenerate one: a synonym is a
+ * translation whose languages are equal.
+ */
+export async function fetchTranslations(
+  query: string,
+  from: string,
+  to: string,
+): Promise<TranslateResponse> {
+  const params = new URLSearchParams({ q: query, from, to });
+  const res = await fetch(`${API_BASE}/translate?${params.toString()}`);
+  if (!res.ok) throw new Error(`GET /translate failed: ${res.status}`);
+  return (await res.json()) as TranslateResponse;
+}
+
+/**
+ * One entry's relations: what it can currently be shown with, plus the parked
+ * ones needing repair. Null when the entry is unknown.
+ *
+ * `sides[0]` is always this entry's side, so the caller groups by its own
+ * senses without inspecting both ends.
+ */
+export async function fetchEntryRelations(key: string): Promise<EntryRelationsResponse | null> {
+  const res = await fetch(`${API_BASE}/entries/${encodeURIComponent(key)}/relations`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`GET /entries/${key}/relations failed: ${res.status}`);
+  return (await res.json()) as EntryRelationsResponse;
 }
 
 /** The current version of one entry by its stable key, or null when unknown. */

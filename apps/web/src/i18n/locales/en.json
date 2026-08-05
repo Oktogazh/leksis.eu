@@ -142,7 +142,42 @@
     "resultsCount": "{{count}} entries match.",
     "resultsCount_one": "{{count}} entry matches.",
     "loadFailed": "The search could not reach the dictionary. Try again shortly.",
-    "syncingEntry": "Publishing your entry — it appears here once the network has indexed it (usually under a minute)."
+    "syncingEntry": "Publishing your entry — it appears here once the network has indexed it (usually under a minute).",
+    "targetLabel": "Translate into",
+    "targetNone": "No translation"
+  },
+  "translate": {
+    "resultsTitle": "“{{query}}” in {{language}}",
+    "synonymsTitle": "Words meaning “{{query}}”",
+    "scope": "from {{from}} into {{to}}",
+    "needSource": "Choose the language you are searching in — a translation needs to know where the word comes from.",
+    "loading": "Searching the network…",
+    "loadFailed": "The translation search could not reach the dictionary. Try again shortly.",
+    "empty": "No entry matches this word yet.",
+    "emptyHint": "Nothing to translate from — try another spelling, or add the word first.",
+    "senseUnnamed": "This sense's definition could not be read from its author's PDS.",
+    "senseEmpty": "No equivalent recorded for this sense yet.",
+    "direct": "direct",
+    "via": "via {{word}}",
+    "viaMore": "via {{word}} +{{count}} more",
+    "allSenses": "all senses"
+  },
+  "relations": {
+    "wholeEntryLabel": "This word as a whole",
+    "translations": "Translations",
+    "synonyms": "Synonyms",
+    "antonyms": "Antonyms",
+    "antonym": "opposite",
+    "details": "details",
+    "notesLoading": "Reading the assertion's record…",
+    "noNotes": "No remarks on this assertion.",
+    "viewRecord": "View this relation's source record ↗",
+    "unresolvedSide": "This word's entry is not indexed — the spelling comes from the relation's own record.",
+    "parkedLabel": "Relations needing repair",
+    "parkedHint": "These assertions cannot currently be vouched for, so they are withheld from translation results until someone re-affirms them.",
+    "stateStale": "entry restructured",
+    "stateUnresolved": "entry not indexed",
+    "stateOversize": "too broad"
   },
   "createEntry": {
     "title": "Add “{{word}}” to {{language}}",

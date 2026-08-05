@@ -11,5 +11,23 @@ export default defineConfig({
     // the OAuth redirect comes back to.
     host: "127.0.0.1",
     port: 5173,
+    // Same-origin /api in dev, exactly as Caddy serves it in production.
+    //
+    // Without this, local verification is impossible: the API deliberately
+    // emits no CORS headers (Caddy is the single Access-Control-Allow-Origin
+    // authority — see the Caddyfile), so a direct call from :5173 to :8080 is
+    // cross-origin and the browser blocks every one of it. Proxying here means
+    // the browser only ever talks to its own origin, so no CORS applies at all.
+    //
+    // `rewrite` mirrors Caddy's `handle_path /api/*`, which strips the prefix:
+    // the browser's /api/health must reach Hono as /health, in dev and in
+    // production alike.
+    proxy: {
+      "/api": {
+        target: "http://127.0.0.1:8080",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ""),
+      },
+    },
   },
 });

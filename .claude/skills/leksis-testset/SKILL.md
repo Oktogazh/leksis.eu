@@ -345,6 +345,15 @@ so the account is unreachable from outside the VPS's allowed sources regardless
 of the password. Use it to work through §7.1/§7.2 below; do not create a second
 test account without reason to.
 
+> **⚠ The account does not unblock an *agentic* session.** Typing a password
+> into a form is prohibited for an agent however the credentials reach it, so an
+> agent working §7 still cannot log in — only a human at the keyboard can, by
+> authenticating in the preview tab and handing it back. The blocker, and the
+> leads for removing it (a local PDS whose session is minted by script, an
+> exported restorable session, a dev-only bypass), are recorded in the `verify`
+> skill under *the session wall*. Plan around that, or the session is spent
+> discovering it again.
+
 **One caveat that will otherwise waste a session.** Local OAuth builds its client
 id from `window.location`, so a **deep link on a cold load throws**
 (`Invalid loopback client ID: Value must not contain a path component`) and the
@@ -389,6 +398,53 @@ ADR-0008's action item 4 — a full browser pass on the Axes tab, an entry
 authored with a form tag, and both viewers — was deferred by decision and is
 still owed. Do it in the same session as §7.1: the same login, the same fixture
 language.
+
+### 7.4 The semantic network's reader UI — loop 5 slice 4 (unverified, shipped)
+
+Built, typechecked and linted. **Half of it has now been driven in a browser**
+(2026-08-05, local, against the `verify-network.ts --seed` fixtures, with a
+human logging in by hand — see the `verify` skill's *session wall* and *the CORS
+wall* for the two blockers that made this cost a session). The rows below are
+marked accordingly; **only the ✅ ones may be skipped in production**, and even
+those are worth a glance since they were proven against synthetic fixtures.
+
+**Why the entry-page rows could not be done locally, and what to do about it.**
+The `--seed` fixtures are written straight into ArangoDB under a fabricated
+author (`did:plc:verifybot`), so `resolvePds` 404s and the entry page never
+leaves its error state — `EntryPage` requires the record to resolve before it
+renders anything, relations included. Local fixtures can therefore verify the
+**search** surface (which needs no record) but *never* the **entry** surface.
+That is the strongest argument for publishing real relation fixtures: it is not
+a nicety, it is the only way U-38…U-42 can ever be checked.
+
+**This set cannot assert these rows yet.** The fixture languages carry **no
+`eu.leksis.relation` records at all** — §6's "loop 5 brings translations" is
+still owed — so a production pass needs relation fixtures published first. The
+minimum that exercises the table below: a **via-chain** (three entries in three
+languages, two sense-targeted equivalences), one **coarse** assertion
+(`place: []` against a polysemous entry), one **antonym**, one **unknown kind**,
+one **stale** (restructure one pinned entry afterwards) and one **unresolved
+side**. Publish those before working the table, or the pass has nothing to look
+at.
+
+| # | Flow | What must be true |
+|---|---|---|
+| # | Flow | What must be true | |
+|---|---|---|---|
+| U-30 | the target selector | a second language selector sits beside the scope one; left empty, search behaves exactly as it does today | ✅ |
+| U-31 | the URL is the mode | `/?q=&l=&t=` round-trips — reload and back/forward restore term, scope **and** target; clearing the target returns to `/?q=&l=` | ✅ |
+| U-32 | **the gwerzenn test, in a browser** | the via-chain's source, with the far language as target, shows the far word — and never the intermediate's *other* senses' translations | ✅ |
+| U-33 | provenance is per **sense** | where two senses of one target were reached differently, each shows its own badge; there is **never** one badge for the whole word | ✅ |
+| U-34 | partial coverage | a source sense with no equivalent renders as an **empty group**, not omitted — this is the whole point of grouping by source sense | ✅ |
+| U-35 | coarse disclosure | "all senses" appears both on a coarse **arrival** and on a hop the chain coarsely **departed** — the second is the one an earlier build got wrong | ✅ |
+| U-36 | a target with no source | scope "any language" + a target shows the hint and fires **no request** (check the network panel, not just the absence of results) | ✅ |
+| U-37 | same-language target | source == target is a **synonym search** with real results and a synonym heading, never an empty answer | ✅ |
+| U-38 | entry page, per sense | a sense's relations render under **that** definition; whole-entry relations render on the header instead | |
+| U-39 | an unknown kind | renders verbatim on the entry page, and is **absent** from translation results | |
+| U-40 | an unresolved side | the record's own spelling shows as **plain text, never a link** — following one would 404 | |
+| U-41 | the repair strip | parked relations list with their state (restructured / not indexed / too broad), below the definitions | |
+| U-42 | the untouched path | an entry with no relations renders exactly as it did before this slice | |
+| U-43 | mobile | the results and the entry page's relations at 375px. **Not dark mode** — `[data-theme="dark"]` is still commented out in `index.css`, so `light` is the only theme; add this back when a second one ships | search ✅ |
 
 **When the account exists, work through these and delete what passes.** A row
 left here after it has been checked is worse than no list, for the reason a stale

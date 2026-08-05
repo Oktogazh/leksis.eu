@@ -118,9 +118,17 @@ const DEPTH_INDENT = ["", "pl-5 sm:pl-6", "pl-10 sm:pl-12"];
 export function DefinitionList({
   definitions,
   labels,
+  senseExtras,
 }: {
   definitions: EntryDefinition[];
   labels: LabelView[];
+  /**
+   * Extra content rendered under a definition, keyed by its canonical place
+   * ("2.1"). A render slot rather than a relations prop: the entry page hangs
+   * a sense's translations here, while the compact preview passes nothing and
+   * is unchanged.
+   */
+  senseExtras?: ReadonlyMap<string, ReactNode>;
 }): ReactNode {
   const depth = definitionsDepth(definitions);
   const lookup = labelLookup(labels);
@@ -160,6 +168,7 @@ export function DefinitionList({
               {def.text !== undefined && (
                 <span className="text-sm text-content">{def.text}</span>
               )}
+              {senseExtras?.get(def.place.filter((n) => n !== 0).join("."))}
             </div>
           </li>
         );

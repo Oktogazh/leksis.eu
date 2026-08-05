@@ -7,6 +7,7 @@ import {
   normalizeLanguageTag,
   LEKSIS_ENTRY_COLLECTION,
   LEKSIS_LANGUAGE_COLLECTION,
+  LEKSIS_RELATION_COLLECTION,
   type EntryDefinition,
   type EntryInflectedForm,
   type EntryReference,
@@ -15,6 +16,7 @@ import {
   type LanguageTranslation,
   type LeksisEntryRecord,
   type LeksisLanguageRecord,
+  type LeksisRelationRecord,
 } from "@leksis/types";
 
 // Client-side resolution of eu.leksis.* records from their at:// URIs. The
@@ -223,6 +225,36 @@ async function fetchRecordValue(recordURI: string): Promise<unknown | null> {
 export async function fetchEntryRecord(recordURI: string): Promise<LeksisEntryRecord | null> {
   const value = await fetchRecordValue(recordURI);
   return value === null ? null : parseEntryRecord(value);
+}
+
+/**
+ * Fetch a eu.leksis.relation record from its author's PDS. The AppView serves a
+ * relation's shape and pointers; its `notes` — the register caveats and
+ * partial-equivalence warnings that are the assertion's own content — stay on
+ * the record, exactly as definition texts do.
+ *
+ * Lenient like the others: the sides are not re-validated here, because the
+ * caller already has the AppView's resolved view of them and only needs what
+ * the index does not carry. Returns null when the record is gone or does not
+ * parse.
+ */
+export async function fetchRelationRecord(
+  recordURI: string,
+): Promise<LeksisRelationRecord | null> {
+  const value = await fetchRecordValue(recordURI);
+  if (value === null || typeof value !== "object") return null;
+  const r = value as Record<string, unknown>;
+  if (!Array.isArray(r.sides) || r.sides.length !== 2) return null;
+
+  const notes = parseTextList(r.notes);
+  return {
+    $type: LEKSIS_RELATION_COLLECTION,
+    ...(typeof r.kind === "string" && r.kind !== "" ? { kind: r.kind } : {}),
+    sides: r.sides as LeksisRelationRecord["sides"],
+    ...(notes.length > 0 ? { notes } : {}),
+    ...(typeof r.subject === "string" ? { subject: r.subject } : {}),
+    createdAt: typeof r.createdAt === "string" ? r.createdAt : "",
+  };
 }
 
 /**

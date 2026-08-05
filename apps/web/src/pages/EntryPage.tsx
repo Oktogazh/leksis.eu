@@ -1,18 +1,24 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  canonicalizePlacePrefix,
   labelLookup,
+  placePathKey,
+  placePrefixMatches,
   type LabelView,
+  type EntryRelationsResponse,
   type EntryView,
   type Grammar,
   type LanguageView,
   type LeksisEntryRecord,
+  type RelationView,
 } from "@leksis/types";
 import { EntryEditorDialog } from "../components/CreateEntryPanel";
 import { DefinitionList, TagChips } from "../components/EntryPreview";
+import { ParkedRelations, SenseRelations } from "../components/EntryRelations";
 import { EntryParadigm } from "../components/ParadigmView";
 import { endonym } from "../components/LanguageSelector";
-import { fetchLabels, fetchEntry, searchEntries } from "../lib/api";
+import { fetchEntryRelations, fetchLabels, fetchEntry, searchEntries } from "../lib/api";
 import { fetchEntryRecord } from "../lib/atproto-record";
 import { fetchLanguageGrammar } from "../lib/language-grammar";
 
@@ -81,6 +87,12 @@ export function EntryPage({
    * the paradigm's fallback chain treats that as an ordinary state.
    */
   const [grammar, setGrammar] = useState<Grammar | undefined>(undefined);
+  /**
+   * The semantic network's view of this entry: what it can be shown with, and
+   * what is parked for repair. Best-effort side data like the rest — an entry
+   * reads exactly as before when the network knows nothing about it.
+   */
+  const [relations, setRelations] = useState<EntryRelationsResponse | null>(null);
   const [state, setState] = useState<LoadState>("loading");
   const [proposing, setProposing] = useState(false);
   /** The redirect target's own view, resolved for display when this entry was deleted as a duplicate. */
@@ -96,6 +108,7 @@ export function EntryPage({
     setHomonyms([]);
     setLabels([]);
     setGrammar(undefined);
+    setRelations(null);
     setRedirectTarget(null);
 
     (async () => {
@@ -123,6 +136,11 @@ export function EntryPage({
         fetchLabels(found.languageID)
           .then((list) => {
             if (!cancelled) setLabels(list);
+          })
+          .catch(() => {});
+        fetchEntryRelations(found.key)
+          .then((found2) => {
+            if (!cancelled) setRelations(found2);
           })
           .catch(() => {});
         // Hydration: the language's own declaration is what turns this entry's
@@ -184,6 +202,53 @@ export function EntryPage({
 
   const language =
     view !== null ? (languages.find((l) => l.tag === view.languageID) ?? null) : null;
+
+  /**
+   * Live relations split the way the page reads them: those claiming the whole
+   * word (`place: []`) belong on the header, the rest under the definition they
+   * name.
+   *
+   * A relation whose prefix names a *group* rather than a single sense attaches
+   * to the first definition that prefix matches, keeping its own address
+   * visible — it is shown where a reader will find it rather than dropped for
+   * not landing on a leaf.
+   */
+  const { wholeEntry, senseExtras } = useMemo(() => {
+    const whole: RelationView[] = [];
+    const bySense = new Map<string, RelationView[]>();
+    if (relations !== null && record !== null) {
+      const places = record.definitions.map((def) => canonicalizePlacePrefix(def.place));
+      for (const relation of relations.relations) {
+        const prefix = canonicalizePlacePrefix(relation.sides[0].place);
+        if (prefix.length === 0) {
+          whole.push(relation);
+          continue;
+        }
+        const anchor = places.find((place) => placePrefixMatches(prefix, place));
+        if (anchor === undefined) {
+          // The prefix addresses nothing in the version being displayed — show
+          // it on the header rather than losing it.
+          whole.push(relation);
+          continue;
+        }
+        const key = placePathKey(anchor);
+        bySense.set(key, [...(bySense.get(key) ?? []), relation]);
+      }
+    }
+    const extras = new Map<string, ReactNode>();
+    for (const [key, list] of bySense) {
+      extras.set(
+        key,
+        <SenseRelations
+          relations={list}
+          languageID={view?.languageID ?? ""}
+          languages={languages}
+          onOpenEntry={onOpenEntry}
+        />,
+      );
+    }
+    return { wholeEntry: whole, senseExtras: extras };
+  }, [relations, record, view?.languageID, languages, onOpenEntry]);
 
   return (
     <div className="mt-6 flex flex-col">
@@ -287,6 +352,22 @@ export function EntryPage({
                 />
               </div>
             )}
+            {/* Assertions about the word as a whole, rather than about one of
+                its senses — the record-level "every meaning" claim. */}
+            {wholeEntry.length > 0 && (
+              <div className="mt-3">
+                <h2 className="text-xs font-semibold uppercase tracking-wide text-content-subtle">
+                  {t("relations.wholeEntryLabel")}
+                </h2>
+                <SenseRelations
+                  relations={wholeEntry}
+                  languageID={view.languageID}
+                  languages={languages}
+                  onOpenEntry={onOpenEntry}
+                  showPlace
+                />
+              </div>
+            )}
           </header>
 
           {record.todo !== undefined && record.todo.length > 0 && (
@@ -308,8 +389,20 @@ export function EntryPage({
 
           <section className="mt-6">
             <h2 className="sr-only">{t("entry.definitionsLabel")}</h2>
-            <DefinitionList definitions={record.definitions} labels={labels} />
+            <DefinitionList
+              definitions={record.definitions}
+              labels={labels}
+              senseExtras={senseExtras}
+            />
           </section>
+
+          {relations !== null && (
+            <ParkedRelations
+              parked={relations.parked}
+              languages={languages}
+              onOpenEntry={onOpenEntry}
+            />
+          )}
 
           {record.notes !== undefined && record.notes.length > 0 && (
             <section className="mt-6">

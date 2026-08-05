@@ -2,9 +2,10 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import type { LanguageView } from "@leksis/types";
 import { AddLanguageModal } from "../components/AddLanguageModal";
-import { LanguageSelector } from "../components/LanguageSelector";
+import { endonym, LanguageSelector } from "../components/LanguageSelector";
 import { OnboardingFlow } from "../components/OnboardingFlow";
 import { SearchResults } from "../components/SearchResults";
+import { TranslationResults } from "../components/TranslationResults";
 import { useSession } from "../auth/SessionProvider";
 import { EntryPage } from "./EntryPage";
 import { LanguagePage } from "./LanguagePage";
@@ -18,14 +19,36 @@ interface SubmittedSearch {
   query: string;
   /** Language scope at submit time; "" = all languages. */
   languageTag: string;
+  /**
+   * Target language at submit time; "" = none. **The presence of a target is
+   * the mode**: empty means today's monolingual search, set means a translation
+   * search. Nothing else switches, so there is no mode to learn.
+   */
+  targetTag: string;
 }
 
-/** Reads ?q=&l= from the current URL, e.g. shared as /?q=entry&l=en-US. */
+/** Reads ?q=&l=&t= from the current URL, e.g. shared as /?q=entry&l=en-US&t=br. */
 function searchFromLocation(): SubmittedSearch | null {
   const params = new URLSearchParams(window.location.search);
   const query = params.get("q")?.trim() ?? "";
   if (query === "") return null;
-  return { query, languageTag: params.get("l") ?? "" };
+  return {
+    query,
+    languageTag: params.get("l") ?? "",
+    targetTag: params.get("t") ?? "",
+  };
+}
+
+/** The search surface's URL for one submitted state — the shareable link. */
+function searchPath(search: SubmittedSearch | null): string {
+  const params = new URLSearchParams();
+  if (search !== null) {
+    params.set("q", search.query);
+    if (search.languageTag !== "") params.set("l", search.languageTag);
+    if (search.targetTag !== "") params.set("t", search.targetTag);
+  }
+  const query = params.toString();
+  return query === "" ? "/" : `/?${query}`;
 }
 
 // Connected surface: the language scope + term box stay on every page, with
@@ -46,6 +69,7 @@ export function HomePage() {
   const shortlist = profile?.languages ?? [];
   const initialSearch = () => searchFromLocation();
   const [language, setLanguage] = useState(() => initialSearch()?.languageTag ?? "");
+  const [target, setTarget] = useState(() => initialSearch()?.targetTag ?? "");
   const [term, setTerm] = useState(() => initialSearch()?.query ?? "");
   const [submitted, setSubmitted] = useState<SubmittedSearch | null>(initialSearch);
   const [route, setRoute] = useState<Route>(routeFromLocation);
@@ -67,6 +91,7 @@ export function HomePage() {
       setSubmitted(search);
       setTerm(search?.query ?? "");
       setLanguage(search?.languageTag ?? "");
+      setTarget(search?.targetTag ?? "");
       setRoute(routeFromLocation());
     }
     window.addEventListener("popstate", onPopState);
@@ -119,12 +144,9 @@ export function HomePage() {
     event.preventDefault();
     const query = term.trim();
     if (query === "") return;
-    setSubmitted({ query, languageTag: language });
-
-    const params = new URLSearchParams();
-    params.set("q", query);
-    if (language !== "") params.set("l", language);
-    window.history.pushState(null, "", `/?${params.toString()}`);
+    const search = { query, languageTag: language, targetTag: target };
+    setSubmitted(search);
+    window.history.pushState(null, "", searchPath(search));
     setRoute({ kind: "search" });
   }
 
@@ -141,13 +163,7 @@ export function HomePage() {
   // "Back to search" rebuilds /?q=&l= from the submitted state, so the
   // results the entry came from reappear.
   function backToSearch() {
-    const params = new URLSearchParams();
-    if (submitted !== null) {
-      params.set("q", submitted.query);
-      if (submitted.languageTag !== "") params.set("l", submitted.languageTag);
-    }
-    const search = params.toString();
-    window.history.pushState(null, "", search === "" ? "/" : `/?${search}`);
+    window.history.pushState(null, "", searchPath(submitted));
     setRoute({ kind: "search" });
   }
 
@@ -155,6 +171,16 @@ export function HomePage() {
     submitted !== null && submitted.languageTag !== ""
       ? (languages.find((l) => l.tag === submitted.languageTag) ?? null)
       : null;
+  const targetLanguage =
+    submitted !== null && submitted.targetTag !== ""
+      ? (languages.find((l) => l.tag === submitted.targetTag) ?? null)
+      : null;
+  // A translation search needs both ends. The endpoint requires a source
+  // language where monolingual search happily spans all of them, so an
+  // unscoped search with a target is answered with a hint rather than with a
+  // request that can only 400.
+  const translating = submitted !== null && submitted.targetTag !== "";
+  const missingSource = translating && scopeLanguage === null;
 
   // A connected user with no profile record yet is onboarded here, inside the
   // homepage: the search surface is replaced by the onboarding flow until the
@@ -210,6 +236,26 @@ export function HomePage() {
           className="w-full flex-1 rounded-lg border bg-surface px-3 py-2.5 text-sm text-content outline-none placeholder:text-content-subtle focus:ring-2"
         />
 
+        {/* The target half of the bar. Empty is the default and means the
+            monolingual search this app has always done; picking a language is
+            the only thing that switches modes. */}
+        <label htmlFor="search-target" className="sr-only">
+          {t("search.targetLabel")}
+        </label>
+        <select
+          id="search-target"
+          value={target}
+          onChange={(e) => setTarget(e.target.value)}
+          className="rounded-lg border bg-surface px-3 py-2.5 text-sm text-content outline-none focus:ring-2 sm:w-44"
+        >
+          <option value="">{t("search.targetNone")}</option>
+          {languages.map((l) => (
+            <option key={l.tag} value={l.tag}>
+              {endonym(l)}
+            </option>
+          ))}
+        </select>
+
         <button
           type="submit"
           className="rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-fg hover:bg-primary-hover focus:outline-none focus:ring-2"
@@ -233,14 +279,27 @@ export function HomePage() {
       ) : route.kind === "language" ? (
         <LanguagePage tag={route.tag} languages={languages} onOpenEntry={openEntry} />
       ) : (
-        submitted !== null && (
+        submitted !== null &&
+        (missingSource ? (
+          <p className="mt-8 rounded-lg border border-dashed bg-surface px-4 py-6 text-center text-sm text-content-muted">
+            {t("translate.needSource")}
+          </p>
+        ) : translating && targetLanguage !== null && scopeLanguage !== null ? (
+          <TranslationResults
+            query={submitted.query}
+            from={scopeLanguage}
+            to={targetLanguage}
+            languages={languages}
+            onOpenEntry={openEntry}
+          />
+        ) : (
           <SearchResults
             query={submitted.query}
             languages={languages}
             language={scopeLanguage}
             onOpenEntry={openEntry}
           />
-        )
+        ))
       )}
 
       {adding && (

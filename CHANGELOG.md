@@ -14,12 +14,13 @@ through French *vers* — and never through *vers* meaning "worms" or "toward",
 because a path enters and leaves an intermediate word through the *same* sense.
 See `docs/design/semantic-network.md`.
 
-> **This entry covers the backend: the record, the ingest lifecycle and the read
-> surface.** The reader and writer interfaces are the loop's remaining slices, so
-> nothing in the web app consumes any of it yet. Additive throughout — no entry
-> record changes, though an entry version indexed before this ships carries no
-> `places` and parks its relations until its author republishes (pre-1.0, a bot
-> republish).
+> **This entry covers the record, the ingest lifecycle, the read surface and the
+> reader's half of the interface.** The **writer** — the relation editor, the
+> correction flow and the dashboard worklists — is the loop's remaining slice, so
+> relations can be read and traversed but not yet authored from the app. Additive
+> throughout — no entry record changes, though an entry version indexed before
+> this ships carries no `places` and parks its relations until its author
+> republishes (pre-1.0, a bot republish).
 
 ### The lexicon — `eu.leksis.relation`
 
@@ -101,6 +102,45 @@ See `docs/design/semantic-network.md`.
   resolves records from their authors' PDSs, exactly as it already does for an
   entry. Unlike the grammar layers, this loop's API cost is deliberately non-zero
    — the traversal cannot run anywhere but the AppView.
+
+### Web — the reader
+
+- **The presence of a target is the mode.** The search bar gains a second
+  language selector; left empty, search is exactly what it was, at exactly the
+  URL it was (`/?q=&l=`). Choosing one makes the search a translation
+  (`/?q=&l=&t=`) — no mode switch to learn, and the query string stays the
+  search surface per the routing convention. A target with no source language is
+  answered with a hint rather than a request, since `/translate` requires both
+  ends where monolingual search happily spans all of them.
+- **Same-language is a synonym search, not an error.** Source == target is
+  offered and answered, titled as synonyms — the interface spelling of
+  *a synonym is a translation whose languages are equal*.
+- **Provenance is earned by a sense, not by a word.** Each target sense carries
+  its own badge — *direct*, or *via …* expanding hop by hop into orthography,
+  language and the sense's place, each hop linking to its entry. A hop whose
+  assertion covered every sense of the word says **all senses**, on the way in
+  *and* on the way out. One badge for a whole entry would have described its best
+  path and silently vouched for the rest.
+- **An empty group is a result.** A source sense with no equivalent renders as
+  itself, empty, which is what makes partial coverage legible without a flag.
+- **The entry page** shows relations under the sense they belong to, whole-entry
+  ones on the header, synonyms as the same-language group and antonyms marked
+  apart; an unknown kind renders verbatim rather than hidden. A side whose entry
+  is not indexed prints the record's own spelling as **plain text, never a link**.
+  Parked relations get a repair strip below the definitions — withheld from
+  results, shown as work.
+- `DefinitionList` gained a `senseExtras` render slot, so the entry page hangs
+  this under a definition while the compact preview is untouched.
+
+### Fixed
+
+- **Local verification was impossible, in two independent ways**, both now
+  recorded in the `verify` skill. Vite's dev server proxies `/api` to the API and
+  the web client asks for `/api` in every environment, mirroring Caddy's
+  `handle_path /api/*` — previously dev called `:8080` directly, which is
+  cross-origin, and the API emits no CORS headers by design, so the browser
+  blocked every call. (The other way is the session wall: every surface but the
+  landing page is behind a login, which an agent cannot pass.)
 
 ## Labelled tags — lexicographic labels, abbreviations, and identity on the tag
 
