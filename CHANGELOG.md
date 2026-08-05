@@ -14,13 +14,12 @@ through French *vers* — and never through *vers* meaning "worms" or "toward",
 because a path enters and leaves an intermediate word through the *same* sense.
 See `docs/design/semantic-network.md`.
 
-> **This entry covers the record, the ingest lifecycle, the read surface and the
-> reader's half of the interface.** The **writer** — the relation editor, the
-> correction flow and the dashboard worklists — is the loop's remaining slice, so
-> relations can be read and traversed but not yet authored from the app. Additive
-> throughout — no entry record changes, though an entry version indexed before
-> this ships carries no `places` and parks its relations until its author
-> republishes (pre-1.0, a bot republish).
+> **This entry covers the whole loop: the record, the ingest lifecycle, the read
+> surface, and both halves of the interface** — relations can now be read,
+> traversed *and* authored from the app. Additive throughout — no entry record
+> changes, though an entry version indexed before this ships carries no `places`
+> and parks its relations until its author republishes (pre-1.0, a bot
+> republish).
 
 ### The lexicon — `eu.leksis.relation`
 
@@ -131,6 +130,55 @@ See `docs/design/semantic-network.md`.
   results, shown as work.
 - `DefinitionList` gained a `senseExtras` render slot, so the entry page hangs
   this under a definition while the compact preview is untouched.
+
+### Web — the writer
+
+- **The relation editor** (`RelationEditorDialog`) publishes an
+  `eu.leksis.relation` record from the editor's own PDS: kind (equivalence by
+  default, opposite a toggle) → target language → the word → **the senses, picked
+  on the rendered definition tree**. A prefix is never typed: selecting a leaf, a
+  group or the whole entry is what produces it, so senses are addressed the way
+  they are read.
+- **Both sides always pin the entries' current versions**, which is what makes
+  **re-affirmation the ordinary edit flow rather than a repair mode**: a parked
+  relation opens in the same dialog, and republishing it against the entries as
+  they are now is exactly what un-parks it. The parked strip and the dashboard
+  queue therefore need no machinery of their own.
+- **Every sense gains a launch point**, including — especially — the senses
+  nothing has been said about yet, since that is where the work is.
+- **A side that addresses nothing cannot be published.** Re-affirming a parked
+  relation without re-picking its senses would otherwise pin a prefix the
+  restructured entry no longer has: it expands to nothing against both the
+  pinned and the current tree, compares *equal*, and indexes as **live with zero
+  edges** — dropping off the repair worklist without repairing anything. The
+  editor names the dead address and blocks publishing until real senses are
+  chosen. The picker also says how many senses a group covers, so coarseness is
+  visible before the claim is made rather than only in the reader's via-chain
+  afterwards.
+- **Selectable groups are derived from the leaves, not from the record's array.**
+  Bare grouping is implicit — a group node exists only when it carries notes — so
+  walking the array would offer "all of sense II." only to entries whose author
+  happened to annotate that heading, and force everyone else to over-claim the
+  whole entry.
+- **Withdrawing a relation is a real PDS delete**, unlike withdrawing an entry: a
+  relation has no content to preserve and no readers to redirect, and the index
+  mirrors the network. Offered only to the record's own author.
+- The editor re-resolves an existing relation's `notes` from its record before
+  editing, so an edit cannot silently delete the caveats it was written with; and
+  it runs `validateRelation` — the same whole-record check ingest runs — so a
+  record that would park as invalid is refused rather than published.
+- **Disputing a result opens the assertion actually at fault, when there is one.**
+  A *direct* answer rests on a single relation, which is looked up (by prefix, so
+  a whole-entry claim is found too) and opened for editing. An *indirect* one
+  rests on a chain the result cannot single out, so the editor opens on the
+  target language to state the right equivalent instead — the wrong link is
+  repaired from the hop's own entry page, which the chain disclosure already
+  links to. A dispute that cannot open says so, rather than doing nothing.
+- **The language dashboard gains its two worklist cards** — untranslated senses,
+  and the parked queue as a clickable counter opening the full list (`sides[0]`
+  is this language's side, so a row opens the entry where the re-affirm control
+  lives). Repairing drift is recurring lexicographic work and gets the same
+  first-class treatment as unbound tags and flagged entries.
 
 ### Fixed
 

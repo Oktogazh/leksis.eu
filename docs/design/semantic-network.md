@@ -431,7 +431,14 @@ every reader-facing state this loop ships: live, via-chain, stale, antonym).
    against fixture data.
 4. **Reader UI** — search-bar target mode, translation results with path disclosure, entry-page
    relations.
-5. **Writer UI + worklists** — the relation editor, correction flow, dashboard queues.
+5. **Writer UI + worklists** ✅ — the relation editor, correction flow, dashboard queues.
+   Proof: the drift half of the definition of done was exercised in the browser against the
+   `verify-network` fixtures (restructuring parks the relation out of results and into the
+   dashboard queue, which lists all three parked states). **The editor dialog itself was not
+   driven**: every local fixture entry carries a synthetic DID, so its record cannot be
+   resolved from a PDS, and the only signed-in session available was a real account whose PDS
+   must not be written to for a test. Publishing, re-affirming and withdrawing are therefore
+   verified by construction and by typecheck, not by exercise — see §5c.
 
 **Definition of done — the gwerzenn test, on the live URL:** with the fixture chain
 *gwerzenn* →fr *vers* (sense-targeted) →en, searching *gwerzenn* with target English returns *verse*
@@ -530,6 +537,29 @@ edge, silently answering "no equivalents" to the synonym search that
 - The traversal has no regression test. `apps/api/src/scripts/verify-network.ts`
   covers the *ingest* lifecycle (46 assertions) and is where a read-path case
   belongs — start with the sense-jump fixture above, which is three records.
+
+## 5c. What the writer slice left unproven
+
+The writer shipped without its publish path ever being exercised. This is not a gap in the
+design; it is the two verification walls meeting, and it should be closed before the loop is
+called done on the live URL.
+
+- **No local entry has a resolvable record.** The `verify-network` fixtures are written
+  straight into ArangoDB under `did:plc:verifybot`, so `fetchEntryRecord` always returns
+  null for them. The relation editor needs the source entry's *senses*, which live on the
+  record — so on local fixtures the dialog cannot open at all. Every reader surface degrades
+  visibly ("could not be read from its author's PDS"); the writer simply has nothing to work
+  on. The fix is fixtures published to a real PDS — which is exactly what the
+  `leksis-testset` bot is for, and it is not in the local database.
+- **The only session available was a real account.** Exercising publish/withdraw would have
+  written `eu.leksis.relation` records to a human's own Bluesky repo. Not done deliberately.
+- **The definition of done is therefore half-proven**: drift → park → out of results → into
+  the worklist was observed end to end; *re-affirm → revive* was not.
+
+The unblock is the same one the `verify` skill has been circling: a local PDS (the compose
+file already defines the service) or testset fixtures loaded locally. Until then the writer
+is proven by construction only, and should be exercised by hand on the live URL before the
+loop is closed.
 
 ## 6. Seams — reserved, not built
 

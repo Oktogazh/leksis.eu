@@ -21,6 +21,15 @@ interface RelationLineProps {
   onOpenEntry: (key: string) => void;
   /** Show which sense of the *other* entry is meant. */
   showPlace?: boolean;
+  /**
+   * Open the editor on this relation. Absent when nobody is signed in — the
+   * line then reads exactly as before.
+   *
+   * The same callback serves editing and re-affirming: republishing a parked
+   * relation against the entries' current versions *is* the repair, so the
+   * repair strip below hands this the same way an ordinary line does.
+   */
+  onEdit?: (relation: RelationView) => void;
 }
 
 /** A place as a bare address ("II.1."), when there is no tree to size it by. */
@@ -36,7 +45,13 @@ function placeText(place: number[]): string {
  * resolved from the author's PDS on expand: the assertion's caveats ("partial
  * equivalence", "only in the legal register") are content like any other.
  */
-function RelationLine({ relation, languages, onOpenEntry, showPlace }: RelationLineProps) {
+function RelationLine({
+  relation,
+  languages,
+  onOpenEntry,
+  showPlace,
+  onEdit,
+}: RelationLineProps) {
   const { t } = useTranslation();
   const other = relation.sides[1];
   const [notes, setNotes] = useState<string[] | null>(null);
@@ -108,6 +123,15 @@ function RelationLine({ relation, languages, onOpenEntry, showPlace }: RelationL
       >
         {t("relations.details")} <span aria-hidden="true">{open ? "▾" : "▸"}</span>
       </button>
+      {onEdit !== undefined && (
+        <button
+          type="button"
+          onClick={() => onEdit(relation)}
+          className="text-xs text-primary hover:text-primary-hover"
+        >
+          {relation.state === "live" ? t("relations.edit") : t("relations.reaffirm")}
+        </button>
+      )}
       {open && (
         <div className="w-full border-l pl-3 text-xs text-content-muted">
           {notes === null ? (
@@ -149,6 +173,7 @@ export function SenseRelations({
   languages,
   onOpenEntry,
   showPlace,
+  onEdit,
 }: {
   relations: RelationView[];
   /** This entry's language, which is what makes a relation a synonym. */
@@ -156,6 +181,7 @@ export function SenseRelations({
   languages: LanguageView[];
   onOpenEntry: (key: string) => void;
   showPlace?: boolean;
+  onEdit?: (relation: RelationView) => void;
 }) {
   const { t } = useTranslation();
   if (relations.length === 0) return null;
@@ -182,6 +208,7 @@ export function SenseRelations({
               languages={languages}
               onOpenEntry={onOpenEntry}
               showPlace={showPlace}
+              onEdit={onEdit}
             />
           ))}
         </ul>
@@ -201,16 +228,21 @@ export function SenseRelations({
  * The repair strip: relations touching this entry that the AppView cannot
  * currently vouch for, because **a wrong translation is worse than a missing
  * one** — they are withheld from results and shown as work to do instead.
- * Read-only here; re-affirming one is the editor's job.
+ *
+ * Each row offers re-affirmation, which is not a special repair mode but the
+ * ordinary edit flow: republishing the assertion against the entries as they
+ * are now is exactly what un-parks it.
  */
 export function ParkedRelations({
   parked,
   languages,
   onOpenEntry,
+  onEdit,
 }: {
   parked: RelationView[];
   languages: LanguageView[];
   onOpenEntry: (key: string) => void;
+  onEdit?: (relation: RelationView) => void;
 }) {
   const { t } = useTranslation();
   if (parked.length === 0) return null;
@@ -245,6 +277,7 @@ export function ParkedRelations({
                 languages={languages}
                 onOpenEntry={onOpenEntry}
                 showPlace
+                onEdit={onEdit}
               />
             </ul>
           </li>

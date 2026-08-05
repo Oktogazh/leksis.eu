@@ -151,6 +151,8 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
   const unboundTags = labels.filter((a) => a.long === undefined && a.tag !== undefined);
   /** True while the full flagged-for-review list dialog is open. */
   const [todoOpen, setTodoOpen] = useState(false);
+  /** The parked-relations queue dialog — the semantic network's repair worklist. */
+  const [parkedOpen, setParkedOpen] = useState(false);
   /** Record URI written to the PDS but not yet seen back from the AppView. */
   const [syncingURI, setSyncingURI] = useState<string | null>(null);
 
@@ -269,6 +271,17 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
   }
 
   const languageName = language !== null ? endonym(language) : tag;
+  /**
+   * Everything withheld from results and awaiting repair. The counts are the
+   * true total; `parkedRelations` is the capped queue, so the two differ
+   * exactly when there is more work than the dialog can list.
+   */
+  const parkedTotal =
+    dashboard === null
+      ? 0
+      : dashboard.relationCounts.stale +
+        dashboard.relationCounts.unresolved +
+        dashboard.relationCounts.oversize;
 
   return (
     <div className="mt-6 flex flex-col">
@@ -307,6 +320,28 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
             >
               <p className="text-2xl font-semibold text-content">{dashboard.todoCount}</p>
               <p className="mt-1 text-xs text-content-muted">{t("languagePage.statsTodo")}</p>
+            </button>
+            {/* Senses nothing has translated yet — the outward work. Free to
+                compute because every sense is a vertex, related or not. */}
+            <div className="rounded-lg border bg-surface p-4">
+              <p className="text-2xl font-semibold text-content">
+                {dashboard.untranslatedSenses}
+              </p>
+              <p className="mt-1 text-xs text-content-muted">
+                {t("languagePage.statsUntranslated")}
+              </p>
+            </div>
+            {/* Relations withheld from results until someone re-affirms them —
+                recurring lexicographic work, given the same first-class
+                worklist treatment as unbound tags and flagged entries. */}
+            <button
+              type="button"
+              onClick={() => setParkedOpen(true)}
+              disabled={dashboard.parkedRelations.length === 0}
+              className="rounded-lg border bg-surface p-4 text-left hover:border-primary disabled:cursor-not-allowed disabled:hover:border-[color:inherit]"
+            >
+              <p className="text-2xl font-semibold text-content">{parkedTotal}</p>
+              <p className="mt-1 text-xs text-content-muted">{t("languagePage.statsParked")}</p>
             </button>
             <button
               type="button"
@@ -466,6 +501,105 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
             <p className="mt-6 text-sm text-content-subtle">{t("languagePage.namesSyncing")}</p>
           )}
         </article>
+      )}
+
+      {/* The parked-relations queue. A parked relation lists on BOTH sides'
+          languages — either side's editor may be the one who can repair it —
+          and `sides[0]` is always this language's side, so that is the entry
+          the row opens: the re-affirm control lives there, where the entry's
+          own senses are loaded. */}
+      {parkedOpen && dashboard !== null && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="parked-dialog-title"
+        >
+          <div className="max-h-[calc(100dvh-2rem)] w-full overflow-y-auto rounded-t-xl border bg-surface p-4 shadow-lg sm:max-w-lg sm:rounded-xl sm:p-6">
+            <h2 id="parked-dialog-title" className="text-lg font-semibold text-content">
+              {t("languagePage.parkedTitle")}
+            </h2>
+            <p className="mt-1 text-sm text-content-subtle">{t("languagePage.parkedHint")}</p>
+
+            {dashboard.parkedRelations.length === 0 ? (
+              <p className="mt-4 text-sm text-content-muted">{t("languagePage.parkedEmpty")}</p>
+            ) : (
+              <>
+                <ul className="mt-4 space-y-2">
+                  {dashboard.parkedRelations.map((relation) => {
+                    const own = relation.sides[0];
+                    const other = relation.sides[1];
+                    const stateLabel =
+                      relation.state === "stale"
+                        ? t("relations.stateStale")
+                        : relation.state === "unresolved"
+                          ? t("relations.stateUnresolved")
+                          : t("relations.stateOversize");
+                    return (
+                      <li
+                        key={relation.relationKey}
+                        className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm"
+                      >
+                        <span className="rounded-full border px-2 py-0.5 text-xs text-content-muted">
+                          {stateLabel}
+                        </span>
+                        {own.entryKey !== null ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setParkedOpen(false);
+                              onOpenEntry(own.entryKey!);
+                            }}
+                            className="font-medium text-primary hover:text-primary-hover"
+                          >
+                            {own.orthography ?? own.recordedOrthography ?? own.entryKey}
+                          </button>
+                        ) : (
+                          /* Nothing to link to — the record's own spelling is
+                             all there is, which is exactly why a side carries
+                             it. */
+                          <span
+                            className="font-medium text-content-muted"
+                            title={t("relations.unresolvedSide")}
+                          >
+                            {own.recordedOrthography ?? "—"}
+                          </span>
+                        )}
+                        <span aria-hidden="true" className="text-content-subtle">
+                          ↔
+                        </span>
+                        <span className="text-content">
+                          {other.orthography ?? other.recordedOrthography ?? "—"}
+                        </span>
+                        <span className="rounded border bg-surface px-1.5 py-0.5 font-mono text-xs text-content-muted">
+                          {other.languageID}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+                {parkedTotal > dashboard.parkedRelations.length && (
+                  <p className="mt-3 text-xs text-content-subtle">
+                    {t("languagePage.parkedMore", {
+                      count: parkedTotal - dashboard.parkedRelations.length,
+                      shown: dashboard.parkedRelations.length,
+                    })}
+                  </p>
+                )}
+              </>
+            )}
+
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setParkedOpen(false)}
+                className="rounded-lg border px-4 py-2 text-sm text-content hover:bg-black/5"
+              >
+                {t("languageRecord.cancel")}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Full flagged-for-review list — the whole todo queue the endpoint

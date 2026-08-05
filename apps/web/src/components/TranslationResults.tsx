@@ -28,6 +28,26 @@ import { endonym } from "./LanguageSelector";
  * them while silently vouching for the rest.
  */
 
+/**
+ * What the reader disputes: this sense of this word, reached from that sense of
+ * the source word.
+ *
+ * `direct` is the difference that matters to the writer. A direct answer rests
+ * on one assertion, and that assertion is editable — the correction opens it.
+ * An indirect one rests on a chain of other people's assertions, no one of
+ * which the result identifies as the wrong link, so the correction can only
+ * offer to state the right equivalent here; the chain itself is repaired on the
+ * hops' own entry pages, which the disclosure already links to.
+ */
+export interface TranslationCorrection {
+  sourceEntryKey: string;
+  sourcePlace: number[];
+  targetEntryKey: string;
+  targetPlace: number[];
+  targetLanguageID: string;
+  direct: boolean;
+}
+
 interface TranslationResultsProps {
   query: string;
   /** The source language; the endpoint requires it (no "any language" search). */
@@ -37,6 +57,8 @@ interface TranslationResultsProps {
   /** All known languages, for naming the hops' languages. */
   languages: LanguageView[];
   onOpenEntry: (key: string) => void;
+  /** Dispute a result. Absent when nobody is signed in. */
+  onCorrect?: (correction: TranslationCorrection) => void;
 }
 
 /**
@@ -75,10 +97,12 @@ function TargetSense({
   sense,
   languageName,
   onOpenEntry,
+  onCorrect,
 }: {
   sense: TranslationSense;
   languageName: (tag: string) => string;
   onOpenEntry: (key: string) => void;
+  onCorrect?: () => void;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -122,6 +146,17 @@ function TargetSense({
           <span aria-hidden="true">{open ? "▾" : "▸"}</span>
         </button>
       )}
+      {/* The dispute sits beside the provenance badge, because the badge is
+          what a reader judges the answer by. */}
+      {onCorrect !== undefined && (
+        <button
+          type="button"
+          onClick={onCorrect}
+          className="text-xs text-content-subtle hover:text-primary"
+        >
+          {t("translate.correct")}
+        </button>
+      )}
       {open && !direct && (
         <ol className="mt-1 w-full space-y-1 border-l pl-3">
           {sense.via.map((hop: TranslationHop, i) => (
@@ -160,10 +195,12 @@ function TargetRow({
   target,
   languageName,
   onOpenEntry,
+  onCorrect,
 }: {
   target: TranslationTarget;
   languageName: (tag: string) => string;
   onOpenEntry: (key: string) => void;
+  onCorrect?: (sense: TranslationSense) => void;
 }) {
   return (
     <li className="rounded-lg border bg-surface px-3 py-2">
@@ -188,6 +225,7 @@ function TargetRow({
             sense={sense}
             languageName={languageName}
             onOpenEntry={onOpenEntry}
+            onCorrect={onCorrect === undefined ? undefined : () => onCorrect(sense)}
           />
         ))}
       </ul>
@@ -201,11 +239,13 @@ function SourceEntry({
   record,
   languageName,
   onOpenEntry,
+  onCorrect,
 }: {
   entry: TranslationEntry;
   record: LeksisEntryRecord | undefined;
   languageName: (tag: string) => string;
   onOpenEntry: (key: string) => void;
+  onCorrect?: (correction: TranslationCorrection) => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -253,6 +293,19 @@ function SourceEntry({
                       target={target}
                       languageName={languageName}
                       onOpenEntry={onOpenEntry}
+                      onCorrect={
+                        onCorrect === undefined
+                          ? undefined
+                          : (sense) =>
+                              onCorrect({
+                                sourceEntryKey: entry.entryKey,
+                                sourcePlace: group.place,
+                                targetEntryKey: target.entryKey,
+                                targetPlace: sense.place,
+                                targetLanguageID: target.languageID,
+                                direct: sense.via.length === 0,
+                              })
+                      }
                     />
                   ))}
                 </ul>
@@ -271,6 +324,7 @@ export function TranslationResults({
   to,
   languages,
   onOpenEntry,
+  onCorrect,
 }: TranslationResultsProps) {
   const { t } = useTranslation();
   const [response, setResponse] = useState<TranslateResponse | null>(null);
@@ -344,6 +398,7 @@ export function TranslationResults({
               record={records.get(entry.entryKey)}
               languageName={languageName}
               onOpenEntry={onOpenEntry}
+              onCorrect={onCorrect}
             />
           ))}
         </div>

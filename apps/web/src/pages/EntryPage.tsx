@@ -16,6 +16,11 @@ import {
 import { EntryEditorDialog } from "../components/CreateEntryPanel";
 import { DefinitionList, TagChips } from "../components/EntryPreview";
 import { ParkedRelations, SenseRelations } from "../components/EntryRelations";
+import {
+  RelationEditorDialog,
+  type RelationEditorLaunch,
+} from "../components/RelationEditorDialog";
+import { useSession } from "../auth/SessionProvider";
 import { EntryParadigm } from "../components/ParadigmView";
 import { endonym } from "../components/LanguageSelector";
 import { fetchEntryRelations, fetchLabels, fetchEntry, searchEntries } from "../lib/api";
@@ -76,6 +81,7 @@ export function EntryPage({
   onOpenLanguage,
 }: EntryPageProps) {
   const { t } = useTranslation();
+  const { did } = useSession();
   const [view, setView] = useState<EntryView | null>(null);
   const [record, setRecord] = useState<LeksisEntryRecord | null>(null);
   const [homonyms, setHomonyms] = useState<EntryView[]>([]);
@@ -95,6 +101,17 @@ export function EntryPage({
   const [relations, setRelations] = useState<EntryRelationsResponse | null>(null);
   const [state, setState] = useState<LoadState>("loading");
   const [proposing, setProposing] = useState(false);
+  /**
+   * The relation editor's launch context — which sense it was opened from, and
+   * which relation (if any) it is proposing a new version of. Null = closed.
+   */
+  const [relationLaunch, setRelationLaunch] = useState<RelationEditorLaunch | null>(null);
+  /**
+   * Polling the relations back after publishing one. Unlike an entry proposal
+   * there is no single URI to wait for — a withdrawal has none at all — so the
+   * page simply re-reads the network's view of this entry until it settles.
+   */
+  const [relationSyncing, setRelationSyncing] = useState(false);
   /** The redirect target's own view, resolved for display when this entry was deleted as a duplicate. */
   const [redirectTarget, setRedirectTarget] = useState<EntryView | null>(null);
   /** Record URI written to the PDS but not yet seen back from the AppView. */
@@ -200,6 +217,27 @@ export function EntryPage({
     return () => clearInterval(timer);
   }, [syncingURI, entryKey]);
 
+  // After publishing or withdrawing a relation: re-read this entry's relations
+  // until the AppView has caught up with the PDS write.
+  useEffect(() => {
+    if (!relationSyncing) return;
+    let tries = 0;
+    const timer = setInterval(() => {
+      tries += 1;
+      // The give-up check sits outside the promise: a persistently failing API
+      // must still end the poll, or the "publishing…" line never clears.
+      if (tries >= SYNC_POLL_MAX_TRIES) setRelationSyncing(false);
+      fetchEntryRelations(entryKey)
+        .then((found) => {
+          if (found !== null) setRelations(found);
+        })
+        .catch(() => {
+          /* transient — the tries counter above ends it either way */
+        });
+    }, SYNC_POLL_MS);
+    return () => clearInterval(timer);
+  }, [relationSyncing, entryKey]);
+
   const language =
     view !== null ? (languages.find((l) => l.tag === view.languageID) ?? null) : null;
 
@@ -235,20 +273,57 @@ export function EntryPage({
         bySense.set(key, [...(bySense.get(key) ?? []), relation]);
       }
     }
+    // One slot per definition node, not only per related one: the invitation to
+    // relate a sense has to be where the sense is, including — especially — on
+    // the senses nothing has been said about yet.
     const extras = new Map<string, ReactNode>();
-    for (const [key, list] of bySense) {
-      extras.set(
-        key,
-        <SenseRelations
-          relations={list}
-          languageID={view?.languageID ?? ""}
-          languages={languages}
-          onOpenEntry={onOpenEntry}
-        />,
-      );
+    if (record !== null && view !== null) {
+      for (const def of record.definitions) {
+        const place = canonicalizePlacePrefix(def.place);
+        if (place.length === 0) continue;
+        const key = placePathKey(place);
+        if (extras.has(key)) continue;
+        const list = bySense.get(key) ?? [];
+        extras.set(
+          key,
+          <>
+            {list.length > 0 && (
+              <SenseRelations
+                relations={list}
+                languageID={view.languageID}
+                languages={languages}
+                onOpenEntry={onOpenEntry}
+                onEdit={
+                  did !== null
+                    ? (relation) =>
+                        setRelationLaunch({
+                          source: { view, record, place: relation.sides[0].place },
+                          targetEntryKey: relation.sides[1].entryKey,
+                          targetPlace: relation.sides[1].place,
+                          targetLanguage: relation.sides[1].languageID,
+                          targetQuery: relation.sides[1].recordedOrthography ?? "",
+                          existing: relation,
+                        })
+                    : undefined
+                }
+              />
+            )}
+            {did !== null && (
+              <button
+                type="button"
+                title={t("relations.addHint")}
+                onClick={() => setRelationLaunch({ source: { view, record, place } })}
+                className="mt-2 text-xs text-primary hover:text-primary-hover"
+              >
+                {t("relations.addLabel")}
+              </button>
+            )}
+          </>,
+        );
+      }
     }
     return { wholeEntry: whole, senseExtras: extras };
-  }, [relations, record, view?.languageID, languages, onOpenEntry]);
+  }, [relations, record, view, languages, onOpenEntry, did, t]);
 
   return (
     <div className="mt-6 flex flex-col">
@@ -365,8 +440,24 @@ export function EntryPage({
                   languages={languages}
                   onOpenEntry={onOpenEntry}
                   showPlace
+                  onEdit={
+                    did !== null
+                      ? (relation) =>
+                          setRelationLaunch({
+                            source: { view, record, place: relation.sides[0].place },
+                            targetEntryKey: relation.sides[1].entryKey,
+                            targetPlace: relation.sides[1].place,
+                            targetLanguage: relation.sides[1].languageID,
+                            targetQuery: relation.sides[1].recordedOrthography ?? "",
+                            existing: relation,
+                          })
+                      : undefined
+                  }
                 />
               </div>
+            )}
+            {relationSyncing && (
+              <p className="mt-2 text-xs text-content-subtle">{t("relations.syncing")}</p>
             )}
           </header>
 
@@ -401,6 +492,19 @@ export function EntryPage({
               parked={relations.parked}
               languages={languages}
               onOpenEntry={onOpenEntry}
+              onEdit={
+                did !== null
+                  ? (relation) =>
+                      setRelationLaunch({
+                        source: { view, record, place: relation.sides[0].place },
+                        targetEntryKey: relation.sides[1].entryKey,
+                        targetPlace: relation.sides[1].place,
+                        targetLanguage: relation.sides[1].languageID,
+                        targetQuery: relation.sides[1].recordedOrthography ?? "",
+                        existing: relation,
+                      })
+                  : undefined
+              }
             />
           )}
 
@@ -506,6 +610,22 @@ export function EntryPage({
           onDeleted={(uri) => {
             setProposing(false);
             setSyncingURI(uri);
+          }}
+        />
+      )}
+
+      {relationLaunch !== null && (
+        <RelationEditorDialog
+          {...relationLaunch}
+          languages={languages}
+          onClose={() => setRelationLaunch(null)}
+          onPublished={() => {
+            setRelationLaunch(null);
+            setRelationSyncing(true);
+          }}
+          onDeleted={() => {
+            setRelationLaunch(null);
+            setRelationSyncing(true);
           }}
         />
       )}

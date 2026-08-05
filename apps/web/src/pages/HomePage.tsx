@@ -1,15 +1,23 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
-import type { LanguageView } from "@leksis/types";
+import { placePrefixMatches, type LanguageView, type RelationView } from "@leksis/types";
 import { AddLanguageModal } from "../components/AddLanguageModal";
 import { endonym, LanguageSelector } from "../components/LanguageSelector";
 import { OnboardingFlow } from "../components/OnboardingFlow";
 import { SearchResults } from "../components/SearchResults";
-import { TranslationResults } from "../components/TranslationResults";
+import {
+  TranslationResults,
+  type TranslationCorrection,
+} from "../components/TranslationResults";
+import {
+  RelationEditorDialog,
+  type RelationEditorLaunch,
+} from "../components/RelationEditorDialog";
 import { useSession } from "../auth/SessionProvider";
 import { EntryPage } from "./EntryPage";
 import { LanguagePage } from "./LanguagePage";
-import { fetchLanguages } from "../lib/api";
+import { fetchEntry, fetchEntryRelations, fetchLanguages } from "../lib/api";
+import { fetchEntryRecord } from "../lib/atproto-record";
 import { entryPath, languagePath, routeFromLocation, type Route } from "../lib/routes";
 
 const SYNC_POLL_MS = 3_000;
@@ -58,7 +66,7 @@ function searchPath(search: SubmittedSearch | null): string {
 // query string.
 export function HomePage() {
   const { t, i18n } = useTranslation();
-  const { profile } = useSession();
+  const { profile, did } = useSession();
   // Locale for language-name localization; the API falls back to endonyms
   // when no names exist for it.
   const locale = i18n.language;
@@ -76,6 +84,17 @@ export function HomePage() {
   const [adding, setAdding] = useState(false);
   /** Tag written to the PDS but not yet seen back from the AppView. */
   const [syncingTag, setSyncingTag] = useState<string | null>(null);
+  /** The relation editor, opened by disputing a translation result. */
+  const [correction, setCorrection] = useState<RelationEditorLaunch | null>(null);
+  /**
+   * What to tell the reader about their last correction attempt: that it is
+   * published (and these results predate it), or that the editor could not be
+   * opened at all. The second case is why this is not a boolean — a dispute
+   * that silently does nothing reads as a broken button.
+   */
+  const [correctionNotice, setCorrectionNotice] = useState<"published" | "unavailable" | null>(
+    null,
+  );
 
   useEffect(() => {
     fetchLanguages(locale)
@@ -146,8 +165,81 @@ export function HomePage() {
     if (query === "") return;
     const search = { query, languageTag: language, targetTag: target };
     setSubmitted(search);
+    setCorrectionNotice(null);
     window.history.pushState(null, "", searchPath(search));
     setRoute({ kind: "search" });
+  }
+
+  /**
+   * Disputing a result opens the relation editor on the assertion that is
+   * actually at fault — when the result names one.
+   *
+   * A direct answer rests on a single relation, so it is looked up and opened
+   * for editing: the reader can narrow its senses, flip it, or withdraw it. An
+   * indirect one rests on a chain, and the result does not say which link is
+   * wrong, so the editor opens empty on the target language instead — asserting
+   * the right equivalent. The wrong link is repaired from the hop's own entry
+   * page, which the chain disclosure already links to.
+   */
+  async function openCorrection(dispute: TranslationCorrection) {
+    setCorrectionNotice(null);
+    // The editor works on the source entry's own senses, so it cannot open
+    // without them. Said out loud: the alternative is a button that does
+    // nothing, which reads as broken rather than as blocked.
+    const view = await fetchEntry(dispute.sourceEntryKey).catch(() => null);
+    const record = view === null ? null : await fetchEntryRecord(view.recordURI).catch(() => null);
+    if (view === null || record === null) {
+      setCorrectionNotice("unavailable");
+      return;
+    }
+
+    let existing: RelationView | null = null;
+    if (dispute.direct) {
+      const found = await fetchEntryRelations(dispute.sourceEntryKey).catch(() => null);
+      // A direct assertion may be broader than the sense it answered for — a
+      // whole-entry claim answers every sense — so it is matched by prefix, and
+      // the most specific match wins.
+      const candidates = (found?.relations ?? [])
+        .filter(
+          (relation) =>
+            relation.sides[1].entryKey === dispute.targetEntryKey &&
+            placePrefixMatches(relation.sides[0].place, dispute.sourcePlace) &&
+            placePrefixMatches(relation.sides[1].place, dispute.targetPlace),
+        )
+        // Most specific over BOTH sides. Ranking on the source alone would let
+        // a whole-entry claim outrank a sense-precise one whenever their source
+        // prefixes tie, so disputing a precise answer could open the broad
+        // assertion and narrow it — destroying translations nobody meant to
+        // touch.
+        .sort(
+          (a, b) =>
+            b.sides[0].place.length +
+            b.sides[1].place.length -
+            (a.sides[0].place.length + a.sides[1].place.length),
+        );
+      existing = candidates[0] ?? null;
+    }
+
+    setCorrection(
+      existing !== null
+        ? {
+            source: { view, record, place: existing.sides[0].place },
+            targetEntryKey: existing.sides[1].entryKey,
+            targetPlace: existing.sides[1].place,
+            targetLanguage: existing.sides[1].languageID,
+            targetQuery: existing.sides[1].recordedOrthography ?? "",
+            existing,
+          }
+        : {
+            // No single assertion to fix — but the reader was looking at a
+            // specific word, so it is carried in rather than making them retype
+            // it (and risk asserting something subtly different).
+            source: { view, record, place: dispute.sourcePlace },
+            targetEntryKey: dispute.targetEntryKey,
+            targetPlace: dispute.targetPlace,
+            targetLanguage: dispute.targetLanguageID,
+          },
+    );
   }
 
   function openEntry(key: string) {
@@ -268,6 +360,17 @@ export function HomePage() {
         <p className="mt-3 text-sm text-content-subtle">{t("addLanguage.syncing")}</p>
       )}
 
+      {/* Results already on screen were computed before this correction, so
+          they are stale rather than wrong — said plainly instead of being
+          silently re-fetched before the AppView could have indexed it. */}
+      {correctionNotice !== null && (
+        <p className="mt-3 text-sm text-content-subtle">
+          {correctionNotice === "published"
+            ? t("translate.correctionPublished")
+            : t("translate.correctionUnavailable")}
+        </p>
+      )}
+
       {route.kind === "entry" ? (
         <EntryPage
           entryKey={route.entryKey}
@@ -291,6 +394,13 @@ export function HomePage() {
             to={targetLanguage}
             languages={languages}
             onOpenEntry={openEntry}
+            onCorrect={
+              did !== null
+                ? (dispute) => {
+                    void openCorrection(dispute);
+                  }
+                : undefined
+            }
           />
         ) : (
           <SearchResults
@@ -307,6 +417,22 @@ export function HomePage() {
           languages={languages}
           onClose={() => setAdding(false)}
           onCreated={onLanguageCreated}
+        />
+      )}
+
+      {correction !== null && (
+        <RelationEditorDialog
+          {...correction}
+          languages={languages}
+          onClose={() => setCorrection(null)}
+          onPublished={() => {
+            setCorrection(null);
+            setCorrectionNotice("published");
+          }}
+          onDeleted={() => {
+            setCorrection(null);
+            setCorrectionNotice("published");
+          }}
         />
       )}
     </main>
