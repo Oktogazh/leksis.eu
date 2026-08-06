@@ -12,7 +12,7 @@ walked by the AppView to answer "what is this word in that language" even when
 nobody has asserted the pair directly. Breton *gwerzenn* reaches English *verse*
 through French *vers* — and never through *vers* meaning "worms" or "toward",
 because a path enters and leaves an intermediate word through the *same* sense.
-See `docs/design/semantic-network.md`.
+See **ADR-0011** and `docs/design/semantic-network.md`.
 
 > **This entry covers the whole loop: the record, the ingest lifecycle, the read
 > surface, and both halves of the interface** — relations can now be read,

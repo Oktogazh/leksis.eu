@@ -1,9 +1,9 @@
 # Design note: the semantic network
 
-**Status:** Designed, not implemented. This note is the source for **content loop 5 (translations)**
-and the reference frame for everything that later grows on the same graph (weighting, cognates,
-etymology, sentence translation memory). When the loop ships, its ADR and the code become
-authoritative over this note for anything they cover.
+**Status:** **Shipped** (all five slices). This note remains the reasoning behind **content loop 5
+(translations)** and the reference frame for everything that later grows on the same graph
+(weighting, cognates, etymology, sentence translation memory) — but **ADR-0011 and the code are now
+authoritative over it for anything they cover**. See §5c for what shipped unverified.
 **Date:** 2026-08-04.
 **For:** Content loop 5 — "cross-language graph traversal" — and the search/entry-page surfaces it needs.
 **Related:** the white paper (word-to-word translation sections, superseded where marked),
