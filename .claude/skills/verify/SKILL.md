@@ -74,39 +74,69 @@ back; that is a round trip, not a solution.
    session. Cheapest and least faithful: it touches app code, it verifies a surface no real
    user reaches, and it must be impossible to enable in a production build.
 
-### The CORS wall — a local web dev server cannot call a local API (worked around)
+### The CORS wall — SOLVED (2026-08-08)
 
-A second, independent blocker, proven on 2026-08-05. The API **deliberately emits no CORS
-headers** (`apps/api/src/index.ts`: Caddy is the single `Access-Control-Allow-Origin`
-authority, granting dev access per source IP via `ALLOWED_IPS`), `vite.config.ts` defines
-**no proxy**, and `apps/web` ships **no `.env`**. So `API_BASE` resolves to
-`http://127.0.0.1:8080`, every call from `:5173` is cross-origin, and the browser blocks
-all of them — the symptom is `TypeError: Failed to fetch` on `fetchLanguages` with the API
-answering `200` to the same URL under `curl`. Empty language dropdowns are the tell.
+Formerly a second, independent blocker: the API **deliberately emits no CORS headers**
+(`apps/api/src/index.ts`: Caddy is the single `Access-Control-Allow-Origin` authority), so
+every direct call from `:5173` to `:8080` was cross-origin and blocked. `vite.config.ts`
+now defines a **`server.proxy` entry** mapping `/api/*` to the API, which makes dev match
+production's same-origin shape and removes CORS from the picture entirely. The old
+scratchpad reverse-proxy shim and `apps/web/.env.local` are obsolete — do not recreate
+them.
 
-The supported path is what `API_BASE`'s own comment says: point the dev server at the
-**production** API with `VITE_API_URL`. That is wrong for verifying unreleased work against
-local fixtures, so the workaround used was a scratchpad reverse proxy that adds the header
-(`:8081 → :8080`) plus a gitignored `apps/web/.env.local` holding
-`VITE_API_URL=http://127.0.0.1:8081`. It works, and it is a shim: **the durable fix is a
-`server.proxy` entry in `vite.config.ts`** mapping `/api` to `127.0.0.1:8080`, which would
-also make dev match production's same-origin shape. That is a tracked-file change and needs
-the user's approval — propose it rather than assuming it.
+**Where `/api/*` goes: the PRODUCTION AppView (`https://leksis.eu/api`) by default.** So the
+web app works with real data with no local API and no local ArangoDB — which is the normal
+way to work on `apps/web`. Consequences to keep straight:
 
-**A caveat that will otherwise waste the session that solves this:** local OAuth builds its
-client id from `window.location`, so a **deep link on a cold load throws** and the login
-form never appears — load `/` first, authenticate, then navigate in-app. Fixing
-`resolveClientId` in `apps/web/src/auth/client.ts` to pass the origin instead of the whole
-location is the recorded remedy (`leksis-testset` §7; ADR-0007's carried-forward item).
+- **Reads are production reads.** What you see is the live index, not fixtures.
+- **Writes were never proxied anyway** — the browser writes records straight to the user's
+  own PDS, and production's firehose then indexes them. **An entry created in local dev is
+  published for real.** This is inherent to the architecture (ADR-0002), not to the proxy.
+- To work against a **local** API instead:
+  `LEKSIS_API=http://127.0.0.1:8080 npm run dev -w @leksis/web`. Vite restarts itself when
+  `vite.config.ts` changes, so switching does not need a manual restart.
+
+### Deep links on a cold load — SOLVED (2026-08-08)
+
+Formerly: local OAuth built its client id from `window.location`, so loading any path URL
+(`/entry/…`, `/language/…`, `/user/…`) directly threw
+`Invalid loopback client ID: Value must not contain a path component`, the session was
+dropped, and the app bounced to the landing page. `resolveClientId` in
+`apps/web/src/auth/client.ts` now passes `new URL("/", …)` instead of the whole location,
+which also matches production, whose `client-metadata.json` declares exactly one
+`redirect_uri` — the site root. **Deep links now survive a cold load**, so an agentic
+session no longer has to load `/` first and navigate in-app.
 
 ## API changes (`apps/api`)
 
-Hono server, port 8080, requires ArangoDB. Two ways to get a running stack:
+Hono server, port 8080, requires ArangoDB. **Only needed when the change is to `apps/api`
+itself** — `apps/web` work runs against production through the proxy above.
 
-- **Fast loop** (preferred while iterating): ArangoDB running (via Docker), then
-  `ARANGO_URL=http://localhost:8529 ARANGO_DB=leksis ARANGO_USER=root ARANGO_PASSWORD=<pw> npm run dev -w @leksis/api`
+Two ways to get a running stack:
+
+- **Fast loop** (preferred while iterating): ArangoDB running, then
+  `npm run dev -w @leksis/api` — or `preview_start` with the launch config named `api`,
+  which is the same thing through the sanctioned tooling. The `dev` script loads
+  `apps/api/.env` via node's `--env-file-if-exists`, so credentials no longer have to be
+  typed on the command line. That file is gitignored; copy `apps/api/.env.example` and fill
+  `ARANGO_PASSWORD` in.
 - **Full stack**: `docker compose up -d --build` (requires `.env` with
   `ARANGO_ROOT_PASSWORD`; see the comment header in `docker-compose.yml`).
+
+**Two traps this machine's setup sets, both cost a session once (2026-08-08):**
+
+1. **The local ArangoDB is a hand-started container, `leksis-dev-arango`, and its root
+   password is NOT the `ARANGO_ROOT_PASSWORD` in the repo-root `.env`** (that one belongs to
+   the compose stack). Read the live one with
+   `docker inspect leksis-dev-arango --format '{{range .Config.Env}}{{println .}}{{end}}' | grep ARANGO_ROOT_PASSWORD`.
+2. **`docker compose ps` fails outright** on this repo — the `pds` service interpolates
+   `PDS_ADMIN_PASSWORD`, which is absent from `.env`. Use plain `docker ps` to see what is
+   actually running; a missing compose command says nothing about the containers.
+
+The symptom when the API is simply **not running**: the browser reports
+`GET /languages failed: 500` — that 500 is *Vite's proxy* failing to reach the target, not
+the API answering. `curl http://127.0.0.1:8080/health` returning nothing at all is the
+confirmation.
 
 Then:
 

@@ -16,6 +16,7 @@ import {
 import { useSession } from "../auth/SessionProvider";
 import { EntryPage } from "./EntryPage";
 import { LanguagePage } from "./LanguagePage";
+import { UserPage } from "./UserPage";
 import { fetchEntry, fetchEntryRelations, fetchLanguages } from "../lib/api";
 import { fetchEntryRecord } from "../lib/atproto-record";
 import { entryPath, languagePath, routeFromLocation, type Route } from "../lib/routes";
@@ -381,6 +382,14 @@ export function HomePage() {
         />
       ) : route.kind === "language" ? (
         <LanguagePage tag={route.tag} languages={languages} onOpenEntry={openEntry} />
+      ) : route.kind === "user" ? (
+        <UserPage
+          id={route.id}
+          languages={languages}
+          onOpenEntry={openEntry}
+          onOpenLanguage={openLanguage}
+          onLanguageCreated={onLanguageCreated}
+        />
       ) : (
         submitted !== null &&
         (missingSource ? (

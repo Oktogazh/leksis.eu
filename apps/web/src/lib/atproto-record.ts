@@ -42,8 +42,29 @@ export function parseAtUri(uri: string): { did: string; collection: string; rkey
   return { did: match[1]!, collection: match[2]!, rkey: match[3]! };
 }
 
-/** Resolve a DID to its PDS base URL via its DID document. */
-async function resolvePds(did: string): Promise<string> {
+/**
+ * Resolve a DID to its PDS base URL via its DID document, memoized for the
+ * session. A DID document changes about as often as someone migrates PDS, and
+ * a single page can resolve dozens of records from the same author (an entry
+ * plus its relations, a profile's whole activity feed) — one lookup per DID
+ * instead of one per record.
+ */
+const pdsCache = new Map<string, Promise<string>>();
+
+export function resolvePds(did: string): Promise<string> {
+  const cached = pdsCache.get(did);
+  if (cached) return cached;
+  // Cache the promise, not the value, so concurrent callers share one request;
+  // a rejection is evicted so the next caller retries.
+  const pending = resolvePdsUncached(did).catch((err: unknown) => {
+    pdsCache.delete(did);
+    throw err;
+  });
+  pdsCache.set(did, pending);
+  return pending;
+}
+
+async function resolvePdsUncached(did: string): Promise<string> {
   let docUrl: string;
   if (did.startsWith("did:plc:")) {
     docUrl = `https://plc.directory/${did}`;
@@ -197,24 +218,36 @@ function parseEntryRecord(value: unknown): LeksisEntryRecord | null {
 }
 
 /**
+ * Fetch a record's raw value from a repo's PDS, addressed by its three
+ * coordinates rather than by an at:// URI — which is how a singleton record
+ * (`self`) is reached, since nothing hands out its URI. Public: getRecord
+ * needs no auth, so this reads any user's repo, not only the session's.
+ *
+ * Throws on network/resolution failure; returns null when the record does not
+ * exist.
+ */
+export async function fetchRepoRecord(
+  did: string,
+  collection: string,
+  rkey: string,
+): Promise<unknown | null> {
+  const pds = await resolvePds(did);
+  const params = new URLSearchParams({ repo: did, collection, rkey });
+  const res = await fetch(`${pds}/xrpc/com.atproto.repo.getRecord?${params.toString()}`);
+  if (res.status === 400 || res.status === 404) return null; // record gone
+  if (!res.ok) throw new Error(`getRecord failed: ${res.status}`);
+  const body = (await res.json()) as GetRecordResponse;
+  return body.value;
+}
+
+/**
  * Fetch a record's raw value from its author's PDS. Throws on
  * network/resolution failure; returns null when the record no longer exists.
  */
 async function fetchRecordValue(recordURI: string): Promise<unknown | null> {
   const parsed = parseAtUri(recordURI);
   if (!parsed) return null;
-
-  const pds = await resolvePds(parsed.did);
-  const params = new URLSearchParams({
-    repo: parsed.did,
-    collection: parsed.collection,
-    rkey: parsed.rkey,
-  });
-  const res = await fetch(`${pds}/xrpc/com.atproto.repo.getRecord?${params.toString()}`);
-  if (res.status === 400 || res.status === 404) return null; // record gone
-  if (!res.ok) throw new Error(`getRecord failed: ${res.status}`);
-  const body = (await res.json()) as GetRecordResponse;
-  return body.value;
+  return fetchRepoRecord(parsed.did, parsed.collection, parsed.rkey);
 }
 
 /**

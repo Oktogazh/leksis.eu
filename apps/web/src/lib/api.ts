@@ -1,14 +1,16 @@
-import type {
-  LabelsResponse,
-  LabelView,
-  CurrentLanguageRecordResponse,
-  EntriesResponse,
-  EntryRelationsResponse,
-  EntryView,
-  LanguageDashboardResponse,
-  LanguagesResponse,
-  LanguageView,
-  TranslateResponse,
+import {
+  RESOLVE_URI_LIMIT,
+  type LabelsResponse,
+  type LabelView,
+  type CurrentLanguageRecordResponse,
+  type EntriesResponse,
+  type EntryRelationsResponse,
+  type EntryResolveResponse,
+  type EntryView,
+  type LanguageDashboardResponse,
+  type LanguagesResponse,
+  type LanguageView,
+  type TranslateResponse,
 } from "@leksis/types";
 
 /*
@@ -35,6 +37,29 @@ export async function fetchLanguages(locale: string): Promise<LanguageView[]> {
   if (!res.ok) throw new Error(`GET /languages failed: ${res.status}`);
   const body = (await res.json()) as LanguagesResponse;
   return body.languages;
+}
+
+/**
+ * Map entry-record URIs to the entry keys their pages live at, for whichever
+ * ones this AppView has indexed. Unresolved URIs are simply absent.
+ *
+ * **Never throws.** A caller reading records from a PDS has something to show
+ * either way — the resolution only decides whether a row is a link — so a
+ * failure degrades to "nothing resolved" rather than taking the surface down
+ * with it. That also covers the window where the frontend is newer than the
+ * deployed API and this route does not exist yet.
+ */
+export async function resolveEntryKeys(uris: string[]): Promise<Record<string, string>> {
+  if (uris.length === 0) return {};
+  const params = new URLSearchParams();
+  for (const uri of uris.slice(0, RESOLVE_URI_LIMIT)) params.append("uri", uri);
+  try {
+    const res = await fetch(`${API_BASE}/entries/resolve?${params.toString()}`);
+    if (!res.ok) return {};
+    return ((await res.json()) as EntryResolveResponse).entries;
+  } catch {
+    return {};
+  }
 }
 
 /**

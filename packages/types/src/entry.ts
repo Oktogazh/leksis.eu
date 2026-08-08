@@ -276,3 +276,26 @@ export interface EntryView {
 export interface EntriesResponse {
   entries: EntryView[];
 }
+
+/** How many record URIs one resolve call accepts; extra ones are ignored. */
+export const RESOLVE_URI_LIMIT = 100;
+
+/**
+ * Response shape of GET /entries/resolve?uri=…&uri=… — the at:// URI of an
+ * entry *version* mapped to the stable entry key its page lives at.
+ *
+ * This exists because the mapping cannot be computed client-side: an entryKey
+ * is minted from a hash of the **creating** record's URI and inherited by every
+ * later version through the `subject` chain, so a version's own URI says
+ * nothing about it. Anything reading records straight from a PDS — a
+ * contributor's activity feed, an external tool — needs the index to make the
+ * link back.
+ *
+ * A URI with no entry is simply absent from the map rather than an error: a
+ * record the AppView never indexed (too new, or refused at ingest) is an
+ * ordinary thing for a caller to hold.
+ */
+export interface EntryResolveResponse {
+  /** recordURI → entryKey, for the URIs that resolved. */
+  entries: Record<string, string>;
+}

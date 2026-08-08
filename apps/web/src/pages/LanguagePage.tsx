@@ -1,115 +1,27 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   formatTagVerbatim,
   type LabelView,
-  type DashboardActivityDay,
   type DashboardFeedItem,
   type LanguageDashboardResponse,
   type LanguageView,
   type LeksisLanguageRecord,
 } from "@leksis/types";
 import { useSession } from "../auth/SessionProvider";
+import { ActivityGrid } from "../components/ActivityGrid";
 import { endonym } from "../components/LanguageSelector";
 import { GrammarBindingDialog } from "../components/GrammarBindingDialog";
 import { LabelShelf } from "../components/LabelShelf";
 import { LanguageRecordDialog, type LanguageRecordMode } from "../components/LanguageRecordDialog";
 import { LanguageSearchBar } from "../components/LanguageSearchBar";
 import { fetchLabels, fetchLanguageDashboard, fetchLanguages } from "../lib/api";
+import { relativeTime } from "../lib/relative-time";
 import { fetchLanguageRecord } from "../lib/atproto-record";
 import { forgetLanguageGrammar } from "../lib/language-grammar";
 
 const SYNC_POLL_MS = 3_000;
 const SYNC_POLL_MAX_TRIES = 20; // ~60s of PDS → Jetstream → ArangoDB latency
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-/** "2 hours ago" in the UI locale, from an ISO timestamp. */
-function relativeTime(iso: string, locale: string): string {
-  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
-  const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60_000);
-  if (minutes < 60) return rtf.format(-minutes, "minute");
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return rtf.format(-hours, "hour");
-  return rtf.format(-Math.round(hours / 24), "day");
-}
-
-/**
- * The last year of activity as Monday-first weeks (GitHub-style grid),
- * oldest week first, clipped at today. Sparse input — absent days count 0.
- */
-function activityWeeks(activity: DashboardActivityDay[]): { date: string; count: number }[][] {
-  const byDate = new Map(activity.map((day) => [day.date, day.count]));
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
-  const start = new Date(today.getTime() - 364 * DAY_MS);
-  start.setUTCDate(start.getUTCDate() - ((start.getUTCDay() + 6) % 7)); // back to Monday
-
-  const weeks: { date: string; count: number }[][] = [];
-  const cursor = new Date(start);
-  while (cursor <= today) {
-    const week: { date: string; count: number }[] = [];
-    for (let i = 0; i < 7 && cursor <= today; i++) {
-      const date = cursor.toISOString().slice(0, 10);
-      week.push({ date, count: byDate.get(date) ?? 0 });
-      cursor.setUTCDate(cursor.getUTCDate() + 1);
-    }
-    weeks.push(week);
-  }
-  return weeks;
-}
-
-/** Sequential fill for one activity cell: one hue, light → dark. */
-function activityLevelClass(count: number): string {
-  if (count === 0) return "border border-content/10 bg-surface-muted/50";
-  if (count === 1) return "bg-primary/30";
-  if (count <= 4) return "bg-primary/60";
-  return "bg-primary";
-}
-
-/** GitHub-style per-day activity grid with a Less→More legend. */
-function ActivityGrid({ activity }: { activity: DashboardActivityDay[] }): ReactNode {
-  const { t } = useTranslation();
-  const weeks = activityWeeks(activity);
-  return (
-    <div>
-      {/* The grid scrolls inside its own container on narrow screens. */}
-      <div className="mt-3 overflow-x-auto pb-1">
-        <div className="flex w-max gap-[3px]">
-          {weeks.map((week, i) => (
-            <div key={i} className="flex flex-col gap-[3px]">
-              {week.map((day) => {
-                const label = t("languagePage.gridCellLabel", {
-                  count: day.count,
-                  date: day.date,
-                });
-                return (
-                  <span
-                    key={day.date}
-                    title={label}
-                    aria-label={label}
-                    role="img"
-                    className={`h-2.5 w-2.5 rounded-[2px] ${activityLevelClass(day.count)}`}
-                  />
-                );
-              })}
-            </div>
-          ))}
-        </div>
-      </div>
-      <p className="mt-2 flex items-center justify-end gap-1 text-xs text-content-subtle">
-        {t("languagePage.gridLegendLess")}
-        {[0, 1, 2, 5].map((level) => (
-          <span
-            key={level}
-            aria-hidden="true"
-            className={`h-2.5 w-2.5 rounded-[2px] ${activityLevelClass(level)}`}
-          />
-        ))}
-        {t("languagePage.gridLegendMore")}
-      </p>
-    </div>
-  );
-}
 
 interface LanguagePageProps {
   /** The language's tag, from the /language/<tag> path. */

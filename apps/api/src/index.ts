@@ -3,16 +3,18 @@ import { Hono } from "hono";
 import {
   isValidLanguageTag,
   normalizeLanguageTag,
+  RESOLVE_URI_LIMIT,
   TRANSLATE_DEFAULT_DEPTH,
   type LabelsResponse,
   type EntriesResponse,
+  type EntryResolveResponse,
   type HealthResponse,
   type LanguagesResponse,
 } from "@leksis/types";
 import { listLabels } from "./labels";
 import { getLanguageDashboard } from "./dashboard";
 import { pingDb } from "./db";
-import { getEntry, searchEntries } from "./entries";
+import { getEntry, resolveEntryKeys, searchEntries } from "./entries";
 import { getEntryRelations, getTranslations } from "./relations";
 import { getCurrentLanguageRecord, listLanguages } from "./languages";
 import { startJetstream } from "./firehose/jetstream";
@@ -131,6 +133,23 @@ app.get("/translate", async (c) => {
     return c.json(await getTranslations(c.req.query("q") ?? "", from, to, depth));
   } catch (err) {
     console.error("GET /translate failed:", err);
+    return c.json({ error: "database unavailable" }, 503);
+  }
+});
+
+// Record URI → entry key. Declared **before** /entries/:key, which would
+// otherwise match "resolve" as a key.
+app.get("/entries/resolve", async (c) => {
+  // Repeated ?uri= params rather than a comma list: an at:// URI is opaque and
+  // splitting one on a delimiter is how a resolver starts corrupting input.
+  const uris = c.req.queries("uri") ?? [];
+  try {
+    const body: EntryResolveResponse = {
+      entries: await resolveEntryKeys(uris.slice(0, RESOLVE_URI_LIMIT)),
+    };
+    return c.json(body);
+  } catch (err) {
+    console.error("GET /entries/resolve failed:", err);
     return c.json({ error: "database unavailable" }, 503);
   }
 });

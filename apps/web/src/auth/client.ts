@@ -46,7 +46,18 @@ function resolveClientId(): string {
   // id derived from the current URL — no hosted metadata file required. The
   // scope must ride along in the client id, or the session is read-only.
   if (LOOPBACK_HOSTS.has(window.location.hostname)) {
-    return `${buildLoopbackClientId(window.location)}&scope=${encodeURIComponent(OAUTH_SCOPE)}`;
+    // **The site root, not the current location.** buildLoopbackClientId
+    // derives both the client id and the redirect_uri from the location's
+    // *pathname*, so on a resource URL it returns
+    // `http://localhost/entry/<key>?redirect_uri=…` — and a loopback client id
+    // may not contain a path component, so the library throws and OAuth never
+    // initialises. Every deep link (/entry/…, /language/…, /user/…) would drop
+    // the session and bounce to the landing page on load. Pinning the root
+    // makes the client id stable whatever page the app opened on, and matches
+    // production, whose client-metadata.json declares exactly one redirect_uri
+    // — the site root.
+    const root = new URL("/", window.location.href);
+    return `${buildLoopbackClientId(root)}&scope=${encodeURIComponent(OAUTH_SCOPE)}`;
   }
   // In production the client id is the public URL of the static metadata file
   // served by nginx at the site root (apps/web/public/client-metadata.json).

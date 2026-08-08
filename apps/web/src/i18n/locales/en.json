@@ -19,7 +19,6 @@
     "logIn": "Log in",
     "connecting": "Redirecting to your PDS…",
     "disconnect": "Log out",
-    "connectedAs": "@{{handle}}",
     "errors": {
       "handleRequired": "Enter your handle to continue.",
       "signInFailed": "We couldn't reach that handle's server. Check the handle and try again."
@@ -44,7 +43,6 @@
     "error": "Your profile could not be saved to your PDS. Try again."
   },
   "profile": {
-    "open": "Preferences",
     "title": "Your preferences",
     "intro": "Change your interface language and the languages shown in your search bar. Saved to your own PDS.",
     "interfaceLabel": "Interface language",
@@ -58,6 +56,29 @@
     "save": "Save",
     "saving": "Saving to your PDS…",
     "error": "Your profile could not be saved to your PDS. Try again."
+  },
+  "accountMenu": {
+    "open": "Your account",
+    "label": "Account",
+    "profile": "Your profile"
+  },
+  "userPage": {
+    "loading": "Loading this contributor…",
+    "notFound": "No account answers to that handle.",
+    "loadFailed": "This profile could not be loaded — the account may not exist, or its server may be unreachable.",
+    "interestsTitle": "Languages of interest",
+    "interestsEmpty": "No language of interest declared.",
+    "noProfile": "This contributor has no Leksis profile yet.",
+    "editPreferences": "Edit preferences",
+    "openLanguage": "Open the {{language}} dashboard",
+    "activityTitle": "Activity",
+    "activityLoading": "Reading their records…",
+    "activityFailed": "Their records could not be read from their server right now.",
+    "activityEmpty": "This contributor hasn't published anything to Leksis yet.",
+    "activityEmptyOwn": "You haven't published anything to Leksis yet. Add a word and it appears here.",
+    "activityTruncated": "Only the most recent records are shown — this repository holds more than this page reads.",
+    "recordCount": "{{count}} records in this repository",
+    "recordCount_one": "{{count}} record in this repository"
   },
   "landing": {
     "hero": {
@@ -319,6 +340,49 @@
     "formTagManualLabel": "Tag for this form, typed by hand",
     "formTagSet": "Set"
   },
+  "deleteRecords": {
+    "oneTitle": "Delete these {{count}} records?",
+    "oneTitle_one": "Delete this record?",
+    "oneIntro": "It will be removed from your PDS. Nothing keeps a copy.",
+    "allTitle": "Delete all your Leksis records?",
+    "allIntro": "All {{count}} of your records will be removed from your PDS. This is as close to deleting your Leksis account as the protocol allows.",
+    "notWithdrawal": "This is not the same as withdrawing an entry. Withdrawing leaves a version explaining why, which others can read and contest. Deleting removes your record entirely — there is nothing left to undo it with.",
+    "consequenceEntry": "Entries: your version leaves the dictionary. If someone published an earlier version, theirs becomes current again; if yours was the only one, the entry disappears.",
+    "consequenceRelation": "Translations: the assertion leaves the graph, so the words it linked stop being translations of each other.",
+    "consequenceLanguage": "Language records: this withdraws the language's names and its entire grammar declaration — the labels, features and tables every reader of that language sees, not just your own view of it.",
+    "profileKept": "Your preferences record is kept, so your interface language and languages of interest survive. Nothing else does.",
+    "confirmLabel": "Type {{handle}} to confirm.",
+    "progress": "Deleting… {{done}} of {{total}}.",
+    "cancel": "Cancel",
+    "submit": "Delete",
+    "deleting": "Deleting…",
+    "deleteRecord": "Delete this record",
+    "deleteAll": "Delete all my records",
+    "errors": {
+      "writeFailed": "Some records could not be deleted. The ones that were are gone; reload to see what is left."
+    }
+  },
+  "repoFeed": {
+    "filterAll": "All",
+    "filterEntries": "Entries",
+    "filterRelations": "Translations",
+    "filterLanguages": "Languages",
+    "filterProfile": "Preferences",
+    "created": "created",
+    "edited": "edited",
+    "equivalence": "translation",
+    "untitledEntry": "Entry with no spelling",
+    "untitledRelation": "Relation",
+    "profileRecord": "Preferences record",
+    "showMore": "Show {{count}} more",
+    "showMore_one": "Show {{count}} more"
+  },
+  "activityGrid": {
+    "cellLabel": "{{count}} changes on {{date}}",
+    "cellLabel_one": "{{count}} change on {{date}}",
+    "legendLess": "Less",
+    "legendMore": "More"
+  },
   "languagePage": {
     "loading": "Loading the language…",
     "notFound": "This language does not exist (or is not indexed yet).",
@@ -367,10 +431,6 @@
     },
     "grammarIssuesOpen": "Open the grammar editor",
     "activityTitle": "Activity",
-    "gridLegendLess": "Less",
-    "gridLegendMore": "More",
-    "gridCellLabel": "{{count}} changes on {{date}}",
-    "gridCellLabel_one": "{{count}} change on {{date}}",
     "feedTitle": "Recent changes",
     "feedEmpty": "No indexed changes yet.",
     "feedEntryCreated": "“{{label}}” was created",

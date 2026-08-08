@@ -36,6 +36,27 @@ export async function searchEntries(query: string, languageID: string): Promise<
 }
 
 /**
+ * Map entry-record URIs to the stable entry keys their pages live at, for the
+ * URIs this AppView has indexed. Unknown URIs are simply absent.
+ *
+ * Every **version** is indexed, not only the current one, so a superseded
+ * record still resolves — which is the point: a contributor's own feed is full
+ * of versions someone else has since replaced, and those must still link to the
+ * entry they belong to. Uses the `recordURI` index.
+ */
+export async function resolveEntryKeys(uris: string[]): Promise<Record<string, string>> {
+  if (uris.length === 0) return {};
+  const cursor = await db.query<{ recordURI: string; key: string }>(aql`
+    FOR e IN entries
+      FILTER e.recordURI IN ${uris}
+      RETURN { recordURI: e.recordURI, key: e.entryKey }
+  `);
+  const resolved: Record<string, string> = {};
+  for (const row of await cursor.all()) resolved[row.recordURI] = row.key;
+  return resolved;
+}
+
+/**
  * The current version of one entry by its stable entry key, or null. Served
  * even when that version is a deletion (`deleted: true`) — legacy links must
  * still resolve, to show the deletion reason and, when set, the redirect to

@@ -4,6 +4,102 @@ All notable changes to Leksis. Each section is one loop — a unit of work, not 
 unit of time: the content loops grow the dictionary outward, the grammar loops
 (the morphology arc) grow the entry deeper, and the two interleave.
 
+## The contributor page — your words, on your server, and yours to take back
+
+Content loop 6 (polish). Until now a user could see the dictionary but not their
+own place in it. `/user/<handle>` now shows who they are, what they have
+published to Leksis, and — on their own page — lets them withdraw any of it.
+See **ADR-0012**.
+
+> **The whole page is read from the viewed user's own PDS. The AppView is not in
+> the path**: no `users` collection, no indexing, no ingestion change. One small
+> endpoint was added, for the single fact a record cannot state about itself.
+> The page therefore works for an account the firehose has never seen, shows a
+> record the instant it is written, and stops showing it the instant it is
+> deleted.
+
+### The page
+
+- **Identity from the repository itself** — the handle from
+  `com.atproto.repo.describeRepo`, and the display name, bio and picture from the
+  `app.bsky.actor.profile` record, with the avatar bytes served by that repo's
+  own `com.atproto.sync.getBlob`. **The first foreign lexicon Leksis reads**, and
+  a use of the protocol rather than a Bluesky dependency: a user on any PDS gets
+  their picture, and one with no such record gets an initial. No Leksis lexicon
+  gained an avatar or a display name, and `eu.leksis.profile` was **not
+  extended** — its existing `languages` field was already all the page shows.
+- **Languages of interest**, read from that user's `eu.leksis.profile`, each
+  linking to its dashboard. A tag Leksis does not know still shows: the profile
+  is the user's own statement, not our index's.
+- **A year of activity**, as the GitHub-style grid the language dashboard
+  already had — now a shared component fed by an aggregated series, so it
+  renders an indexed source and this un-indexed one without knowing the
+  difference.
+- **A feed of every record, filtered by kind.** Every label comes off the record
+  itself — an entry states its orthography, a relation denormalizes both
+  spellings, a language record is keyed by its tag — so the feed renders with no
+  lookups at all. An entry row says *created* or *edited* from whether the
+  record carries `subject`.
+- **Collections are discovered, not hardcoded** (by the `eu.leksis.` NSID
+  prefix): the lexicon family is designed to keep growing, and a page listing
+  "everything you published" must not need editing each time it does. An
+  unknown lexicon still lists.
+- Long repositories are paged with a cap, and the page **says so** when it
+  truncates — a silent cap would let a half-drawn year pass for a whole one.
+
+### Deletion — a second, distinct act
+
+- **Withdrawing an entry and deleting a record are not the same thing**, and the
+  app now does both. Withdrawing publishes a version carrying `deleted: true`
+  and a reason: a statement about the *dictionary*, which anyone may make and
+  anyone may contest. Deleting removes the record from one's own PDS: a
+  statement about *oneself*, which only its author can make and which nothing
+  undoes.
+- The confirmation names that difference first, then states the consequence
+  **per collection**, filtered to the kinds actually being deleted — an entry
+  version leaving the index (and the entry itself, if it was the only one), a
+  relation leaving the graph, and, in the danger colour, a language record
+  withdrawing that language's names *and its whole grammar declaration* from
+  every reader.
+- **Delete all my records** covers every `eu.leksis.*` record **except the
+  profile**, behind a typed handle. Excluding preferences is deliberate: they
+  are settings, not a contribution, and emptying them would drop the user into
+  onboarding. This is as close to deleting an account as an AppView on AT Proto
+  can offer, and the copy says exactly that.
+
+### The navbar
+
+- The handle and the Log out button became **an avatar and an account menu**
+  (profile, log out). The old navbar showed the DID on wide screens and nothing
+  at all below `sm`, so on a phone the only sign of who was logged in was a
+  button offering to log them out.
+- **Preferences moved to the profile page**, beside the languages of interest it
+  edits.
+
+### API
+
+- **`GET /entries/resolve?uri=…&uri=…`** — record URI → entry key, over the
+  existing `recordURI` index; the feed's only server call. An `entryKey` is
+  minted from a hash of the *creating* record's URI and inherited through the
+  `subject` chain, so a version's own URI says nothing about it and a client
+  holding PDS records cannot make the link back. **Every version resolves**, not
+  only the current one — a contributor's feed is full of versions others have
+  since replaced. Unknown URIs are absent rather than an error, and the client
+  never throws: an unresolved row is a row without a link.
+
+### Local development (no runtime effect)
+
+- **`/api/*` in dev now proxies to the production AppView** by default, so
+  working on `apps/web` needs no local API and no local ArangoDB;
+  `LEKSIS_API=http://127.0.0.1:8080` restores the local target.
+- **Deep links no longer drop the dev session.** `resolveClientId` built the
+  loopback OAuth client id from `window.location`, including its **pathname** —
+  which a loopback client id may not contain — so cold-loading `/entry/…`,
+  `/language/…` or `/user/…` threw and bounced to the landing page. It now uses
+  the site root, matching production's single declared `redirect_uri`.
+- `apps/api`'s `dev` script loads `apps/api/.env` (via `--env-file-if-exists`),
+  which the README already told you to create but nothing read.
+
 ## The semantic network — translations as a graph of senses
 
 Content loop 5. A word's translations are no longer a gap in the model: they are

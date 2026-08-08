@@ -6,6 +6,7 @@ import {
   LEKSIS_PROFILE_RKEY,
   type LeksisProfileRecord,
 } from "@leksis/types";
+import { fetchRepoRecord } from "./atproto-record";
 
 // Read/write of the user's own eu.leksis.profile record. This record is
 // client-side configuration, not dictionary content: the AppView never indexes
@@ -65,6 +66,21 @@ export async function fetchProfile(agent: Agent, did: string): Promise<LeksisPro
     }
     throw err;
   }
+}
+
+/**
+ * Fetch **any** user's profile from their PDS, without a session: getRecord is
+ * public, so a visitor reads a contributor's languages of interest the same way
+ * the app already reads their entries. Returns null when there is no profile
+ * record (or it does not parse); throws only when the PDS cannot be reached.
+ *
+ * The authenticated `fetchProfile` above stays separate on purpose: it is the
+ * onboarding gate for one's own repo, and it must distinguish a missing record
+ * from an unreachable PDS.
+ */
+export async function fetchPublicProfile(did: string): Promise<LeksisProfileRecord | null> {
+  const value = await fetchRepoRecord(did, LEKSIS_PROFILE_COLLECTION, LEKSIS_PROFILE_RKEY);
+  return value === null ? null : parseProfileRecord(value);
 }
 
 /**

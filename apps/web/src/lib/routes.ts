@@ -7,7 +7,9 @@
 export type Route =
   | { kind: "search" }
   | { kind: "entry"; entryKey: string }
-  | { kind: "language"; tag: string };
+  | { kind: "language"; tag: string }
+  /** `id` is an AT identifier: a DID (what the app links to) or a handle. */
+  | { kind: "user"; id: string };
 
 /** Parse the current pathname; unknown paths land on the search surface. */
 export function routeFromLocation(): Route {
@@ -18,12 +20,23 @@ export function routeFromLocation(): Route {
   if (segments.length === 2 && segments[0] === "language") {
     return { kind: "language", tag: decodeURIComponent(segments[1]!) };
   }
+  if (segments.length === 2 && segments[0] === "user") {
+    return { kind: "user", id: decodeURIComponent(segments[1]!) };
+  }
   return { kind: "search" };
 }
 
 export const entryPath = (entryKey: string): string => `/entry/${encodeURIComponent(entryKey)}`;
 
 export const languagePath = (tag: string): string => `/language/${encodeURIComponent(tag)}`;
+
+/**
+ * A contributor's page. AT identifiers — handles and DIDs — are made of
+ * characters a path segment already allows (`:` included), so the identifier
+ * goes in verbatim and `/user/did:plc:…` stays readable in the address bar
+ * instead of becoming `did%3Aplc%3A…`.
+ */
+export const userPath = (id: string): string => `/user/${id}`;
 
 /**
  * Navigate to a resource path from outside the routed surface (e.g. a dialog in

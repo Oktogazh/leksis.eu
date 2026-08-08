@@ -229,7 +229,7 @@ points below the record, and the 400-scale gives it clean league arithmetic:
 | **800** | ~0.02 | ~50 |
 
 **One league = 400 points** (an outsider needs ~5–6 heads to match one peer); **two leagues =
-800 points = effectively negated** (~50:1). No cutoff is enforced anywhere — which keeps the
+800 points = effectively negated** (~50:1), because the vote weight times K eventually rounds to zero. No cutoff is enforced anywhere — which keeps the
 explanation honest: *"your vote counts on everything, proportionally less on content the community
 has rated far above you."* The same gradient governs every other weighted quantity (settlements,
 the challenger handicap's reachability), so these two league marks are the system's whole intuition.

@@ -5,9 +5,13 @@ built on the AT Protocol and ArangoDB. See [leksis.eu](https://leksis.eu).
 
 > **Status:** In development, continuously released — `CHANGELOG.md`, the git
 > tags and [docs/adr](docs/adr) are the source of truth for what exists.
-> Content loops 1–4 are live (languages, entries, definitions, tree-shaped
-> definitions with a grammatical-tag worklist); translations are the next
-> unbuilt content loop. In parallel the **morphology arc** is through layer 4:
+> Content loops 1–5 are live (languages, entries, definitions, tree-shaped
+> definitions with a grammatical-tag worklist, and **translations as a graph of
+> senses** — [ADR-0011](docs/adr/0011-semantic-network.md)). Loop 6 is under way:
+> contributors now have a page showing everything they have published, read
+> straight from their own PDS, with the means to withdraw any of it
+> ([ADR-0012](docs/adr/0012-contributor-page-and-record-deletion.md)); search is
+> the unbuilt half. In parallel the **morphology arc** is through layer 4:
 > a language declares its grammatical primitives, which features are inherent
 > to a category, which vary across its forms, and the shape of the tables those
 > forms are laid out in — see
