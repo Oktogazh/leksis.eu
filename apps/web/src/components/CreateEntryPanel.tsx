@@ -728,6 +728,7 @@ export function EntryEditorDialog({
         )
       : [{ kind: "leaf", id: mintNodeId(), payload: { notes: [], text: "" } }],
   );
+  const [etymology, setEtymology] = useState<string[]>(initial?.etymology ?? []);
   const [entryNotes, setEntryNotes] = useState<string[]>(initial?.notes ?? []);
   const [references, setReferences] = useState<EntryReference[]>(initial?.references ?? []);
   const [todoItems, setTodoItems] = useState<string[]>(initial?.todo ?? []);
@@ -832,6 +833,7 @@ export function EntryEditorDialog({
   }, [subject, targetTag, spellingsKey]);
 
   const cleanTodo = todoItems.map((s) => s.trim()).filter((s) => s !== "");
+  const cleanEtymology = etymology.map((s) => s.trim()).filter((s) => s !== "");
   const cleanNotes = entryNotes.map((s) => s.trim()).filter((s) => s !== "");
   const cleanReferences: EntryReference[] = references
     .map((r) => ({ text: r.text.trim(), ...(r.url && r.url.trim() !== "" ? { url: r.url.trim() } : {}) }))
@@ -879,6 +881,7 @@ export function EntryEditorDialog({
       categories,
       ...(cleanOtherForms.length > 0 ? { otherForms: cleanOtherForms } : {}),
       definitions: cleanDefinitions,
+      ...(cleanEtymology.length > 0 ? { etymology: cleanEtymology } : {}),
       ...(cleanNotes.length > 0 ? { notes: cleanNotes } : {}),
       ...(cleanReferences.length > 0 ? { references: cleanReferences } : {}),
       ...(subject !== undefined ? { subject } : {}),
@@ -1210,6 +1213,27 @@ export function EntryEditorDialog({
             {definitionsError !== "ok" && definitionsError !== "empty" && (
               <p className="mt-2 text-xs text-red-600">{t("createEntry.definitionsInvalid")}</p>
             )}
+          </fieldset>
+
+          {/* Etymology is prose, and sits beside notes rather than among the
+              structured fields, because that is what it is: the formalizable
+              half of the same knowledge — that two words share an origin — is a
+              cognate record, published from the entry's own page. */}
+          <fieldset className="mt-5">
+            <legend className="text-sm font-medium text-content">
+              {t("createEntry.etymologyLegend")}
+            </legend>
+            <p className="mt-1 text-xs text-content-subtle">{t("createEntry.etymologyHelp")}</p>
+            <StringList
+              items={etymology}
+              onChange={setEtymology}
+              idPrefix="entry-etymology"
+              itemLabel={t("createEntry.etymologyItemLabel")}
+              placeholder={t("createEntry.etymologyPlaceholder")}
+              addLabel={t("createEntry.addEtymology")}
+              removeLabel={t("createEntry.removeEtymology")}
+              rows={3}
+            />
           </fieldset>
 
           <fieldset className="mt-5">

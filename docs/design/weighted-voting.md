@@ -83,9 +83,13 @@ whether the implementation uses base e (Rasch-style) is a pure change of units (
 
 ### 2.1 Upgradable documents and the ladder
 
-Three collections are **upgradable**: `languages` (shared key `tag`), `entries` (`entryKey`),
-`relations` (`relationKey`). All versions sharing a key form that object's **ladder** — ordered by
-record rating, highest first.
+Four collections are **upgradable**: `languages` (shared key `tag`), `entries` (`entryKey`),
+`relations` (`relationKey`) and `cognates` (`cognateKey`, added by ADR-0013). All versions sharing a
+key form that object's **ladder** — ordered by record rating, highest first.
+
+A cognate is versioned exactly as a relation is (symmetric record, `subject` chain, archived
+predecessors), and it **spans two languages the same way** — so it is governed by the same
+resolution as §7's open question 3, not by a rule of its own.
 
 - The top of the ladder is the **current** version (`current: true`).
 - The second-from-top is the **challenger** (`current: false, challenger: true`) — the one version
@@ -429,7 +433,9 @@ not, raise `K` or lower `R_0`, then rebuild.
 1. **The name.** "Ladder" vs "thread" vs another term — settle before slice 1 mints field names.
 2. **Vote retraction semantics** (§4.6): accept the live/rebuild divergence, or keep tombstones.
 3. **Relations span two languages** — settle on which rating votes/settlements touch (both halves at
-   half weight is the current lean; decide at slice 2 when the ladder index forces it).
+   half weight is the current lean; decide at slice 2 when the ladder index forces it). **This now
+   covers cognates too** (ADR-0013): they are two-language objects of the same shape, so whatever is
+   settled here applies to both, and the question must not be answered for one alone.
 4. **Account clusters** — "never for yourself" is per-DID; whether/how to widen it (vouch-graph
    proximity? nothing?) is open, noting §4.1/§4.2 already remove most of the profit.
 5. **Minimum rating to publish** — held in reserve; trigger: burial-by-rating proves insufficient

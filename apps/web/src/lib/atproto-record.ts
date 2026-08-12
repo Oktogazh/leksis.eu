@@ -5,6 +5,7 @@ import {
   isValidTag,
   isValidLanguageTag,
   normalizeLanguageTag,
+  LEKSIS_COGNATE_COLLECTION,
   LEKSIS_ENTRY_COLLECTION,
   LEKSIS_LANGUAGE_COLLECTION,
   LEKSIS_RELATION_COLLECTION,
@@ -14,6 +15,7 @@ import {
   type Grammar,
   type Tag,
   type LanguageTranslation,
+  type LeksisCognateRecord,
   type LeksisEntryRecord,
   type LeksisLanguageRecord,
   type LeksisRelationRecord,
@@ -284,6 +286,32 @@ export async function fetchRelationRecord(
     $type: LEKSIS_RELATION_COLLECTION,
     ...(typeof r.kind === "string" && r.kind !== "" ? { kind: r.kind } : {}),
     sides: r.sides as LeksisRelationRecord["sides"],
+    ...(notes.length > 0 ? { notes } : {}),
+    ...(typeof r.subject === "string" ? { subject: r.subject } : {}),
+    createdAt: typeof r.createdAt === "string" ? r.createdAt : "",
+  };
+}
+
+/**
+ * Fetch a eu.leksis.cognate record from its author's PDS — the same split as
+ * relations: the AppView serves the assertion's shape, its `notes` (the source,
+ * the caveat that the cognacy is contested) stay on the record.
+ *
+ * Lenient for the same reason: the caller already holds the AppView's resolved
+ * view of the sides and needs only what the index does not carry.
+ */
+export async function fetchCognateRecord(
+  recordURI: string,
+): Promise<LeksisCognateRecord | null> {
+  const value = await fetchRecordValue(recordURI);
+  if (value === null || typeof value !== "object") return null;
+  const r = value as Record<string, unknown>;
+  if (!Array.isArray(r.sides) || r.sides.length !== 2) return null;
+
+  const notes = parseTextList(r.notes);
+  return {
+    $type: LEKSIS_COGNATE_COLLECTION,
+    sides: r.sides as LeksisCognateRecord["sides"],
     ...(notes.length > 0 ? { notes } : {}),
     ...(typeof r.subject === "string" ? { subject: r.subject } : {}),
     createdAt: typeof r.createdAt === "string" ? r.createdAt : "",

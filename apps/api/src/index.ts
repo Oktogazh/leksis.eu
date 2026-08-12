@@ -12,6 +12,7 @@ import {
   type LanguagesResponse,
 } from "@leksis/types";
 import { listLabels } from "./labels";
+import { getCognateNetwork } from "./cognates";
 import { getLanguageDashboard } from "./dashboard";
 import { pingDb } from "./db";
 import { getEntry, resolveEntryKeys, searchEntries } from "./entries";
@@ -161,6 +162,21 @@ app.get("/entries/:key/relations", async (c) => {
     return c.json(await getEntryRelations(entry.key));
   } catch (err) {
     console.error("GET /entries/:key/relations failed:", err);
+    return c.json({ error: "database unavailable" }, 503);
+  }
+});
+
+// The whole cognate component this entry sits in — not just its direct
+// cognates. Unlike /translate there is no target and nothing to rank: the
+// client draws what comes back. Bounded server-side, and the response says so
+// when the component did not fit.
+app.get("/entries/:key/cognates", async (c) => {
+  try {
+    const entry = await getEntry(c.req.param("key"));
+    if (!entry) return c.json({ error: "entry not found" }, 404);
+    return c.json(await getCognateNetwork(entry.key));
+  } catch (err) {
+    console.error("GET /entries/:key/cognates failed:", err);
     return c.json({ error: "database unavailable" }, 503);
   }
 });

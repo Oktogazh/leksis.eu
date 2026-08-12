@@ -4,11 +4,13 @@
 // week 4 adds the eu.leksis.entry contract; the grammar layer adds the tag
 // contract, UD's part-of-speech inventory and the language record's `grammar`;
 // the translations loop adds the eu.leksis.relation contract behind the
-// semantic network.
+// semantic network, and the cognate loop its word-level sibling
+// eu.leksis.cognate.
 
 export * from "./language.js";
 export * from "./entry.js";
 export * from "./relation.js";
+export * from "./cognate.js";
 export * from "./label.js";
 export * from "./dashboard.js";
 export * from "./profile.js";

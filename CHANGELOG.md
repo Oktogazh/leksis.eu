@@ -4,6 +4,78 @@ All notable changes to Leksis. Each section is one loop — a unit of work, not 
 unit of time: the content loops grow the dictionary outward, the grammar loops
 (the morphology arc) grow the entry deeper, and the two interleave.
 
+## Cognates and etymology — formalize the half that can be, write the rest
+
+Content loop 6 (polish). A word's history joins the entry, split in two along the
+line that actually matters: **cognacy became a network, etymology became prose**.
+See **ADR-0013**.
+
+> The pair had been one deferred item since Loop 2. Designing it required pulling
+> it apart. A word's history is a chain of forms carrying dates, uncertainty,
+> competing accounts and mechanisms whose borders blur — a schema for it would
+> encode false precision and read worse than the paragraph it replaced. That two
+> words **share an origin** is simple enough to be asserted, contested and
+> corrected by anyone, and it is the half worth having as a graph: how densely
+> two languages' words link is itself evidence about how those languages relate.
+
+### The new lexicon
+
+- **`eu.leksis.cognate`** — symmetric, pairwise, **entry-level**. No kind, no
+  direction, no mechanism. It is `eu.leksis.relation` with the sense machinery
+  amputated: same record pattern, one altitude up.
+- **The vertex is the lexeme**, because every sense of a word shares the word's
+  history. So there is no place prefix, no expansion, no coarseness — and **a
+  cognate survives edits that park a translation**: restructured definitions, a
+  re-spelled headword, a new sense all leave it alone. Only a withdrawn entry or
+  one the AppView has never seen unseats it.
+- **Three states**, not four (`live | unresolved | stale`): a cognate yields
+  exactly one edge, so there is nothing to cap.
+- **A doublet is an ordinary cognate** — two words of one language descended from
+  one origin by different routes, rendered and traversed like any other pair.
+- **Historical and reconstructed forms need no special machinery**: a
+  proto-language is an ordinary language record, its forms ordinary entries, and
+  an etymon is simply the entry on the other side of a cognate.
+
+### The entry gains prose
+
+- **`etymology?: string[]`** — paragraphs in the entry's own language, one item
+  per paragraph so a competing account sits beside the main one. Record-only
+  content like `notes`, never indexed. **Additive**, so no existing record is
+  invalidated and no bot republishes.
+- The two hand off: the prose names a historical form, and that form becomes a
+  cognate link once it has records of its own.
+
+### Reading a network rather than an answer
+
+- **`GET /entries/:key/cognates` serves the whole connected component** — every
+  word reachable through anyone's assertions, each with its distance in hops —
+  not just this entry's direct cognates. The one read surface that deliberately
+  shows more than what was asserted about the word you are looking at, because a
+  translation search has a target and an answer while a cognate network has a
+  shape.
+- **Computed per request, cached nowhere**: a component is the transitive closure
+  of the edges, so storing it would buy an invalidation problem for a traversal
+  already bounded at 500 vertices.
+- **Truncation is read off the graph**, not off a row count — any edge with one
+  end in the served set and one end outside — which catches the node cap, the
+  depth cap and a dropped vertex with one check, and the page says so.
+- The entry page groups the component **by language**, its own language first
+  (that is where doublets are), badging each word as directly asserted or
+  reached through N assertions, and expanding to the assertions themselves with
+  their notes resolved from the author's PDS.
+
+### Housekeeping in the same pass
+
+- **Two named graphs** (`semanticNetwork`, `cognateNetwork`) are declared by
+  `db:init` **for aardvark's graph viewer only** — every traversal still names
+  its edge collection directly in AQL.
+- **Legacy bootstrap code removed**: the `obsoleteCollections` (`definitions`,
+  `translations`) and `renamedCollections` (`abbreviations`) blocks migrated a
+  database about to be replaced wholesale under a new name.
+- The entry editor's deferred-fields hint was corrected — it still promised
+  etymology, translations and hierarchical structure as future work, all three of
+  which have shipped.
+
 ## The contributor page — your words, on your server, and yours to take back
 
 Content loop 6 (polish). Until now a user could see the dictionary but not their

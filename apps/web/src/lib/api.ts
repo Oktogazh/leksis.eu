@@ -2,6 +2,7 @@ import {
   RESOLVE_URI_LIMIT,
   type LabelsResponse,
   type LabelView,
+  type CognateNetworkResponse,
   type CurrentLanguageRecordResponse,
   type EntriesResponse,
   type EntryRelationsResponse,
@@ -159,6 +160,22 @@ export async function fetchEntryRelations(key: string): Promise<EntryRelationsRe
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`GET /entries/${key}/relations failed: ${res.status}`);
   return (await res.json()) as EntryRelationsResponse;
+}
+
+/**
+ * One entry's cognate network: the whole connected component it sits in, plus
+ * its own parked assertions. Null when the entry is unknown.
+ *
+ * The whole component rather than the direct cognates, deliberately — a cognate
+ * network has no target and nothing to rank, and its *shape* is what says
+ * something (how densely two languages' words link is evidence about how the
+ * languages relate). The server bounds it and sets `truncated` when it cut.
+ */
+export async function fetchEntryCognates(key: string): Promise<CognateNetworkResponse | null> {
+  const res = await fetch(`${API_BASE}/entries/${encodeURIComponent(key)}/cognates`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`GET /entries/${key}/cognates failed: ${res.status}`);
+  return (await res.json()) as CognateNetworkResponse;
 }
 
 /** The current version of one entry by its stable key, or null when unknown. */

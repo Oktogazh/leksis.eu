@@ -6,6 +6,7 @@ import {
   placePathKey,
   placePrefixMatches,
   type LabelView,
+  type CognateNetworkResponse,
   type EntryRelationsResponse,
   type EntryView,
   type Grammar,
@@ -15,6 +16,11 @@ import {
 } from "@leksis/types";
 import { EntryEditorDialog } from "../components/CreateEntryPanel";
 import { DefinitionList, TagChips } from "../components/EntryPreview";
+import { EntryCognates, ParkedCognates } from "../components/EntryCognates";
+import {
+  CognateEditorDialog,
+  type CognateEditorLaunch,
+} from "../components/CognateEditorDialog";
 import { ParkedRelations, SenseRelations } from "../components/EntryRelations";
 import {
   RelationEditorDialog,
@@ -23,7 +29,13 @@ import {
 import { useSession } from "../auth/SessionProvider";
 import { EntryParadigm } from "../components/ParadigmView";
 import { endonym } from "../components/LanguageSelector";
-import { fetchEntryRelations, fetchLabels, fetchEntry, searchEntries } from "../lib/api";
+import {
+  fetchEntryCognates,
+  fetchEntryRelations,
+  fetchLabels,
+  fetchEntry,
+  searchEntries,
+} from "../lib/api";
 import { fetchEntryRecord } from "../lib/atproto-record";
 import { fetchLanguageGrammar } from "../lib/language-grammar";
 
@@ -99,6 +111,16 @@ export function EntryPage({
    * reads exactly as before when the network knows nothing about it.
    */
   const [relations, setRelations] = useState<EntryRelationsResponse | null>(null);
+  /**
+   * The cognate network around this entry — the whole component, not just what
+   * was asserted about this word. Best-effort side data like the relations: an
+   * entry reads exactly as before when nothing links to it.
+   */
+  const [cognates, setCognates] = useState<CognateNetworkResponse | null>(null);
+  /** The cognate editor's launch context. Null = closed. */
+  const [cognateLaunch, setCognateLaunch] = useState<CognateEditorLaunch | null>(null);
+  /** Polling the network back after publishing or withdrawing a cognate. */
+  const [cognateSyncing, setCognateSyncing] = useState(false);
   const [state, setState] = useState<LoadState>("loading");
   const [proposing, setProposing] = useState(false);
   /**
@@ -126,6 +148,7 @@ export function EntryPage({
     setLabels([]);
     setGrammar(undefined);
     setRelations(null);
+    setCognates(null);
     setRedirectTarget(null);
 
     (async () => {
@@ -158,6 +181,11 @@ export function EntryPage({
         fetchEntryRelations(found.key)
           .then((found2) => {
             if (!cancelled) setRelations(found2);
+          })
+          .catch(() => {});
+        fetchEntryCognates(found.key)
+          .then((network) => {
+            if (!cancelled) setCognates(network);
           })
           .catch(() => {});
         // Hydration: the language's own declaration is what turns this entry's
@@ -237,6 +265,27 @@ export function EntryPage({
     }, SYNC_POLL_MS);
     return () => clearInterval(timer);
   }, [relationSyncing, entryKey]);
+
+  // After publishing or withdrawing a cognate: re-read the network until the
+  // AppView has caught up with the PDS write. Same shape as the relation poll —
+  // a withdrawal has no URI to wait for either.
+  useEffect(() => {
+    if (!cognateSyncing) return;
+    let tries = 0;
+    const timer = setInterval(() => {
+      tries += 1;
+      // Outside the promise, so a persistently failing API still ends the poll.
+      if (tries >= SYNC_POLL_MAX_TRIES) setCognateSyncing(false);
+      fetchEntryCognates(entryKey)
+        .then((network) => {
+          if (network !== null) setCognates(network);
+        })
+        .catch(() => {
+          /* transient — the tries counter above ends it either way */
+        });
+    }, SYNC_POLL_MS);
+    return () => clearInterval(timer);
+  }, [cognateSyncing, entryKey]);
 
   const language =
     view !== null ? (languages.find((l) => l.tag === view.languageID) ?? null) : null;
@@ -508,6 +557,55 @@ export function EntryPage({
             />
           )}
 
+          {/* Etymology, then the cognate network it hands off to: the word's
+              history as prose, and the machine-followable half of the same
+              knowledge as a graph. They read as one topic, so they sit
+              together. */}
+          {record.etymology !== undefined && record.etymology.length > 0 && (
+            <section className="mt-6">
+              <h2 className="text-sm font-semibold text-content">{t("entry.etymologyLabel")}</h2>
+              <div className="mt-2 space-y-2">
+                {record.etymology.map((paragraph, i) => (
+                  <p key={i} className="text-sm text-content-muted">
+                    {paragraph}
+                  </p>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {cognates !== null && (
+            <>
+              <EntryCognates
+                network={cognates}
+                languageID={view.languageID}
+                languages={languages}
+                onOpenEntry={onOpenEntry}
+                onAdd={did !== null ? () => setCognateLaunch({ source: view }) : undefined}
+              />
+              <ParkedCognates
+                parked={cognates.parked}
+                languages={languages}
+                onOpenEntry={onOpenEntry}
+                onEdit={
+                  did !== null
+                    ? (cognate) =>
+                        setCognateLaunch({
+                          source: view,
+                          targetEntryKey: cognate.sides[1].entryKey,
+                          targetLanguage: cognate.sides[1].languageID,
+                          targetQuery: cognate.sides[1].recordedOrthography ?? "",
+                          existing: cognate,
+                        })
+                    : undefined
+                }
+              />
+            </>
+          )}
+          {cognateSyncing && (
+            <p className="mt-2 text-xs text-content-subtle">{t("cognates.syncing")}</p>
+          )}
+
           {record.notes !== undefined && record.notes.length > 0 && (
             <section className="mt-6">
               <h2 className="text-sm font-semibold text-content">{t("entry.notesLabel")}</h2>
@@ -610,6 +708,22 @@ export function EntryPage({
           onDeleted={(uri) => {
             setProposing(false);
             setSyncingURI(uri);
+          }}
+        />
+      )}
+
+      {cognateLaunch !== null && (
+        <CognateEditorDialog
+          {...cognateLaunch}
+          languages={languages}
+          onClose={() => setCognateLaunch(null)}
+          onPublished={() => {
+            setCognateLaunch(null);
+            setCognateSyncing(true);
+          }}
+          onDeleted={() => {
+            setCognateLaunch(null);
+            setCognateSyncing(true);
           }}
         />
       )}

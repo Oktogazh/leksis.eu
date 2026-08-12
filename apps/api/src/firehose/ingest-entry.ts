@@ -15,6 +15,7 @@ import {
 import { db } from "../db";
 import { syncEntryTags } from "./labels";
 import type { IngestResult } from "./ingest-language";
+import { reviveUnresolvedCognates, syncEntryCognates } from "./ingest-cognate";
 import { reviveUnresolvedRelations, syncEntrySenses } from "./ingest-relation";
 
 // Decomposition of eu.leksis.entry records into the `entries` collection.
@@ -426,9 +427,17 @@ export async function ingestEntry(
   // as a translation — a withdrawal is a claim that these senses should not be
   // offered.
   await syncEntrySenses(db, entryKey, doc.languageID, parsed.deleted ? [] : doc.places);
-  // A relation may have arrived before the entry version it pins: Jetstream
-  // delivers records in arbitrary order. This is the join that revives it.
+  // The cognate network follows too, but for different reasons: a withdrawal
+  // parks the cognates pinning this entry, and an ordinary republication
+  // refreshes what its lexeme vertex denormalizes (a re-spelled headword would
+  // otherwise keep printing its old orthography in every component it is in).
+  // Restructured definitions, by contrast, are none of this network's business.
+  await syncEntryCognates(db, entryKey);
+  // A relation or a cognate may have arrived before the entry version it pins:
+  // Jetstream delivers records in arbitrary order. These are the joins that
+  // revive them.
   await reviveUnresolvedRelations(db, recordURI);
+  await reviveUnresolvedCognates(db, recordURI);
   console.log(
     `firehose: indexed entry "${doc.orthography[0]}" [${doc.entryKey}] (${current ? "new version" : "new entry"}) from ${authorDID}`,
   );
@@ -501,6 +510,11 @@ export async function ingestEntryDelete(recordURI: string): Promise<void> {
     await syncEntryTags(db, entryKey, null, []);
     await syncEntrySenses(db, entryKey, null, []);
   }
+  // The cognate network needs no version content to follow the same transition:
+  // it re-reads the entry row, so one call covers both branches — a promotion
+  // (which may revive or park the cognates pinning this entry) and the entry's
+  // disappearance (which orphans its vertex).
+  await syncEntryCognates(db, entryKey);
   console.log(
     promoted
       ? `firehose: removed current version of entry "${entryKey}" (record deleted); promoted ${promoted.recordURI}`

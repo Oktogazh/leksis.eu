@@ -217,6 +217,23 @@ export interface LeksisEntryRecord {
    * EntryDefinition). Leaves carry text; group nodes carry notes only.
    */
   definitions: EntryDefinition[];
+  /**
+   * The word's history, as prose paragraphs in the entry's own language — one
+   * item per paragraph, for a competing or complementary account as much as for
+   * a long one. Record-only content, never indexed. Absent when the entry has
+   * none.
+   *
+   * Prose deliberately, and not a graph: a word's history is a chain of forms
+   * across historical languages carrying dates, uncertainty, mechanisms whose
+   * borders blur (inherited, borrowed, calqued, derived) and disagreement
+   * between sources. Formalizing that would encode false precision and read
+   * worse for the person the entry is for. The machine-checkable half of the
+   * same knowledge — that two words share an origin — is formalized instead, as
+   * an eu.leksis.cognate record between entries: the prose tells the story, the
+   * cognate network makes it traversable, and a historical form named here
+   * becomes a link once that language and that form have records of their own.
+   */
+  etymology?: string[];
   /** Entry-level free-text notes shown below the definitions. Absent when none. */
   notes?: string[];
   /** Bibliographic references shown at the bottom of the entry. Absent when none. */

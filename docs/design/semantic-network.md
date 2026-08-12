@@ -573,12 +573,24 @@ the raw score; and **invalid means absent** — a relation voted below zero park
 edges removed), it is never served with a penalty weight. Ranking then replaces hop count; nothing
 else in §3 changes shape.
 
-### 6.2 Cognates and etymology
+### 6.2 Cognates and etymology — **built, see ADR-0013**
 
-Future **separate lexicons**, not `kind` values: they relate *lexemes* (and historical forms), not
-senses, so they traverse a different vertex altitude — entry-level or their own vertex class, decided
-when designed. They share the pattern of this note (symmetric-or-directed record → derived edges),
-not its collections.
+This seam was opened on 2026-08-12, and the answer split the pair rather than building it: **only
+cognacy became a lexicon**. `eu.leksis.cognate` is symmetric, pairwise and **entry-level** — the
+vertex altitude this section left open resolved to the lexeme, materialized on demand in `lexemes`
+— and it shares this note's pattern (symmetric record → derived edges, versioned by `subject`,
+park-never-serve) without sharing its collections, as predicted.
+
+**Etymology did not become a graph at all.** It is prose on the entry (`etymology?: string[]`),
+because a word's history carries dates, uncertainty, competing accounts and mechanisms whose borders
+blur, and a schema for it would encode false precision while reading worse. The two hand off to each
+other: the prose names historical forms, each becoming a cognate link once that language and that
+form have records. A proto-language is an ordinary language record; a reconstructed form, an
+ordinary entry.
+
+One consequence worth carrying back into this note: because a cognate addresses the *word*, it is
+immune to the drift machinery §2 exists for. Restructured definitions, a re-spelling, a new sense —
+none park a cognate. Only a withdrawal or an unknown entry does.
 
 ### 6.3 Sentences, translation memory, and the interface's own translations
 

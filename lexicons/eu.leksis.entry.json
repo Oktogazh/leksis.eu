@@ -43,6 +43,12 @@
             "items": { "type": "ref", "ref": "#definition" },
             "description": "The entry's definitions as a flat list, each item a node of a hierarchy of up to three dimensions addressed by its `place`. A node whose place ends in a non-zero index is a leaf (the definition proper: it carries `text`); a node whose place ends in 0 is a group node (a heading that carries notes but no text — e.g. the \"transitive\" grouping over several senses). Bare grouping (a group with no notes) is left implicit — it need not appear as its own item; the hierarchy is inferred from the leaves. The array is sorted by `place` in reading order."
           },
+          "etymology": {
+            "type": "array",
+            "maxLength": 16,
+            "items": { "type": "string", "maxLength": 4096, "maxGraphemes": 2048 },
+            "description": "The word's history, as prose paragraphs written in the entry's own language — one item per paragraph, for a competing or complementary account as much as for a long one. Prose deliberately, and not a graph: a word's history is a chain of forms across historical languages, carrying dates, uncertainty, mechanisms whose borders blur (inherited, borrowed, calqued, derived) and disagreement between sources, and formalizing it would encode false precision while reading worse for the person the entry is for. What IS formalized is the simple, machine-checkable half of the same knowledge: that two words share an origin, asserted between entries as an eu.leksis.cognate record. So a historical form named in this prose becomes a cognate link once that language and that form have records of their own — the prose tells the story, the cognate network makes it traversable. Record-only content, not indexed by the AppView."
+          },
           "notes": {
             "type": "array",
             "items": { "type": "string", "maxLength": 2048, "maxGraphemes": 1024 },

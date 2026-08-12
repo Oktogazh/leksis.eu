@@ -1,0 +1,62 @@
+{
+  "lexicon": 1,
+  "id": "eu.leksis.cognate",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "One cognacy assertion between two dictionary words — the atom of the Leksis cognate network. It states that two words share a historical origin, and deliberately states nothing else: not which came first, not by which mechanism (inheritance, borrowing, calque, derivation), not through which intermediate forms. Those distinctions are often blurred, disputed, or unknowable, and they are prose: an entry's `etymology` field tells its word's story in the entry's own language. What is left here is simple enough to be asserted, contested and traversed by machine — which is what makes the network measurable, since how densely two languages' words are linked is itself evidence of how related those languages are. A cognate is a WORD-level assertion, not a sense-level one: it relates lexemes, so it carries no sense address (contrast eu.leksis.relation, which relates senses and travels through them). Like every relation in Leksis it is symmetric and stands on its own, so the two directions can never disagree and neither entry has to be republished when a cognate is added. Records prove authorship, not ownership: any user may publish a cognate, and a record carrying a `subject` reference is a proposed new version of the cognate that record belongs to — the AppView treats the latest version as current and archives previous ones.",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["sides", "createdAt"],
+        "properties": {
+          "sides": {
+            "type": "array",
+            "minLength": 2,
+            "maxLength": 2,
+            "items": { "type": "ref", "ref": "#side" },
+            "description": "Exactly two sides, in no meaningful order: cognacy is symmetric, and swapping the sides expresses the same assertion. The two sides may name the same language — a doublet, two words of one language descended from the same origin by different routes, is an ordinary cognate pair — but must not name the same entry, which would assert nothing. Historical and reconstructed languages are named like any other: once a proto-language has a language record and its forms have entries, an etymon is simply the entry on the other side of a cognate."
+          },
+          "notes": {
+            "type": "array",
+            "items": { "type": "string", "maxLength": 2048, "maxGraphemes": 1024 },
+            "description": "Free-text remarks about the assertion itself — a source, a caveat that the cognacy is contested, a mechanism worth naming even though the record does not encode one. Record-only content, never indexed."
+          },
+          "subject": {
+            "type": "string",
+            "format": "at-uri",
+            "description": "AT URI of the cognate record version this record modifies. Absent for a brand-new cognate; present on a proposed correction, so the AppView attaches this version to the existing cognate and archives the previous one. Correcting a wrong cognate, and re-affirming one whose entries have since been republished, are both this: publishing a new version."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "Client-declared creation time of this record version."
+          }
+        }
+      }
+    },
+    "side": {
+      "type": "object",
+      "required": ["entry", "languageID"],
+      "description": "One end of a cognate: which word, in which language.",
+      "properties": {
+        "entry": {
+          "type": "string",
+          "format": "at-uri",
+          "description": "AT URI of the eu.leksis.entry record version this side refers to. A specific version, as in eu.leksis.relation, because a record must reference the network rather than this AppView's index: an entry identity (an entryKey) is AppView-minted and has no meaning off it. Unlike a semantic relation, a cognate does not go stale when the entry is restructured — it addresses the word as a whole, and every version of an entry is the same word — so the AppView resolves the version to its entry and follows it forward."
+        },
+        "languageID": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Well-formed IETF BCP 47 tag of this side's language, normalized to lowercase. Denormalized from the referenced entry so the record is legible on its own; the AppView joins on `entry` alone."
+        },
+        "orthography": {
+          "type": "string",
+          "maxLength": 256,
+          "maxGraphemes": 128,
+          "description": "The entry's canonical spelling when the cognate was authored, denormalized so the record reads on its own and so a client has something to show if the referenced entry cannot be resolved. Display fallback only, never matched on: it goes stale harmlessly when an entry is re-spelled."
+        }
+      }
+    }
+  }
+}

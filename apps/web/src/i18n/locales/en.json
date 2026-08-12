@@ -255,6 +255,62 @@
       "deleteFailed": "Could not remove the record from your PDS. Try again."
     }
   },
+  "cognates": {
+    "title": "Cognates",
+    "hint": "Words sharing a historical origin with this one. The chain of forms behind them is prose, told in the etymology; this is the part the dictionary can follow, so it reaches words nobody linked to this one directly.",
+    "directLabel": "directly asserted",
+    "steps_one": "through {{count}} assertion",
+    "steps_other": "through {{count}} assertions",
+    "distanceHint": "Distance counts the assertions between two words. It says how the dictionary got there, not how closely the words are related.",
+    "truncated": "This network is larger than can be shown at once — only part of it is displayed.",
+    "assertionsLabel": "Linked by",
+    "withLabel": "with",
+    "details": "details",
+    "notesLoading": "Reading the assertion's record…",
+    "noNotes": "No remarks on this assertion.",
+    "viewRecord": "View this cognate's source record ↗",
+    "unresolvedSide": "This word's entry is not indexed — the spelling comes from the cognate's own record.",
+    "addLabel": "＋ add a cognate",
+    "addHint": "Assert that this word and another share a historical origin.",
+    "parkedLabel": "Cognates needing repair",
+    "parkedHint": "These assertions cannot currently be vouched for, so they are kept out of the network until someone re-affirms them.",
+    "stateStale": "entry withdrawn",
+    "stateUnresolved": "entry not indexed",
+    "edit": "edit",
+    "reaffirm": "re-affirm",
+    "syncing": "Publishing to the network — this cognate will appear here once indexed."
+  },
+  "cognateEditor": {
+    "title": "Add a cognate of “{{word}}”",
+    "editTitle": "Edit this cognate of “{{word}}”",
+    "intro": "The assertion will live as a record on your own PDS, pointing at both entries. It is symmetric and says one thing: these two words share a historical origin. Which came first, and by what route, belongs in each entry’s etymology.",
+    "reaffirmIntro": "This cognate is withheld because one of its entries is no longer readable. Re-pick the word it means today and publish it again to revive it.",
+    "targetLabel": "The other word",
+    "targetLanguageHelp": "Pick the language it belongs to. The same language is valid — two words of one language can descend from one origin by different routes.",
+    "changeLanguage": "change language",
+    "wordLabel": "Word",
+    "wordPlaceholder": "Start typing a spelling…",
+    "noWordFound": "No entry with that spelling yet. It has to exist before it can be linked to — including a historical or reconstructed form, which is an entry in its own language like any other.",
+    "changeWord": "change word",
+    "notesLabel": "Remarks (optional)",
+    "notesHelp": "A source, a caveat that the cognacy is disputed, or the mechanism if you know it. One per line. Kept on the record, not in the index.",
+    "notesPlaceholder": "Borrowed rather than inherited; see Matasović 2009.",
+    "cancel": "Cancel",
+    "submit": "Publish",
+    "submitting": "Publishing…",
+    "delete": "Withdraw my record",
+    "deleteHint": "Removes your own record from your PDS. If someone published an earlier version of this cognate, that version becomes current again — withdrawing yours is not the same as removing the cognate.",
+    "deleting": "Withdrawing…",
+    "errors": {
+      "sides": "A cognate needs exactly two sides.",
+      "entry-uri": "One side does not point at a record.",
+      "language": "One side's language tag is not well-formed.",
+      "self": "Both sides name the same entry — a word shares an origin with itself, which asserts nothing.",
+      "notesUnreadable": "This cognate's own record could not be read, so editing it would discard any remarks it carries. Try again in a moment.",
+      "writeFailed": "Could not write the record to your PDS. Try again.",
+      "deleteFailed": "Could not remove the record from your PDS. Try again."
+    }
+  },
   "createEntry": {
     "title": "Add “{{word}}” to {{language}}",
     "titleNoLanguage": "Add “{{word}}” to a language",
@@ -292,7 +348,7 @@
     "todoItemPlaceholder": "e.g. verify the definitions against the source",
     "addTodoItem": "＋ Add a task",
     "removeTodoItem": "Remove",
-    "laterFields": "Translations, hierarchical structure and etymology join the entry in later milestones.",
+    "laterFields": "Example sentences, recordings and dialectal forms join the entry in later milestones.",
     "cancel": "Cancel",
     "submit": "Create the entry",
     "titleModify": "Propose changes to “{{word}}”",
@@ -338,7 +394,13 @@
     "categoryAbandon": "Abandon this category",
     "formTagClear": "Clear this form's tag",
     "formTagManualLabel": "Tag for this form, typed by hand",
-    "formTagSet": "Set"
+    "formTagSet": "Set",
+    "etymologyLegend": "Etymology",
+    "etymologyHelp": "Where the word comes from, in prose, written in this entry's own language — one paragraph per box. Dates, uncertainty and disagreement between sources belong here: a word's history rarely fits a form. To state that this word and another share an origin in a way the dictionary can follow, add a cognate on the entry's page instead.",
+    "etymologyItemLabel": "Etymology paragraph",
+    "etymologyPlaceholder": "From Proto-Celtic *ɸatīr, itself from Proto-Indo-European *ph₂tḗr…",
+    "addEtymology": "＋ Add a paragraph",
+    "removeEtymology": "Remove"
   },
   "deleteRecords": {
     "oneTitle": "Delete these {{count}} records?",
@@ -487,7 +549,8 @@
     "deletedTitle": "This entry was deleted",
     "deletedReasonLabel": "Reason",
     "deletedRedirectLabel": "The correct entry is:",
-    "deleteAction": "Delete this entry"
+    "deleteAction": "Delete this entry",
+    "etymologyLabel": "Etymology"
   },
   "deleteEntry": {
     "title": "Delete “{{word}}”",
