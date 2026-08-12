@@ -258,6 +258,7 @@
   "cognates": {
     "title": "Cognates",
     "hint": "Words sharing a historical origin with this one. The chain of forms behind them is prose, told in the etymology; this is the part the dictionary can follow, so it reaches words nobody linked to this one directly.",
+    "empty": "No cognate has been recorded for this word yet. If you know a word — in any language, including a historical or reconstructed one — that shares its origin, link the two.",
     "directLabel": "directly asserted",
     "steps_one": "through {{count}} assertion",
     "steps_other": "through {{count}} assertions",

@@ -275,7 +275,13 @@ export function EntryCognates({
       );
   }, [network.nodes, network.entryKey, languages, languageID]);
 
-  if (groups.length === 0 && network.parked.length === 0) return null;
+  // An empty network still renders **for someone who could fill it**: the add
+  // button is the only way a word gets its first cognate, so hiding the section
+  // when there is nothing in it would make the feature unreachable exactly where
+  // it is needed. A signed-out reader gets nothing, since there is neither
+  // content to show nor an action to offer. (Parked assertions are not a reason
+  // to render either — ParkedCognates is its own section.)
+  if (groups.length === 0 && onAdd === undefined) return null;
 
   return (
     <section className="mt-8">
@@ -293,7 +299,9 @@ export function EntryCognates({
         )}
       </div>
 
-      {groups.length > 0 && (
+      {groups.length === 0 ? (
+        <p className="mt-1 text-xs text-content-subtle">{t("cognates.empty")}</p>
+      ) : (
         <>
           <p className="mt-1 text-xs text-content-subtle">{t("cognates.hint")}</p>
           {network.truncated && (
