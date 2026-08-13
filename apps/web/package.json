@@ -1,6 +1,6 @@
 {
   "name": "@leksis/web",
-  "version": "0.19.0",
+  "version": "0.20.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,6 +13,7 @@
   "dependencies": {
     "@atproto/api": "^0.20.22",
     "@atproto/oauth-client-browser": "^0.4.3",
+    "@leksis/oclc": "*",
     "@leksis/types": "*",
     "@leksis/ud": "*",
     "i18next": "^26.3.2",

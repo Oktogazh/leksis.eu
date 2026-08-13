@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { EntryView, LanguageView } from "@leksis/types";
 import { searchEntries } from "../lib/api";
-import { CreateEntryPanel } from "./CreateEntryPanel";
+import { CreatePanel, type CreateActions } from "./CreatePanel";
 import { endonym } from "./LanguageSelector";
+import type { SearchKind } from "../lib/search-kind";
 
 const SYNC_POLL_MS = 3_000;
 const SYNC_POLL_MAX_TRIES = 20; // ~60s of PDS → Jetstream → ArangoDB latency
@@ -15,6 +16,10 @@ interface SearchResultsProps {
   languages: LanguageView[];
   /** Scope of the search; null means all languages. */
   language: LanguageView | null;
+  /** The active search kind, so the create chooser opens on the right option. */
+  kind: SearchKind;
+  /** What the create chooser reports back; the entry half is wrapped below. */
+  create: CreateActions;
   /** Navigate to an entry's page (?e=<key>). */
   onOpenEntry: (key: string) => void;
 }
@@ -25,7 +30,14 @@ interface SearchResultsProps {
  * the offer to create the searched word. After a creation the list polls
  * until the new record has round-tripped PDS → Jetstream → ArangoDB.
  */
-export function SearchResults({ query, languages, language, onOpenEntry }: SearchResultsProps) {
+export function SearchResults({
+  query,
+  languages,
+  language,
+  kind,
+  create,
+  onOpenEntry,
+}: SearchResultsProps) {
   const { t } = useTranslation();
   const [entries, setEntries] = useState<EntryView[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -96,6 +108,23 @@ export function SearchResults({ query, languages, language, onOpenEntry }: Searc
         )}
       </p>
 
+      {/* Above the results, not below them: somebody who did not find what
+          they searched for should not have to scroll past what they did find
+          in order to add it. */}
+      <CreatePanel
+        key={`${language?.tag ?? ""}:${query}`}
+        query={query}
+        languages={languages}
+        language={language}
+        kind={kind}
+        onEntryCreated={(uri) => {
+          setSyncingURI(uri);
+          create.onEntryCreated(uri);
+        }}
+        onLanguageCreated={create.onLanguageCreated}
+        onSourcePublished={create.onSourcePublished}
+      />
+
       {failed ? (
         <p className="mt-4 text-sm text-red-600">{t("search.loadFailed")}</p>
       ) : entries !== null && entries.length > 0 ? (
@@ -139,14 +168,6 @@ export function SearchResults({ query, languages, language, onOpenEntry }: Searc
       {syncingURI !== null && (
         <p className="mt-3 text-sm text-content-subtle">{t("search.syncingEntry")}</p>
       )}
-
-      <CreateEntryPanel
-        key={`${language?.tag ?? ""}:${query}`}
-        word={query}
-        languages={languages}
-        language={language}
-        onCreated={setSyncingURI}
-      />
     </section>
   );
 }

@@ -4,13 +4,17 @@ import {
   type LabelView,
   type CognateNetworkResponse,
   type CurrentLanguageRecordResponse,
+  type CurrentSourceRecordResponse,
   type EntriesResponse,
   type EntryRelationsResponse,
   type EntryResolveResponse,
   type EntryView,
   type LanguageDashboardResponse,
+  type LanguageSourcesResponse,
   type LanguagesResponse,
   type LanguageView,
+  type SourcesResponse,
+  type SourceView,
   type TranslateResponse,
 } from "@leksis/types";
 
@@ -184,4 +188,51 @@ export async function fetchEntry(key: string): Promise<EntryView | null> {
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`GET /entries/${key} failed: ${res.status}`);
   return (await res.json()) as EntryView;
+}
+
+/**
+ * Case-insensitive prefix search over the works contributors have described,
+ * matching their citation forms, title and author, optionally scoped to one
+ * language ("" = all).
+ *
+ * The scope asks "does this source declare that language", not "is it that
+ * language's source": a bilingual dictionary is offered to the entry editors of
+ * both its languages, which is what the record's `languages` list is for.
+ */
+export async function searchSources(query: string, languageTag: string): Promise<SourceView[]> {
+  const params = new URLSearchParams({ q: query });
+  if (languageTag !== "") params.set("l", languageTag);
+  const res = await fetch(`${API_BASE}/sources?${params.toString()}`);
+  if (!res.ok) throw new Error(`GET /sources failed: ${res.status}`);
+  const body = (await res.json()) as SourcesResponse;
+  return body.sources;
+}
+
+/** Every source declaring this language, the ones whose main language it is first. */
+export async function fetchLanguageSources(languageTag: string): Promise<SourceView[]> {
+  const res = await fetch(`${API_BASE}/languages/${encodeURIComponent(languageTag)}/sources`);
+  if (!res.ok) {
+    throw new Error(`GET /languages/${languageTag}/sources failed: ${res.status}`);
+  }
+  const body = (await res.json()) as LanguageSourcesResponse;
+  return body.sources;
+}
+
+/**
+ * The reference to a source's current eu.leksis.source record, or null when
+ * nobody has described this OCLC number yet.
+ *
+ * **Null is ordinary here, not an error.** An entry may cite a work before
+ * anyone has described it — that is the point of citing the number rather than
+ * a record URI — so every caller has a degraded rendering to fall back on.
+ */
+export async function fetchCurrentSourceRecord(
+  oclc: string,
+): Promise<CurrentSourceRecordResponse | null> {
+  const res = await fetch(`${API_BASE}/sources/${encodeURIComponent(oclc)}/currentRecord`);
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`GET /sources/${oclc}/currentRecord failed: ${res.status}`);
+  }
+  return (await res.json()) as CurrentSourceRecordResponse;
 }

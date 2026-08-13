@@ -17,12 +17,42 @@ interface LanguageSearchBarProps {
 }
 
 /**
- * A reusable search over the known languages: finds a language by its name in
- * the UI locale, its endonym, or its BCP 47 code (the chip shown beside the
- * name). Purely presentational — it filters the list it's given and reports
- * the picked tag; callers decide what a pick means (reveal a name row, add a
- * translation, …). No network. Future call sites (entry editor language pick,
- * etc.) reuse it.
+ * Find a language by its name in the UI locale, its endonym, or its BCP 47
+ * code. Substring rather than prefix, because the useful query is often in the
+ * middle of a name ("gwenedeg" inside a fuller form), and the code matches by
+ * construction — which is what makes this work for a language whose name
+ * nobody has translated yet.
+ *
+ * Exported as a pure function so the search surface can offer languages as a
+ * result kind without a second endpoint: the whole list is already loaded, so
+ * language search is a filter, not a request.
+ */
+export function matchLanguages(
+  languages: LanguageView[],
+  query: string,
+  options: { exclude?: ReadonlySet<string>; limit?: number } = {},
+): LanguageView[] {
+  const { exclude, limit } = options;
+  const q = query.trim().toLowerCase();
+  const candidates =
+    exclude === undefined ? languages : languages.filter((l) => !exclude.has(l.tag));
+  const matched =
+    q === ""
+      ? candidates
+      : candidates.filter((l) => {
+          const name = l.name?.toLowerCase() ?? "";
+          return (
+            l.tag.toLowerCase().includes(q) || l.endonym.toLowerCase().includes(q) || name.includes(q)
+          );
+        });
+  return limit === undefined ? matched : matched.slice(0, limit);
+}
+
+/**
+ * A reusable search over the known languages, using `matchLanguages`. Purely
+ * presentational — it filters the list it's given and reports the picked tag;
+ * callers decide what a pick means (reveal a name row, add a translation, …).
+ * No network. Future call sites (entry editor language pick, etc.) reuse it.
  */
 export function LanguageSearchBar({
   languages,

@@ -58,6 +58,58 @@ every entry that quotes the work renders it from there.
   `(OCoLC)ocm00012345` reaches the same source as `12345`), and
   `GET /languages/:tag/sources`, main-language sources first.
 
+### The interfaces (slice 2)
+
+A source could be indexed but not yet described by anyone, searched for, or
+looked at. All three now have a surface, and the API cost of the slice was
+**zero** — slice 1's three endpoints were already the whole read contract.
+
+- **`@leksis/oclc`** — type a number, get the title, subtitle, authors, year and
+  a link. **OpenLibrary**, verified at source: keyless, `access-control-allow-origin: *`
+  even with an `Origin` header, so the browser calls it directly and no proxy
+  sits in a content path. WorldCat's API needs a key and its public page is
+  CORS-blocked; both are recorded as rejected so neither is re-proposed.
+  The `@leksis/ud` contract, verbatim: **null on every failure**, parsing split
+  from fetching, and the manual path never gated on the lookup — which matters
+  more here than for UD, because the works most worth citing for a low-resource
+  language are exactly the ones no catalogue has ever seen. One fact shaped the
+  parser: an unknown number answers **`200 {}`**, not a 404, so "not catalogued"
+  and "request failed" arrive looking nothing alike and both have to end as null.
+- **`SourceEditorDialog`** — category prefilled and disabled (visible, not
+  hidden: the field is what says the record is meant to grow), the number,
+  the fetched-or-typed prose, the languages, the two citation forms. The
+  automatic lookup **only fills blanks**; an explicit "look it up again"
+  replaces. rkey = the normalized number, exactly as a language record keys on
+  its tag.
+- **`languages[0]` is enforced where the design said it would be.** The AppView
+  only flags a version that moves the main language, so the editor is what makes
+  it impossible: when editing, it is displayed and has no control at all.
+- **A stale-rewrite guard**, which is why `CurrentSourceRecordResponse` carries a
+  cid. The editor re-reads it immediately before publishing and refuses rather
+  than dropping what somebody else added — and unlike an entry, a source is
+  described by *strangers*, so that somebody else is usually not you.
+- **The search bar learned two more kinds** — words | languages | sources —
+  mirrored into `/?q=&l=&kind=` and omitted for words, so every link written
+  before the filter still round-trips unchanged. Languages are matched
+  **client-side**: the whole list is already loaded for the scope picker, so
+  searching it is a filter, not a request. A target language is dropped when the
+  kind is not words, at the one place a submitted search is built.
+- **The create panel moved above the results and learned to ask what.** Somebody
+  who did not find what they searched for should not scroll past what they did
+  find in order to add it. The chooser offers entry | language | source from any
+  tab, with the active one preselected. ⚠️ The design note says the language
+  branch opens "`LanguageRecordDialog` (creation mode)"; **no such mode exists** —
+  creation has always been `AddLanguageModal`, which is what the chooser opens.
+- **`/source/<oclc>`** — with the state no other resource page has: **cited but
+  undescribed**. An example references the number, not a record, so a valid
+  citation can land here before anybody has written the description. That is an
+  invitation, not a 404, and it is the whole reason the reference scheme can only
+  degrade and never break. The number is normalized in the route, so
+  `/source/(OCoLC)ocm00300375` and `/source/300375` are one page.
+- **A Sources section on each language dashboard**, its own language's works
+  first, kept off the dashboard payload deliberately — a bibliography grows on
+  its own schedule and will want paging long before the counters do.
+
 ### Every lexicon's text caps now mean what they say
 
 Not part of the slice, found while building it. AT Proto's `maxLength` counts
@@ -81,10 +133,18 @@ at ~1365 characters instead of 2048.
 
 ### Not yet
 
-The OCLC metadata lookup, the source editor, the search bar's kind filter and
-the language dashboard's source list are **slice 2**;
 `definitions[].examples` — the feature all of this is for — is **slice 3**, and
-the fixture rows come with it.
+the fixture rows come with it. The five lexicons still need publishing
+(`eu.leksis.source` plus the four widened ones, and the lagging `grammar.layout`).
+
+**Nothing in slice 2 has been driven in a browser.** Every surface it adds sits
+behind a login, and an agent cannot type a password (`verify` skill, *the session
+wall*), so the proof stopped at: all five workspaces typecheck and lint, the
+production build passes, the OCLC package is exercised against real OpenLibrary
+responses including live calls, and the kind/route/matcher logic is exercised
+directly. The editors, the tabs, the chooser and both new pages have not been
+clicked, and one end-to-end publish through a real PDS remains the unexercised
+path it was after slice 1.
 
 ## Cognates and etymology — formalize the half that can be, write the rest
 

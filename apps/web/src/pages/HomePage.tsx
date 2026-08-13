@@ -3,8 +3,11 @@ import { useTranslation } from "react-i18next";
 import { placePrefixMatches, type LanguageView, type RelationView } from "@leksis/types";
 import { AddLanguageModal } from "../components/AddLanguageModal";
 import { endonym, LanguageSelector } from "../components/LanguageSelector";
+import { LanguageResults } from "../components/LanguageResults";
 import { OnboardingFlow } from "../components/OnboardingFlow";
 import { SearchResults } from "../components/SearchResults";
+import { SourceResults } from "../components/SourceResults";
+import type { CreateActions } from "../components/CreatePanel";
 import {
   TranslationResults,
   type TranslationCorrection,
@@ -19,7 +22,14 @@ import { LanguagePage } from "./LanguagePage";
 import { UserPage } from "./UserPage";
 import { fetchEntry, fetchEntryRelations, fetchLanguages } from "../lib/api";
 import { fetchEntryRecord } from "../lib/atproto-record";
-import { entryPath, languagePath, routeFromLocation, type Route } from "../lib/routes";
+import { SourcePage } from "./SourcePage";
+import { entryPath, languagePath, routeFromLocation, sourcePath, type Route } from "../lib/routes";
+import {
+  DEFAULT_SEARCH_KIND,
+  parseSearchKind,
+  SEARCH_KINDS,
+  type SearchKind,
+} from "../lib/search-kind";
 
 const SYNC_POLL_MS = 3_000;
 const SYNC_POLL_MAX_TRIES = 20; // ~60s of PDS → Jetstream → ArangoDB latency
@@ -32,20 +42,42 @@ interface SubmittedSearch {
    * Target language at submit time; "" = none. **The presence of a target is
    * the mode**: empty means today's monolingual search, set means a translation
    * search. Nothing else switches, so there is no mode to learn.
+   *
+   * Only words can be translated, so this is forced empty for the other kinds
+   * — see `withKind`. Keeping the rule at the one place a submitted search is
+   * built means `translating` and `missingSource` below need no kind of their
+   * own to consult.
    */
   targetTag: string;
+  /** What is being searched: words (the default), languages, or sources. */
+  kind: SearchKind;
 }
 
-/** Reads ?q=&l=&t= from the current URL, e.g. shared as /?q=entry&l=en-US&t=br. */
+/**
+ * Apply the one cross-field rule: a target language is meaningless unless the
+ * kind is words, so choosing another kind drops it rather than carrying a
+ * setting that silently does nothing.
+ */
+function withKind(search: Omit<SubmittedSearch, "kind">, kind: SearchKind): SubmittedSearch {
+  return { ...search, kind, targetTag: kind === "words" ? search.targetTag : "" };
+}
+
+/**
+ * Reads ?q=&l=&t=&kind= from the current URL, e.g. shared as
+ * /?q=entry&l=en-US&t=br or /?q=favereau&kind=sources.
+ */
 function searchFromLocation(): SubmittedSearch | null {
   const params = new URLSearchParams(window.location.search);
   const query = params.get("q")?.trim() ?? "";
   if (query === "") return null;
-  return {
-    query,
-    languageTag: params.get("l") ?? "",
-    targetTag: params.get("t") ?? "",
-  };
+  return withKind(
+    {
+      query,
+      languageTag: params.get("l") ?? "",
+      targetTag: params.get("t") ?? "",
+    },
+    parseSearchKind(params.get("kind")),
+  );
 }
 
 /** The search surface's URL for one submitted state — the shareable link. */
@@ -55,6 +87,9 @@ function searchPath(search: SubmittedSearch | null): string {
     params.set("q", search.query);
     if (search.languageTag !== "") params.set("l", search.languageTag);
     if (search.targetTag !== "") params.set("t", search.targetTag);
+    // Omitted for words, so every URL written before the filter existed still
+    // round-trips to exactly the same link.
+    if (search.kind !== DEFAULT_SEARCH_KIND) params.set("kind", search.kind);
   }
   const query = params.toString();
   return query === "" ? "/" : `/?${query}`;
@@ -80,6 +115,7 @@ export function HomePage() {
   const [language, setLanguage] = useState(() => initialSearch()?.languageTag ?? "");
   const [target, setTarget] = useState(() => initialSearch()?.targetTag ?? "");
   const [term, setTerm] = useState(() => initialSearch()?.query ?? "");
+  const [kind, setKind] = useState<SearchKind>(() => initialSearch()?.kind ?? DEFAULT_SEARCH_KIND);
   const [submitted, setSubmitted] = useState<SubmittedSearch | null>(initialSearch);
   const [route, setRoute] = useState<Route>(routeFromLocation);
   const [adding, setAdding] = useState(false);
@@ -112,6 +148,7 @@ export function HomePage() {
       setTerm(search?.query ?? "");
       setLanguage(search?.languageTag ?? "");
       setTarget(search?.targetTag ?? "");
+      setKind(search?.kind ?? DEFAULT_SEARCH_KIND);
       setRoute(routeFromLocation());
     }
     window.addEventListener("popstate", onPopState);
@@ -164,7 +201,22 @@ export function HomePage() {
     event.preventDefault();
     const query = term.trim();
     if (query === "") return;
-    const search = { query, languageTag: language, targetTag: target };
+    const search = withKind({ query, languageTag: language, targetTag: target }, kind);
+    setSubmitted(search);
+    setCorrectionNotice(null);
+    window.history.pushState(null, "", searchPath(search));
+    setRoute({ kind: "search" });
+  }
+
+  /**
+   * Switching kind re-runs the search immediately when there is one, rather
+   * than waiting for the button: the tabs read as a view of one query, and a
+   * tab that changed nothing until re-submitted would read as broken.
+   */
+  function onKindChange(next: SearchKind) {
+    setKind(next);
+    if (submitted === null) return;
+    const search = withKind({ ...submitted, targetTag: target }, next);
     setSubmitted(search);
     setCorrectionNotice(null);
     window.history.pushState(null, "", searchPath(search));
@@ -253,6 +305,25 @@ export function HomePage() {
     setRoute({ kind: "language", tag });
   }
 
+  function openSource(oclc: string) {
+    window.history.pushState(null, "", sourcePath(oclc));
+    setRoute({ kind: "source", oclc });
+  }
+
+  /**
+   * What the create chooser reports back, wherever it is mounted. Each result
+   * list wraps the one it has to poll for; these are the app-wide effects.
+   */
+  const createActions: CreateActions = {
+    onEntryCreated: () => {
+      /* the words list polls for it itself */
+    },
+    onLanguageCreated,
+    onSourcePublished: () => {
+      /* the sources list polls for it itself */
+    },
+  };
+
   // "Back to search" rebuilds /?q=&l= from the submitted state, so the
   // results the entry came from reappear.
   function backToSearch() {
@@ -331,23 +402,31 @@ export function HomePage() {
 
         {/* The target half of the bar. Empty is the default and means the
             monolingual search this app has always done; picking a language is
-            the only thing that switches modes. */}
-        <label htmlFor="search-target" className="sr-only">
-          {t("search.targetLabel")}
-        </label>
-        <select
-          id="search-target"
-          value={target}
-          onChange={(e) => setTarget(e.target.value)}
-          className="rounded-lg border bg-surface px-3 py-2.5 text-sm text-content outline-none focus:ring-2 sm:w-44"
-        >
-          <option value="">{t("search.targetNone")}</option>
-          {languages.map((l) => (
-            <option key={l.tag} value={l.tag}>
-              {endonym(l)}
-            </option>
-          ))}
-        </select>
+            the only thing that switches modes.
+
+            Hidden outside the words kind rather than disabled: a language and
+            a book cannot be translated into anything, so offering the control
+            would promise something the other tabs cannot do. */}
+        {kind === "words" && (
+          <>
+            <label htmlFor="search-target" className="sr-only">
+              {t("search.targetLabel")}
+            </label>
+            <select
+              id="search-target"
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+              className="rounded-lg border bg-surface px-3 py-2.5 text-sm text-content outline-none focus:ring-2 sm:w-44"
+            >
+              <option value="">{t("search.targetNone")}</option>
+              {languages.map((l) => (
+                <option key={l.tag} value={l.tag}>
+                  {endonym(l)}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
 
         <button
           type="submit"
@@ -356,6 +435,30 @@ export function HomePage() {
           {t("search.submit")}
         </button>
       </form>
+
+      {/* One query, three things it can name. */}
+      <div className="mt-3 flex flex-wrap gap-2" role="tablist" aria-label={t("search.kindLabel")}>
+        {SEARCH_KINDS.map((value) => (
+          <button
+            key={value}
+            type="button"
+            role="tab"
+            aria-selected={kind === value}
+            onClick={() => onKindChange(value)}
+            className={`rounded-full border px-3 py-1 text-xs font-medium ${
+              kind === value
+                ? "border-primary bg-surface text-primary"
+                : "text-content-subtle hover:border-primary"
+            }`}
+          >
+            {value === "words"
+              ? t("search.kindWords")
+              : value === "languages"
+                ? t("search.kindLanguages")
+                : t("search.kindSources")}
+          </button>
+        ))}
+      </div>
 
       {syncingTag !== null && (
         <p className="mt-3 text-sm text-content-subtle">{t("addLanguage.syncing")}</p>
@@ -390,9 +493,29 @@ export function HomePage() {
           onOpenLanguage={openLanguage}
           onLanguageCreated={onLanguageCreated}
         />
+      ) : route.kind === "source" ? (
+        <SourcePage oclc={route.oclc} languages={languages} onOpenLanguage={openLanguage} />
       ) : (
         submitted !== null &&
-        (missingSource ? (
+        (submitted.kind === "languages" ? (
+          <LanguageResults
+            query={submitted.query}
+            languages={languages}
+            language={scopeLanguage}
+            kind={submitted.kind}
+            create={createActions}
+            onOpenLanguage={openLanguage}
+          />
+        ) : submitted.kind === "sources" ? (
+          <SourceResults
+            query={submitted.query}
+            languages={languages}
+            language={scopeLanguage}
+            kind={submitted.kind}
+            create={createActions}
+            onOpenSource={openSource}
+          />
+        ) : missingSource ? (
           <p className="mt-8 rounded-lg border border-dashed bg-surface px-4 py-6 text-center text-sm text-content-muted">
             {t("translate.needSource")}
           </p>
@@ -416,6 +539,8 @@ export function HomePage() {
             query={submitted.query}
             languages={languages}
             language={scopeLanguage}
+            kind={submitted.kind}
+            create={createActions}
             onOpenEntry={openEntry}
           />
         ))

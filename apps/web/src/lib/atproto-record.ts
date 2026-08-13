@@ -5,10 +5,13 @@ import {
   isValidTag,
   isValidLanguageTag,
   normalizeLanguageTag,
+  normalizeOclc,
   LEKSIS_COGNATE_COLLECTION,
   LEKSIS_ENTRY_COLLECTION,
   LEKSIS_LANGUAGE_COLLECTION,
   LEKSIS_RELATION_COLLECTION,
+  LEKSIS_SOURCE_COLLECTION,
+  SOURCE_CATEGORIES,
   type EntryDefinition,
   type EntryInflectedForm,
   type EntryReference,
@@ -19,6 +22,8 @@ import {
   type LeksisEntryRecord,
   type LeksisLanguageRecord,
   type LeksisRelationRecord,
+  type LeksisSourceRecord,
+  type SourceCategory,
 } from "@leksis/types";
 
 // Client-side resolution of eu.leksis.* records from their at:// URIs. The
@@ -362,6 +367,72 @@ export async function fetchLanguageRecord(
     tag,
     translations,
     ...(r.grammar !== undefined ? { grammar: r.grammar as Grammar } : {}),
+    createdAt: typeof r.createdAt === "string" ? r.createdAt : "",
+  };
+}
+
+/**
+ * Fetch a eu.leksis.source record from its author's PDS — the bibliographic
+ * prose the index deliberately does not serve (title, author, year, url).
+ *
+ * Lenient about the prose, strict about the two things a rewrite could
+ * destroy, which is the same split `fetchLanguageRecord` makes over `grammar`:
+ *
+ *  - **An unknown `category`** refuses the whole record. A later build may add
+ *    `recording` or `webpage`; this one would save it back as `bibliographic`
+ *    and silently reclassify somebody's work. Not editing is the safe failure.
+ *  - **An unreadable `languages[0]`** refuses too, because dropping it would
+ *    promote `languages[1]` to main — quietly performing the one change the
+ *    main language is declared immutable against. Later entries in the list are
+ *    ordinary content and malformed ones are simply dropped.
+ *
+ * Everything else degrades to an empty string, so a half-written record opens
+ * in the editor with the gaps visible rather than refusing to open at all;
+ * `validateSource` is what stops it being republished in that state.
+ */
+export async function fetchSourceRecord(recordURI: string): Promise<LeksisSourceRecord | null> {
+  const value = await fetchRecordValue(recordURI);
+  if (value === null || typeof value !== "object") return null;
+  const r = value as Record<string, unknown>;
+
+  const oclc = typeof r.oclc === "string" ? normalizeOclc(r.oclc) : null;
+  if (oclc === null) return null;
+
+  if (!SOURCE_CATEGORIES.includes(r.category as SourceCategory)) {
+    console.warn(`source record ${recordURI} has an unknown category; refusing to load it`);
+    return null;
+  }
+
+  if (!Array.isArray(r.languages) || r.languages.length === 0) return null;
+  const main = typeof r.languages[0] === "string" ? normalizeLanguageTag(r.languages[0]) : "";
+  if (!isValidLanguageTag(main)) {
+    console.warn(`source record ${recordURI} has an unreadable main language; refusing to load it`);
+    return null;
+  }
+  const languages = [main];
+  for (const item of r.languages.slice(1)) {
+    if (typeof item !== "string") continue;
+    const tag = normalizeLanguageTag(item);
+    if (isValidLanguageTag(tag) && !languages.includes(tag)) languages.push(tag);
+  }
+
+  const citation = (r.citation ?? {}) as Record<string, unknown>;
+  const optional = (key: "author" | "year" | "url") =>
+    typeof r[key] === "string" && r[key].trim() !== "" ? { [key]: r[key] } : {};
+
+  return {
+    $type: LEKSIS_SOURCE_COLLECTION,
+    category: r.category as SourceCategory,
+    oclc,
+    title: typeof r.title === "string" ? r.title : "",
+    ...optional("author"),
+    ...optional("year"),
+    ...optional("url"),
+    languages,
+    citation: {
+      short: typeof citation.short === "string" ? citation.short : "",
+      long: typeof citation.long === "string" ? citation.long : "",
+    },
     createdAt: typeof r.createdAt === "string" ? r.createdAt : "",
   };
 }

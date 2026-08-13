@@ -7,6 +7,7 @@ COPY package.json package-lock.json* ./
 COPY apps/web/package.json ./apps/web/package.json
 COPY packages/types/package.json ./packages/types/package.json
 COPY packages/ud/package.json ./packages/ud/package.json
+COPY packages/oclc/package.json ./packages/oclc/package.json
 RUN npm install --workspaces --include-workspace-root
 
 COPY tsconfig.base.json ./

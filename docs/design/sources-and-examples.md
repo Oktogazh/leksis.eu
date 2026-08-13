@@ -1,11 +1,15 @@
 # Design note: sources and example sentences
 
-**Status:** **Slice 1 built (2026-08-12); slices 2–4 designed, not yet built.** Shapes and surfaces
-settled in the 2026-08-12 design session. Slice 1 shipped the lexicon, the `sources` collection with
-firehose ingest, and the three read surfaces; the OCLC provider (§2.3) was verified at source and
-open question 1 is closed. What remains unverified is one end-to-end publish through a real PDS —
-ingest and the endpoints were driven directly against ArangoDB instead (§5).
-**Date:** 2026-08-12.
+**Status:** **Slices 1 and 2 built (2026-08-12, 2026-08-13); slices 3–4 designed, not yet built.**
+Shapes and surfaces settled in the 2026-08-12 design session. Slice 1 shipped the lexicon, the
+`sources` collection with firehose ingest, and the three read surfaces; slice 2 shipped the OCLC
+lookup package, the source editor, the search bar's kind filter, the create chooser, the
+`/source/<oclc>` page and the dashboard's source list, at **zero API cost**. What remains
+unverified is one end-to-end publish through a real PDS, and now also **every interface slice 2
+adds**: all of them sit behind a login an agent cannot perform (`verify` skill, *the session wall*),
+so slice 2 was proven by typecheck/lint/build across five workspaces plus direct harnesses over the
+OCLC parser and the kind/route/matcher logic (§5).
+**Date:** 2026-08-12, revised 2026-08-13.
 **For:** Example sentences on definitions — the first slice of the white paper's "example
 sentences" deferred item — and the `eu.leksis.source` lexicon that makes their citations
 first-class, contestable records instead of free strings.
@@ -356,10 +360,29 @@ Each leaves master deployable; the usual loop order (lexicon → ingest → AQL 
    Still owed: the lexicon is **not published** — it and the four widened ones (see the CHANGELOG's
    byte/grapheme note) go out with the lagging `grammar.layout`, and one end-to-end publish through
    a real PDS remains the only unexercised path.
-2. **The source interfaces.** The OCLC fetch package; `SourceEditorDialog`; the search-bar kind
-   filter (words | languages | sources — languages included, it's client-side); the create-flow
-   chooser + panel moved to the top; the `/source/<oclc>` view; `GET /languages/:tag/sources` +
-   the dashboard section.
+2. ~~**The source interfaces.**~~ **Built 2026-08-13.** `packages/oclc` (OpenLibrary);
+   `SourceEditorDialog`; the kind filter mirrored into `/?q=&l=&kind=`; the create chooser +
+   panel moved above the results; `SourcePage` at `/source/<oclc>`; the dashboard section.
+   `GET /languages/:tag/sources` came forward to slice 1, so the API cost here was **zero**.
+   Five things the build settled or changed:
+   - **An unknown OCLC number answers `200 {}`, not a 404.** Verified at source. So the provider
+     reports "not catalogued" and "request failed" completely differently, and the package has to
+     flatten both to null — the single fact the parser is shaped around.
+   - **The design's "`LanguageRecordDialog` (creation mode)" does not exist** (§4.2). Its modes are
+     *self* and *other*; language **creation** has always been `AddLanguageModal`, which is what the
+     chooser opens. §4.2 should be read as naming the creation surface, not that dialog.
+   - **`kind` and the pre-existing `t` (translation target) had to be reconciled**, which §4.1 does
+     not mention. Only words can be translated, so `withKind` in `HomePage` drops the target
+     whenever the kind is not words — enforced at the one place a submitted search is built, which
+     is what keeps `translating`/`missingSource` free of any knowledge of kinds. The target selector
+     is hidden rather than disabled on the other tabs.
+   - **`kind` is omitted from the URL when it is `words`**, so every link written before the filter
+     existed still round-trips to exactly the same URL.
+   - **The stale-rewrite guard became real**, using the `cid` slice 1 put on
+     `CurrentSourceRecordResponse`: the editor re-reads it immediately before publishing and refuses
+     rather than dropping a stranger's edit. `fetchSourceRecord` also refuses to load a record whose
+     `category` is unknown or whose `languages[0]` is unreadable — both are rewrites that would
+     silently destroy something, which is the `isValidGrammar` precedent.
 3. **Examples on entries.** `definitions[].examples` in the entry lexicon +
    `validateDefinitions` rule; the leaf-card examples editor with the source picker;
    EntryPage rendering with the resolve-or-degrade citation. Extend the fixture set

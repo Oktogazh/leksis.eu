@@ -7,6 +7,7 @@ import {
   type LanguageDashboardResponse,
   type LanguageView,
   type LeksisLanguageRecord,
+  type SourceView,
 } from "@leksis/types";
 import { useSession } from "../auth/SessionProvider";
 import { ActivityGrid } from "../components/ActivityGrid";
@@ -15,10 +16,17 @@ import { GrammarBindingDialog } from "../components/GrammarBindingDialog";
 import { LabelShelf } from "../components/LabelShelf";
 import { LanguageRecordDialog, type LanguageRecordMode } from "../components/LanguageRecordDialog";
 import { LanguageSearchBar } from "../components/LanguageSearchBar";
-import { fetchLabels, fetchLanguageDashboard, fetchLanguages } from "../lib/api";
+import { SourceEditorDialog } from "../components/SourceEditorDialog";
+import {
+  fetchLabels,
+  fetchLanguageDashboard,
+  fetchLanguages,
+  fetchLanguageSources,
+} from "../lib/api";
 import { relativeTime } from "../lib/relative-time";
 import { fetchLanguageRecord } from "../lib/atproto-record";
 import { forgetLanguageGrammar } from "../lib/language-grammar";
+import { navigateTo, sourcePath } from "../lib/routes";
 
 const SYNC_POLL_MS = 3_000;
 const SYNC_POLL_MAX_TRIES = 20; // ~60s of PDS → Jetstream → ArangoDB latency
@@ -67,6 +75,11 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
   const [parkedOpen, setParkedOpen] = useState(false);
   /** Record URI written to the PDS but not yet seen back from the AppView. */
   const [syncingURI, setSyncingURI] = useState<string | null>(null);
+  /** The works entries in this language can cite. Side data, never blocking. */
+  const [sources, setSources] = useState<SourceView[]>([]);
+  const [sourceEditorOpen, setSourceEditorOpen] = useState(false);
+  /** A source published from here but not yet seen back from the AppView. */
+  const [syncingOclc, setSyncingOclc] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -102,6 +115,14 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
         fetchLanguageRecord(found.language.recordURI)
           .then((value) => {
             if (!cancelled) setRecord(value);
+          })
+          .catch(() => {});
+        // Deliberately its own call rather than a field on the dashboard: a
+        // bibliography grows on its own schedule and will want paging of its
+        // own long before the counters do.
+        fetchLanguageSources(tag)
+          .then((list) => {
+            if (!cancelled) setSources(list);
           })
           .catch(() => {});
       } catch (err) {
@@ -143,6 +164,32 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
     }, SYNC_POLL_MS);
     return () => clearInterval(timer);
   }, [syncingURI, tag]);
+
+  // A source published from this page, waiting to come back around through the
+  // firehose. Its own poll rather than a branch of the one above: a source is a
+  // different collection with its own round trip, and folding them together
+  // would make either one's timeout read as the other's failure.
+  useEffect(() => {
+    if (syncingOclc === null) return;
+    let tries = 0;
+    const timer = setInterval(() => {
+      tries += 1;
+      fetchLanguageSources(tag)
+        .then((list) => {
+          if (list.some((s) => s.oclc === syncingOclc)) {
+            setSources(list);
+            setSyncingOclc(null);
+          } else if (tries >= SYNC_POLL_MAX_TRIES) {
+            console.warn(`source ${syncingOclc} not indexed after polling; giving up`);
+            setSyncingOclc(null);
+          }
+        })
+        .catch(() => {
+          /* transient — keep polling */
+        });
+    }, SYNC_POLL_MS);
+    return () => clearInterval(timer);
+  }, [syncingOclc, tag]);
 
   const language = languages.find((l) => l.tag === tag) ?? null;
 
@@ -376,6 +423,61 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
                   {t("languagePage.grammarIssuesOpen")}
                 </button>
               </div>
+            )}
+          </section>
+
+          {/* The works this language's entries can cite. Below the front
+              matter it belongs with — a bibliography is the other half of a
+              dictionary's apparatus — and above the activity feed. */}
+          <section className="mt-8">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="text-sm font-semibold text-content">
+                {t("languagePage.sourcesTitle")}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setSourceEditorOpen(true)}
+                className="text-xs text-primary hover:text-primary-hover"
+              >
+                {t("languagePage.sourcesAdd")}
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-content-muted">{t("languagePage.sourcesHint")}</p>
+
+            {sources.length === 0 ? (
+              <p className="mt-3 text-sm text-content-muted">{t("languagePage.sourcesEmpty")}</p>
+            ) : (
+              <ul className="mt-3 divide-y rounded-lg border bg-surface">
+                {sources.map((source) => (
+                  <li key={source.oclc}>
+                    <button
+                      type="button"
+                      onClick={() => navigateTo(sourcePath(source.oclc))}
+                      className="w-full px-4 py-3 text-left hover:bg-surface-muted/60"
+                    >
+                      <span className="flex flex-wrap items-baseline gap-2">
+                        <span className="text-sm font-medium text-content">
+                          {source.citation.short}
+                        </span>
+                        {source.languages[0] === tag && (
+                          <span className="text-xs text-content-subtle">
+                            {t("languagePage.sourcesMain")}
+                          </span>
+                        )}
+                      </span>
+                      <span className="mt-0.5 block text-sm text-content-muted">
+                        {source.citation.long}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {syncingOclc !== null && (
+              <p className="mt-3 text-sm text-content-subtle">
+                {t("languagePage.sourcesSyncing")}
+              </p>
             )}
           </section>
 
@@ -641,6 +743,21 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
           languages={languages}
           onClose={() => setDialog(null)}
           onPublished={onPublished}
+        />
+      )}
+
+      {/* Opened from this page, so this language is the main one — the choice
+          that can never be edited afterwards is made where the context makes
+          it obvious. */}
+      {sourceEditorOpen && (
+        <SourceEditorDialog
+          languages={languages}
+          mainLanguage={tag}
+          onClose={() => setSourceEditorOpen(false)}
+          onPublished={(oclc) => {
+            setSourceEditorOpen(false);
+            setSyncingOclc(oclc);
+          }}
         />
       )}
 

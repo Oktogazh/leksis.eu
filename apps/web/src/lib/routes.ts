@@ -1,3 +1,5 @@
+import { normalizeOclc } from "@leksis/types";
+
 // Path-based routing: one canonical URL per resource page — /entry/<key>,
 // /language/<tag> — while the query string stays reserved for parameterized
 // views (the search surface: /?q=&l=). Hand-rolled on the History API: the
@@ -9,7 +11,9 @@ export type Route =
   | { kind: "entry"; entryKey: string }
   | { kind: "language"; tag: string }
   /** `id` is an AT identifier: a DID (what the app links to) or a handle. */
-  | { kind: "user"; id: string };
+  | { kind: "user"; id: string }
+  /** `oclc` is always the normalized number — the source's identity. */
+  | { kind: "source"; oclc: string };
 
 /** Parse the current pathname; unknown paths land on the search surface. */
 export function routeFromLocation(): Route {
@@ -22,6 +26,14 @@ export function routeFromLocation(): Route {
   }
   if (segments.length === 2 && segments[0] === "user") {
     return { kind: "user", id: decodeURIComponent(segments[1]!) };
+  }
+  if (segments.length === 2 && segments[0] === "source") {
+    // Normalized here rather than on the page, so `/source/(OCoLC)ocm00012345`
+    // and `/source/12345` are one route to one work rather than two pages that
+    // happen to load the same thing. A segment that is not a number at all
+    // falls through to search, as any unknown path does.
+    const oclc = normalizeOclc(decodeURIComponent(segments[1]!));
+    if (oclc !== null) return { kind: "source", oclc };
   }
   return { kind: "search" };
 }
@@ -37,6 +49,9 @@ export const languagePath = (tag: string): string => `/language/${encodeURICompo
  * instead of becoming `did%3Aplc%3A…`.
  */
 export const userPath = (id: string): string => `/user/${id}`;
+
+/** A described work. `oclc` should already be normalized — it is the identity. */
+export const sourcePath = (oclc: string): string => `/source/${encodeURIComponent(oclc)}`;
 
 /**
  * Navigate to a resource path from outside the routed surface (e.g. a dialog in
