@@ -83,9 +83,16 @@ whether the implementation uses base e (Rasch-style) is a pure change of units (
 
 ### 2.1 Upgradable documents and the ladder
 
-Four collections are **upgradable**: `languages` (shared key `tag`), `entries` (`entryKey`),
-`relations` (`relationKey`) and `cognates` (`cognateKey`, added by ADR-0013). All versions sharing a
+Five collections are **upgradable**: `languages` (shared key `tag`), `entries` (`entryKey`),
+`relations` (`relationKey`), `cognates` (`cognateKey`, added by ADR-0013) and `sources` (shared key
+`oclc`, added by `docs/design/sources-and-examples.md` — versioned like `languages`, rkey = the OCLC
+number, so all authors' records for one work share a ladder by construction). All versions sharing a
 key form that object's **ladder** — ordered by record rating, highest first.
+
+A source ladder has one wrinkle of its own: `languages[0]` (the main language) is immutable by
+design — the editor refuses to change it and ingest flags a version that does. A flagged version
+still enters the ladder (the AppView is never the arbiter), so a `mainLanguageConflict` version is
+exactly the kind of challenger the community should vote down; no special voting rule is needed.
 
 A cognate is versioned exactly as a relation is (symmetric record, `subject` chain, archived
 predecessors), and it **spans two languages the same way** — so it is governed by the same

@@ -19,7 +19,7 @@
           },
           "notes": {
             "type": "array",
-            "items": { "type": "string", "maxLength": 2048, "maxGraphemes": 1024 },
+            "items": { "type": "string", "maxLength": 10240, "maxGraphemes": 1024 },
             "description": "Free-text remarks about the assertion itself — a source, a caveat that the cognacy is contested, a mechanism worth naming even though the record does not encode one. Record-only content, never indexed."
           },
           "subject": {
@@ -52,7 +52,7 @@
         },
         "orthography": {
           "type": "string",
-          "maxLength": 256,
+          "maxLength": 1280,
           "maxGraphemes": 128,
           "description": "The entry's canonical spelling when the cognate was authored, denormalized so the record reads on its own and so a client has something to show if the referenced entry cannot be resolved. Display fallback only, never matched on: it goes stale harmlessly when an entry is re-spelled."
         }

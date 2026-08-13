@@ -40,6 +40,7 @@ const documentCollections = [
   "senses",
   "cognates",
   "lexemes",
+  "sources",
   "firehoseState",
 ];
 // The two networks' edge collections. `relationEdges` joins `senses` vertices
@@ -114,6 +115,42 @@ async function main() {
     unique: false,
   });
   console.log('ensured index "idx_tag_current" on "languages"');
+
+  // Sources are versioned exactly as languages are (many docs per OCLC number,
+  // one with current: true). Reads: by number (the citation an entry renders,
+  // and the currentRecord endpoint), by recordURI (ingest and deletion), and by
+  // language (a language dashboard's source list).
+  //
+  // `search[*]` is indexed for exact membership only. Source search is a PREFIX
+  // scan (STARTS_WITH inside a subquery, copied from searchEntries), which no
+  // persistent index can serve, so /sources?q= reads the collection. That is
+  // the same trade entries already make and is fine at this size; when it stops
+  // being fine, the fix is an ArangoSearch view, not another persistent index.
+  await db.collection("sources").ensureIndex({
+    type: "persistent",
+    name: "idx_oclc_current",
+    fields: ["oclc", "current"],
+    unique: false,
+  });
+  await db.collection("sources").ensureIndex({
+    type: "persistent",
+    name: "idx_source_recorduri",
+    fields: ["recordURI"],
+    unique: false,
+  });
+  await db.collection("sources").ensureIndex({
+    type: "persistent",
+    name: "idx_source_languages_current",
+    fields: ["languages[*]", "current"],
+    unique: false,
+  });
+  await db.collection("sources").ensureIndex({
+    type: "persistent",
+    name: "idx_source_search",
+    fields: ["search[*]"],
+    unique: false,
+  });
+  console.log('ensured 4 indexes on "sources"');
 
   // Entries are versioned the same way (many docs per entryKey, one with
   // current: true). Search filters on language + lowercased orthographies

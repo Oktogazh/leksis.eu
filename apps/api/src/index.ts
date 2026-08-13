@@ -3,13 +3,16 @@ import { Hono } from "hono";
 import {
   isValidLanguageTag,
   normalizeLanguageTag,
+  normalizeOclc,
   RESOLVE_URI_LIMIT,
   TRANSLATE_DEFAULT_DEPTH,
   type LabelsResponse,
   type EntriesResponse,
   type EntryResolveResponse,
   type HealthResponse,
+  type LanguageSourcesResponse,
   type LanguagesResponse,
+  type SourcesResponse,
 } from "@leksis/types";
 import { listLabels } from "./labels";
 import { getCognateNetwork } from "./cognates";
@@ -18,6 +21,7 @@ import { pingDb } from "./db";
 import { getEntry, resolveEntryKeys, searchEntries } from "./entries";
 import { getEntryRelations, getTranslations } from "./relations";
 import { getCurrentLanguageRecord, listLanguages } from "./languages";
+import { getCurrentSourceRecord, getLanguageSources, searchSources } from "./sources";
 import { startJetstream } from "./firehose/jetstream";
 
 const app = new Hono();
@@ -95,6 +99,56 @@ app.get("/languages/:tag/labels", async (c) => {
     return c.json(body);
   } catch (err) {
     console.error("GET /languages/:tag/labels failed:", err);
+    return c.json({ error: "database unavailable" }, 503);
+  }
+});
+
+app.get("/languages/:tag/sources", async (c) => {
+  const requested = normalizeLanguageTag(c.req.param("tag"));
+  if (!isValidLanguageTag(requested)) {
+    return c.json({ error: "invalid language tag" }, 400);
+  }
+  try {
+    const sources = await getLanguageSources(requested);
+    const body: LanguageSourcesResponse = { languageID: requested, sources };
+    return c.json(body);
+  } catch (err) {
+    console.error("GET /languages/:tag/sources failed:", err);
+    return c.json({ error: "database unavailable" }, 503);
+  }
+});
+
+app.get("/sources", async (c) => {
+  const q = c.req.query("q") ?? "";
+  // An invalid language scope degrades to searching all languages, as on
+  // /entries: a mistyped scope should narrow nothing, not answer nothing.
+  const requested = normalizeLanguageTag(c.req.query("l") ?? "");
+  const languageID = isValidLanguageTag(requested) ? requested : "";
+  try {
+    const sources = await searchSources(q, languageID);
+    const body: SourcesResponse = { sources };
+    return c.json(body);
+  } catch (err) {
+    console.error("GET /sources failed:", err);
+    return c.json({ error: "database unavailable" }, 503);
+  }
+});
+
+// A source is addressed by its OCLC number, so the number is normalized the
+// same way the record key is — a client that pastes "(OCoLC)ocm00012345"
+// reaches the same source as one that types "12345". 404 here is ordinary: an
+// entry may cite a work nobody has described yet.
+app.get("/sources/:oclc/currentRecord", async (c) => {
+  const oclc = normalizeOclc(c.req.param("oclc"));
+  if (oclc === null) {
+    return c.json({ error: "invalid OCLC number" }, 400);
+  }
+  try {
+    const record = await getCurrentSourceRecord(oclc);
+    if (!record) return c.json({ error: "source not found" }, 404);
+    return c.json(record);
+  } catch (err) {
+    console.error("GET /sources/:oclc/currentRecord failed:", err);
     return c.json({ error: "database unavailable" }, 503);
   }
 });

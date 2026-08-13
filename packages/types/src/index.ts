@@ -5,12 +5,14 @@
 // contract, UD's part-of-speech inventory and the language record's `grammar`;
 // the translations loop adds the eu.leksis.relation contract behind the
 // semantic network, and the cognate loop its word-level sibling
-// eu.leksis.cognate.
+// eu.leksis.cognate; the sources loop adds eu.leksis.source, the work an
+// example sentence is cited from.
 
 export * from "./language.js";
 export * from "./entry.js";
 export * from "./relation.js";
 export * from "./cognate.js";
+export * from "./source.js";
 export * from "./label.js";
 export * from "./dashboard.js";
 export * from "./profile.js";

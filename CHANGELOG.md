@@ -4,6 +4,88 @@ All notable changes to Leksis. Each section is one loop — a unit of work, not 
 unit of time: the content loops grow the dictionary outward, the grammar loops
 (the morphology arc) grow the entry deeper, and the two interleave.
 
+## Sources — the citation becomes a record, written once
+
+Content loop 6 (polish), slice 1 of the sources-and-examples design
+(`docs/design/sources-and-examples.md`). The work an example sentence is taken
+from becomes a record of its own, so that a citation is written **once** and
+every entry that quotes the work renders it from there.
+
+> The design's driving constraint is DRY, and it is a correctness argument
+> rather than a tidiness one. If each entry carried its own copy of a citation,
+> fixing a mistyped title would mean republishing every entry that cites the
+> book — across strangers' PDSs, which is impossible. So the entry stores the
+> OCLC number and a locator, and nothing else.
+
+### The new lexicon
+
+- **`eu.leksis.source`** — `category` (an enum of one, `bibliographic`,
+  prefilled rather than hidden because recordings, web pages and oral
+  informants are all sources an example may come from), the OCLC number,
+  `title`/`author`/`year`/`url`, the `languages` it covers, and the
+  `citation` forms (`short` and `long`) every citing entry renders.
+- **Versioned like a language, not like a cognate**: the identity is natural and
+  global — the OCLC number — so it lives in the **record key**, every author's
+  record for one work shares it, and there is no `subject` chain. Hence no
+  `subject` field.
+- **An example will cite the number, never a record URI.** So a citation is
+  valid *before* anyone has described the work, and resolves the day somebody
+  does. The reference cannot break, only degrade.
+- **`languages[0]` is the main language and is immutable.** The editor will
+  refuse to change it; the AppView **flags and never rejects** a version that
+  does, because an index is not the arbiter of what a contributor may assert.
+- **`year` is a string, and the locator will be too** — real bibliographies
+  carry "c. 1850" and "1904–1911", and a page, a folio, a headword and a
+  timestamp do not share a schema. Precision that would have to be faked is not
+  precision.
+
+### The AppView
+
+- **A versioned `sources` collection**, mirroring `languages`, plus the
+  `entries` search idiom: a lowercased `search[]` over the citation forms,
+  title and author. Title and author are **indexed but never served** — search
+  reaches them, the client resolves the record for the content.
+- **Deletion archives *and re-promotes*.** This is the one place a source
+  deliberately diverges from a language: a language record is deleted by the
+  person whose names it carried, but a source is referenced *by strangers*, so
+  leaving a number with no current version would degrade every citation that
+  quotes it. A withdrawn record marks **every** version it owns `recordDeleted`,
+  so no dead version can ever be promoted back — including by a *later*
+  deletion of somebody else's record, which is the case that makes the flag
+  necessary rather than merely tidy.
+- **Three read surfaces**: `GET /sources?q=&l=`, `GET /sources/:oclc/currentRecord`
+  (the number is normalized as the record key is, so a pasted
+  `(OCoLC)ocm00012345` reaches the same source as `12345`), and
+  `GET /languages/:tag/sources`, main-language sources first.
+
+### Every lexicon's text caps now mean what they say
+
+Not part of the slice, found while building it. AT Proto's `maxLength` counts
+**UTF-8 bytes** while `maxGraphemes` counts characters, and every Leksis lexicon
+paired them at 2:1 — so for any script above one byte per character the byte cap
+bound first and the grapheme cap never fired. A Japanese definition was rejected
+at ~1365 characters instead of 2048.
+
+- **All 20 capped text fields across the four shipped lexicons** (`entry` 10,
+  `language` 6, `cognate` 2, `relation` 2) **widened to the 10:1 ratio**
+  Bluesky's own lexicons use (`app.bsky.feed.post` text: 3000 bytes / 300
+  graphemes), with every `maxGraphemes` left untouched. The new
+  `eu.leksis.source` was born at 10:1 and is not among them. Verified with
+  `@atproto/lexicon`: 208 assertions over 13 fields × 8 scripts, each confirming
+  that a value exactly at the cap validates and one grapheme over is rejected
+  **as a grapheme error**.
+- **Widening only** — every record valid before is valid now — but it is a
+  lexicon change, so those four need republishing (five with `source`).
+- It contradicted "universal from the start" squarely, and hit hardest exactly
+  the low-resource, non-Latin-script languages the project exists for.
+
+### Not yet
+
+The OCLC metadata lookup, the source editor, the search bar's kind filter and
+the language dashboard's source list are **slice 2**;
+`definitions[].examples` — the feature all of this is for — is **slice 3**, and
+the fixture rows come with it.
+
 ## Cognates and etymology — formalize the half that can be, write the rest
 
 Content loop 6 (polish). A word's history joins the entry, split in two along the

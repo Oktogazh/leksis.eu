@@ -362,7 +362,7 @@ export function EntryPage({
                 type="button"
                 title={t("relations.addHint")}
                 onClick={() => setRelationLaunch({ source: { view, record, place } })}
-                className="mt-2 text-xs text-primary hover:text-primary-hover"
+                className="ml-2 text-xs text-primary hover:text-primary-hover"
               >
                 {t("relations.addLabel")}
               </button>

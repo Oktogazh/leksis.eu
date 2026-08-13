@@ -4,12 +4,14 @@ import {
   LEKSIS_ENTRY_COLLECTION,
   LEKSIS_LANGUAGE_COLLECTION,
   LEKSIS_RELATION_COLLECTION,
+  LEKSIS_SOURCE_COLLECTION,
 } from "@leksis/types";
 import { db } from "../db";
 import { ingestCognate, ingestCognateDelete } from "./ingest-cognate";
 import { ingestEntry, ingestEntryDelete } from "./ingest-entry";
 import { ingestLanguage, ingestLanguageDelete } from "./ingest-language";
 import { ingestRelation, ingestRelationDelete } from "./ingest-relation";
+import { ingestSource, ingestSourceDelete } from "./ingest-source";
 
 // Jetstream consumer (ADR-0003): the AppView indexes eu.leksis.* records from
 // Bluesky's JSON firehose instead of raw com.atproto.sync.subscribeRepos —
@@ -50,6 +52,7 @@ const WANTED_COLLECTIONS = [
   LEKSIS_ENTRY_COLLECTION,
   LEKSIS_RELATION_COLLECTION,
   LEKSIS_COGNATE_COLLECTION,
+  LEKSIS_SOURCE_COLLECTION,
 ];
 
 const CURSOR_KEY = "jetstream";
@@ -115,6 +118,12 @@ async function handleEvent(event: JetstreamCommitEvent): Promise<void> {
       await ingestCognateDelete(recordURI);
     } else {
       await ingestCognate(event.did, recordURI, cid ?? "", record);
+    }
+  } else if (collection === LEKSIS_SOURCE_COLLECTION) {
+    if (operation === "delete") {
+      await ingestSourceDelete(recordURI);
+    } else {
+      await ingestSource(event.did, recordURI, cid ?? "", record);
     }
   }
 }

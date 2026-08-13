@@ -326,13 +326,13 @@
       "properties": {
         "short": {
           "type": "string",
-          "maxLength": 64,
+          "maxLength": 320,
           "maxGraphemes": 32,
           "description": "The abbreviated form — the row's identity, unique within a language."
         },
         "long": {
           "type": "string",
-          "maxLength": 256,
+          "maxLength": 1280,
           "maxGraphemes": 128,
           "description": "What it stands for, written out."
         },
@@ -350,13 +350,13 @@
       "properties": {
         "long": {
           "type": "string",
-          "maxLength": 256,
+          "maxLength": 1280,
           "maxGraphemes": 128,
           "description": "Full form — the only required half: a lone form is always the full one."
         },
         "short": {
           "type": "string",
-          "maxLength": 64,
+          "maxLength": 320,
           "maxGraphemes": 32,
           "description": "Optional abbreviated display form; when present it is shown instead of the full form, which appears on hover."
         }
@@ -368,7 +368,7 @@
       "properties": {
         "text": {
           "type": "string",
-          "maxLength": 512,
+          "maxLength": 2560,
           "maxGraphemes": 256,
           "description": "The reference's display text (a citation, source name or note)."
         },
@@ -390,7 +390,7 @@
         },
         "translation": {
           "type": "string",
-          "maxLength": 256,
+          "maxLength": 1280,
           "maxGraphemes": 128,
           "description": "The language's name written in the language identified by languageID."
         }

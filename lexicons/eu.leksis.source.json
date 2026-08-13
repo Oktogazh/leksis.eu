@@ -1,0 +1,90 @@
+{
+  "lexicon": 1,
+  "id": "eu.leksis.source",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A source a dictionary entry can cite — the work an example sentence was taken from. Records prove authorship, not ownership: any user may publish a record for any OCLC number, and the AppView treats the latest record for a number as the current version, archiving previous ones. By convention the record key is the normalized OCLC number, exactly as an eu.leksis.language record's key is its tag; identity therefore comes from the key, which is why this record carries no `subject` field. The OCLC number is the source's identity, and an entry citing this source stores that number and a locator (a page, a headword, a paragraph) and nothing else: the citation a reader sees is rendered from THIS record. Correcting a mistyped title therefore fixes every entry that quotes the work, instead of requiring each of them to be republished — and, because the reference is to a number rather than to a record, an entry may cite a work nobody has described yet, and the citation resolves the day somebody publishes it.",
+      "key": "any",
+      "record": {
+        "type": "object",
+        "required": ["category", "oclc", "title", "languages", "citation", "createdAt"],
+        "properties": {
+          "category": {
+            "type": "string",
+            "knownValues": ["bibliographic"],
+            "description": "What kind of source this is. Only \"bibliographic\" exists today — a catalogued work identified by its OCLC number — and the field is prefilled rather than hidden because the record is designed to grow: a recording, a web page and a named oral informant are all sources an example sentence may legitimately come from, and each will need an identity scheme of its own. Adding a value here later is not a breaking change; assuming there would only ever be one would have been."
+          },
+          "oclc": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16,
+            "description": "OCLC number of the catalogued work. Required while `category` is \"bibliographic\", and it must denote the same work as the record key — the number is the source's identity, and an example sentence references that number directly rather than referencing this record, so a record whose key and field disagreed would make every reference to it ambiguous. The two are held to different standards on purpose. The RECORD KEY must be the normal form exactly (digits only: no \"(OCoLC)\" wrapper, no \"ocm\"/\"ocn\"/\"on\" prefix, no leading zeros), because \"12345\", \"00012345\" and \"ocm12345\" are all legal keys naming one work, and accepting any of them would let one repository hold two records for it. This FIELD is only normalized before comparison, so a catalogue export writing the zero-padded form is indexed rather than discarded over punctuation. Write the normal form in both."
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5120,
+            "maxGraphemes": 512,
+            "description": "Title of the work, as catalogued. Long, because a catalogued title statement IS long: Grégoire de Rostrenen's 1732 \"Dictionnaire françois-celtique ou françois-breton, nécessaire à tous ceux qui veulent apprendre à traduire le françois en celtique…\" runs to 255 characters, and it is an ordinary source for a Breton entry rather than an extreme one. A contributor may fetch it from a public catalogue by OCLC number or type it themselves: the lookup is an enhancement and never a dependency, so a source can always be described entirely by hand."
+          },
+          "author": {
+            "type": "string",
+            "maxLength": 5120,
+            "maxGraphemes": 512,
+            "description": "Author or editor of the work. Optional, because many sources genuinely have none: anonymous manuscripts, collective compilations, institutional publications. An empty field here means \"no author\", not \"not filled in yet\"."
+          },
+          "year": {
+            "type": "string",
+            "maxLength": 320,
+            "maxGraphemes": 32,
+            "description": "Year of publication, as text rather than a number: real bibliographies carry \"c. 1850\", \"1904–1911\" and \"n.d.\" as often as they carry \"1732\". An integer field would force a contributor to either lie about a date or leave it out, and the second loses more than the imprecision costs."
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "Link to the source: its catalogue page, a digitized copy, a publisher's page. Optional — a work that exists only on paper is still a source, and a dictionary of a low-resource language cites many that were never digitized."
+          },
+          "languages": {
+            "type": "array",
+            "minLength": 1,
+            "maxLength": 64,
+            "items": { "type": "string", "maxLength": 64 },
+            "description": "Well-formed IETF BCP 47 tags, normalized to lowercase, of the languages present in the source — the languages whose entry editors offer this source when an example sentence cites it, and the language dashboards that list it. The FIRST tag is the source's main language and is immutable: it is set when the source is first described and never edited afterwards, so a source whose main language is wrong is deleted and described again rather than rewritten. Later tags may be added and removed freely by later versions. A version that changes the first tag is flagged by the AppView, never rejected: an index is not the arbiter of what a contributor may assert, so a disputed main language stays visible and contestable like any other disagreement between versions."
+          },
+          "citation": {
+            "type": "ref",
+            "ref": "#citation",
+            "description": "How this source is rendered after an example sentence that cites it. It lives on the source rather than in each citing entry so that the two can never drift apart, and so that a citation is written once instead of once per entry."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "Client-declared creation time of this record version."
+          }
+        }
+      }
+    },
+    "citation": {
+      "type": "object",
+      "required": ["short", "long"],
+      "description": "The two forms every citing entry renders: what is shown inline, and what it expands to.",
+      "properties": {
+        "short": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 640,
+          "maxGraphemes": 64,
+          "description": "Short form shown beside the example sentence — a sigil or an author-year (\"GBAV\", \"Ernault 1904\"): what a printed dictionary puts at the end of a citation line, where the reader who wants more looks the sigil up in the front matter."
+        },
+        "long": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 5120,
+          "maxGraphemes": 512,
+          "description": "Full bibliographic line, shown when the short form is expanded and in the list of a language's sources. One free-form line the contributor writes, deliberately not a structured citation style: sources of low-resource languages vary far too widely for one schema to describe them without lying, and the lexicographer knows their field's conventions better than the schema would."
+        }
+      }
+    }
+  }
+}
