@@ -24,11 +24,15 @@ built on the AT Protocol and ArangoDB. See [leksis.eu](https://leksis.eu).
 > matter — lexicographic labels (register, domain, usage) and plain
 > abbreviations — and every label is keyed on the tag it names
 > ([ADR-0010](docs/adr/0010-labelled-tags-and-lexicographic-labels.md)).
-> Newest: **sources** — the work an example sentence is cited from is now a
-> record of its own (`eu.leksis.source`, keyed on its OCLC number), so a
-> citation is written once and every entry quoting the work renders it from
-> there. The example sentences themselves are the next slice
-> ([design](docs/design/sources-and-examples.md)).
+> Newest: **example sentences, and the sources they are cited from**. A
+> definition can now show a sentence attesting the sense, and the work that
+> sentence was taken from is a record of its own (`eu.leksis.source`, keyed on
+> its OCLC number) — so a citation is written **once** and every entry quoting
+> the work renders it from there, which is what makes correcting a citation
+> possible at all when the citing entries live on strangers' servers. An entry
+> cites the **number, never a record URI**, so a citation is valid before anybody
+> has described the work and can only degrade, never break
+> ([ADR-0014](docs/adr/0014-sources-and-example-sentences.md)).
 >
 > Work advances in **loops — units of work, not units of time.** An earlier
 > plan framed these as calendar weeks; that framing is retired.

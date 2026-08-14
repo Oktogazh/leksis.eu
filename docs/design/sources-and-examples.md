@@ -1,16 +1,20 @@
 # Design note: sources and example sentences
 
-**Status:** **Slices 1, 2 and 3 built (2026-08-12, 2026-08-13, 2026-08-13); slice 4 (recording)
-designed, not yet done.**
+**Status:** **Complete — all four slices built (2026-08-12 → 2026-08-14, v0.19.0–v0.21.0).**
+This note is now **superseded as the authority by [ADR-0014](../adr/0014-sources-and-example-sentences.md)**,
+which slice 4 graduated it into; it is kept as the design record — the reasoning, the rejected
+alternatives and the open questions — while the ADR holds what was decided.
 Shapes and surfaces settled in the 2026-08-12 design session. Slice 1 shipped the lexicon, the
 `sources` collection with firehose ingest, and the three read surfaces; slice 2 shipped the OCLC
 lookup package, the source editor, the search bar's kind filter, the create chooser, the
-`/source/<oclc>` page and the dashboard's source list, at **zero API cost**. What remains
-unverified is one end-to-end publish through a real PDS, and now also **every interface slice 2
-adds**: all of them sit behind a login an agent cannot perform (`verify` skill, *the session wall*),
-so slice 2 was proven by typecheck/lint/build across five workspaces plus direct harnesses over the
-OCLC parser and the kind/route/matcher logic (§5).
-**Date:** 2026-08-12, revised 2026-08-13.
+`/source/<oclc>` page and the dashboard's source list; slice 3 shipped `definitions[].examples`,
+the leaf-card editor and the resolve-or-degrade citation — the last two at **zero API cost**.
+What remains unverified is one end-to-end publish through a real PDS and **every interface these
+slices add**: all of them sit behind a login an agent cannot perform (`verify` skill, *the session
+wall*), so they were proven by typecheck/lint/build across five workspaces plus direct harnesses
+over the OCLC parser, the kind/route/matcher logic and the example round-trip (§5). The fixture
+rows that would assert the reader's side are specified and unpublished.
+**Date:** 2026-08-12, revised 2026-08-13, closed 2026-08-14.
 **For:** Example sentences on definitions — the first slice of the white paper's "example
 sentences" deferred item — and the `eu.leksis.source` lexicon that makes their citations
 first-class, contestable records instead of free strings.
@@ -418,10 +422,16 @@ Each leaves master deployable; the usual loop order (lexicon → ingest → AQL 
    now joins `grammar.layout` and the widened fields in that backlog), and no example has yet
    travelled through a real PDS — the reader's three states were exercised in a browser against
    stubbed responses plus direct harnesses, never end-to-end.
-4. **Record.** CHANGELOG under the milestone; an ADR (this note graduates: a new lexicon and a
-   new collection are ADR-grade, the ADR-0013 precedent); update the `leksis` skill's lexicon
-   family, schema section and deferred-decisions table (strike "example sentences — after
-   prototype", note what §6 still defers).
+4. ~~**Record.**~~ **Done 2026-08-14.** **[ADR-0014](../adr/0014-sources-and-example-sentences.md)**
+   — this note graduated, per the ADR-0013 precedent (a new lexicon and a new collection are
+   ADR-grade). The CHANGELOG's top section now covers all three build slices under one milestone
+   heading; the `leksis` skill's lexicon family, `entries`/`sources` schema blocks, read-surface
+   list and deferred-decisions table were updated, and the README banner and status line with them.
+   One thing the recording pass settled, worth keeping here: the **status divide between this note
+   and its ADR**. The ADR is authoritative for what was decided and what remains owed; this note
+   keeps the reasoning, the two rejected OCLC providers and the open questions of §7, which an ADR's
+   "Consequences" section would flatten. Where they disagree, the ADR wins — the same rule the
+   `leksis` skill applies to the grammatical-tagging note.
 
 ## 6. Deliberately out of scope
 

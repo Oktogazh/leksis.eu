@@ -4,12 +4,13 @@ All notable changes to Leksis. Each section is one loop — a unit of work, not 
 unit of time: the content loops grow the dictionary outward, the grammar loops
 (the morphology arc) grow the entry deeper, and the two interleave.
 
-## Sources — the citation becomes a record, written once
+## Sources and example sentences — the citation becomes a record, written once
 
-Content loop 6 (polish), slice 1 of the sources-and-examples design
-(`docs/design/sources-and-examples.md`). The work an example sentence is taken
-from becomes a record of its own, so that a citation is written **once** and
-every entry that quotes the work renders it from there.
+Content loop 6 (polish), the whole sources-and-examples design
+(`docs/design/sources-and-examples.md`, slices 1–3). A definition can now show a
+sentence attesting the sense, and the work that sentence was taken from is a
+record of its own — so a citation is written **once** and every entry that quotes
+the work renders it from there. See **ADR-0014**.
 
 > The design's driving constraint is DRY, and it is a correctness argument
 > rather than a tidiness one. If each entry carried its own copy of a citation,
@@ -110,6 +111,60 @@ looked at. All three now have a surface, and the API cost of the slice was
   first, kept off the dashboard payload deliberately — a bibliography grows on
   its own schedule and will want paging long before the counters do.
 
+### The examples themselves (slice 3)
+
+The feature all of the above exists for. A definition leaf can carry up to
+sixteen example sentences, each optionally citing a work — and the slice cost
+**no collection, no endpoint and no `db:init` change**, because an example is
+content: the record carries it, the PDS serves it, and the only thing the AppView
+does with one is refuse a malformed record.
+
+- **`definitions[].examples`** — `{text, source?: {oclc, locator?}}` on the entry
+  lexicon, with `#example` and `#exampleSource` defs. Additive, so no existing
+  record is invalidated and no bot republishes.
+- **Leaves only**, the same asymmetry as `text`: an example exemplifies one
+  meaning, and a group node is a heading with no meaning of its own. Enforced by
+  a new `example-rule` in `validateDefinitions` — strict at ingest, healed
+  leniently in the web parser. Only the group half of the rule exists; a leaf
+  with no examples is the ordinary case, not a defect.
+- **An unsourced example is a legitimate lexicographic object** — a constructed
+  illustration, or a sentence heard rather than read — so a missing `source`
+  means "no source", never "the citation is incomplete".
+- **The locator is free text** (`"p. 142"`, `"s.v. gwerzenn"`, `"§4"`, `"f. 12v"`,
+  `"14:03"`), because a page, a folio, a headword and a timestamp do not share a
+  schema, and an integer would become false precision the moment the source is a
+  dictionary or a recording.
+- **The citation has three states, not the two the design named.** Driving the
+  reader produced a third: *described, but the record would not load* — the
+  author's PDS is offline or migrated, or our own AppView is unreachable. Keeping
+  it apart from *nobody has described this work* is a correctness requirement,
+  because only the second may invite a reader to describe the work; offering that
+  on a read failure would invite a stranger's record to be overwritten on the
+  strength of a network error.
+- **Malformed at ingest is refused, not dropped.** A number the AppView cannot
+  normalize is one no reader could resolve, and discarding it silently would
+  publish an entry whose citation vanished with nobody told. The web parser is the
+  lenient twin — it drops the citation and keeps the sentence, which is a thing we
+  are happy to show.
+- **`examples` survives ingest's field whitelist on group nodes**, unlike `text`,
+  which is stripped there. That is precisely what lets `validateDefinitions` see
+  the violation and refuse the record; strip it and the leaves-only rule would
+  silently never fire.
+- **The compact preview leaves examples out**, decided rather than inherited:
+  `DefinitionList` gained `showExamples`, off by default. The preview already omits
+  the etymology, the notes and the forms, examples are the bulkiest thing an entry
+  carries, and each cited work costs a resolution the caller did not ask for.
+- **The editor row is flat** (`{text, oclc, locator}`), not the record's nested
+  shape — a half-typed number should not have to conjure a `source` object in
+  order to exist. It carries a search-as-you-type picker over the entry
+  language's sources, an "enter the number directly" escape hatch for a work
+  nobody has described, and a "describe it" shortcut into the source editor.
+- **Describing a cited work from the entry page needs a poll**, the same PDS →
+  Jetstream → ArangoDB wait every other publish here has: the editor clears the
+  per-number cache at publish time, which is before the firehose has been round,
+  so the page waits for `currentRecord` and then re-keys the definitions.
+  Without it, a citation stayed degraded until a reload.
+
 ### Every lexicon's text caps now mean what they say
 
 Not part of the slice, found while building it. AT Proto's `maxLength` counts
@@ -133,18 +188,29 @@ at ~1365 characters instead of 2048.
 
 ### Not yet
 
-`definitions[].examples` — the feature all of this is for — is **slice 3**, and
-the fixture rows come with it. The five lexicons still need publishing
-(`eu.leksis.source` plus the four widened ones, and the lagging `grammar.layout`).
+**Six lexicons need publishing**, and the backlog is now the oldest thing here:
+`eu.leksis.source`, the widened `eu.leksis.entry`, the four byte/grapheme-widened
+ones, and the still-lagging `grammar.layout`. One batch, and it writes to a PDS,
+so it waits for a deliberate run.
 
-**Nothing in slice 2 has been driven in a browser.** Every surface it adds sits
-behind a login, and an agent cannot type a password (`verify` skill, *the session
-wall*), so the proof stopped at: all five workspaces typecheck and lint, the
-production build passes, the OCLC package is exercised against real OpenLibrary
-responses including live calls, and the kind/route/matcher logic is exercised
-directly. The editors, the tabs, the chooser and both new pages have not been
-clicked, and one end-to-end publish through a real PDS remains the unexercised
-path it was after slice 1.
+**No example has travelled through a real PDS.** One end-to-end publish — a
+source record, then an entry citing it, then the citation resolving through
+Jetstream — is the unexercised path it was after slice 1, and after slice 2.
+
+**Nothing any of the three slices adds to the interface has been driven in a
+browser by an agent.** Every surface sits behind a login, and an agent cannot type
+a password (`verify` skill, *the session wall*), so the proof stopped at: all five
+workspaces typecheck and lint, the production build passes, the OCLC package is
+exercised against real OpenLibrary responses including live calls, and the
+kind/route/matcher and example round-trip logic are exercised directly. The
+reader's three citation states were driven against stubbed responses, never real
+records.
+
+**The fixture rows are specified and unpublished** — E-30, E-31 and the new §3.4
+source matrix S-01…S-04 in `leksis-testset`, including the quarantine rule that
+lexicon needs and no other does: a fixture source uses a 16-digit number and
+fixture-only languages, because a citation resolving to a fixture description of
+somebody's actual book is worse than an unresolved one.
 
 ## Cognates and etymology — formalize the half that can be, write the rest
 
