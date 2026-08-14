@@ -245,8 +245,44 @@ else uses, so it cannot distort another row.
 | E-27 | forms filling a **laid-out** table | one entry whose `otherForms` cover most cells of L-50's table, with **at least one cell deliberately empty** — an empty cell and an excluded one must not look the same |
 | E-28 | a form carrying **more** than its cell address | the inherent gender, or a part of speech, repeated on the form's tag → it must still land in its cell (the placement's superset tolerance) |
 | E-29 | a form matching **no cell** | a form tagged on a declared axis whose value combination the layout does not address → the leftover list *below* the table. Distinct from E-18, where the language declares no axis at all |
+| E-30 | `definitions[].examples` — the three citation states | **one** entry, one leaf carrying three examples: one citing **S-01** with a `locator`, one **unsourced** (no `source` at all), one citing **S-02**'s number, which no source record describes. The whole point is that the three render differently on one line each: the short citation form, the sentence alone, and the bare `OCLC <n>` styled unresolved with a "describe it" invitation |
+| E-31 | examples on a **second** leaf, same work | one more leaf citing **S-01** again, with a different locator — the per-number resolution cache, and the DRY claim: one description, two citations, and correcting the source corrects both |
 
-That is ~31 entries. Stay under 40.
+That is ~33 entries. Stay under 40.
+
+### 3.4 Source records — the works examples cite
+
+Sources are not entries and are not capped by the 40-entry ceiling, but the
+same discipline applies: as few as cover the matrix.
+
+**Quarantine, for a lexicon whose identity is a global registry.** A fixture
+source must not claim a real work's OCLC number — a citation resolving to a
+fixture description of somebody's actual book is worse than an unresolved one.
+Two rules do it:
+
+1. **Use a 16-digit number** (`MAX_OCLC_DIGITS`, the cap `normalizeOclc`
+   enforces). Real OCLC numbers are around ten digits, so the top of the
+   accepted range is empty by construction and will stay so far longer than
+   this fixture set lives. Allocate them `900000000000000n`.
+2. **`languages` are fixture tags only** (`qtl` first), so the source is offered
+   in no real language's entry editor and listed on no real dashboard.
+
+The handle convention of §2.1 carries over to `citation.short`, since that is
+what search matches and what every citing entry prints: put the handle in it
+(`lxs-01`), so the fixture announces itself wherever it is rendered.
+
+| # | Covers | Fixture requirement |
+|---|---|---|
+| S-01 | a described work, fully | all fields including `author`, `year`, `url`; `languages` = `["qtl", "qtm"]` (two, so the "offered to both" rule is visible); `citation.short` carries the handle |
+| S-02 | **an undescribed number** | *no record at all* — a 16-digit number E-30 cites and nothing describes. Verified by **absence**, like L-59: `GET /sources/<n>/currentRecord` must 404 and `/source/<n>` must read as an invitation, not as a 404 |
+| S-03 | the optional fields genuinely absent | a second described work with no `author`, no `year`, no `url` — "no author" must render as nothing, never as an empty row |
+| S-04 | a source of the **bare** language | `languages: ["qtm"]` — a work can be cited from a language that has declared no grammar at all |
+
+Publishing these is the fixture bot's job, in its own repo (`leksis-testset`),
+and the run is **owed**: this slice ships the entry-side field, and the fixtures
+for E-30/E-31 and S-01…S-04 have not been published. Until they are, the
+citation states have been exercised only against stubbed responses, never
+end-to-end through a PDS and the firehose.
 
 ---
 
@@ -255,9 +291,14 @@ That is ~31 entries. Stay under 40.
 1. **Its own account.** The fixture bot has a dedicated PDS account (e.g.
    `testbot.leksis.eu`), so a full reset never touches an ingestion bot's
    records and so every fixture is attributable by DID.
-2. **Language records first**, then entries — same reason as any import: tags
-   published before their bindings render verbatim until the language catches
-   up, which would make half the fixtures temporarily wrong.
+2. **Language records first**, then sources, then entries — same reason as any
+   import: tags published before their bindings render verbatim until the
+   language catches up, which would make half the fixtures temporarily wrong,
+   and an example published before its source cites a number that resolves to
+   nothing. Note the second case is *not* an error — a citation to an
+   undescribed number is valid and is S-02's whole subject — but a fixture that
+   is meant to show a resolved citation should not spend its first minutes
+   showing an unresolved one.
 3. **Publish in a deliberate order and record it.** The language dashboard's
    activity feed is ordered by index time; a run that publishes everything at
    once makes the feed a single burst. If a fixture needs to test the feed,

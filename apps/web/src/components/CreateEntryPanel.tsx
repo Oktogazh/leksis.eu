@@ -10,20 +10,31 @@ import {
   type GrammarValue,
   type ResolvedAxis,
   labelLookup,
+  MAX_DEFINITION_EXAMPLES,
+  normalizeOclc,
   parseTagInput,
   tagKey,
   type Tag,
+  type EntryExample,
   type EntryInflectedForm,
   type EntryReference,
   type EntryView,
   type LanguageView,
   type LeksisEntryRecord,
+  type SourceView,
 } from "@leksis/types";
 import { useSession } from "../auth/SessionProvider";
-import { fetchLabels, fetchCurrentLanguageRecord, searchEntries } from "../lib/api";
+import {
+  fetchLabels,
+  fetchCurrentLanguageRecord,
+  searchEntries,
+  searchSources,
+} from "../lib/api";
 import { fetchLanguageRecord } from "../lib/atproto-record";
 import { DeleteEntryDialog } from "./DeleteEntryDialog";
 import { EntryPreview, TagChips } from "./EntryPreview";
+import { useSourceCitation } from "./ExampleSentences";
+import { SourceEditorDialog } from "./SourceEditorDialog";
 import {
   checkRecordDefinitions,
   editTreeLabels,
@@ -42,6 +53,9 @@ import {
 import { endonym } from "./LanguageSelector";
 
 let nextAnnotationId = 0;
+
+/** How long typing settles before an example's source search is sent. */
+const SOURCE_SEARCH_DEBOUNCE_MS = 300;
 
 /**
  * Which form this is: one value picked per declared axis, assembled into a
@@ -431,10 +445,25 @@ function StringList({
   );
 }
 
-/** Editor leaf payload: one definition's notes and text. */
+/**
+ * Editor row for one example sentence. The record's nested `{text, source:
+ * {oclc, locator}}` is flattened for editing — a row is either sourced or not,
+ * and a half-typed number should not have to conjure an object to live in.
+ * `toRecordDefinitions` puts it back.
+ */
+interface ExampleDraft {
+  id: number;
+  text: string;
+  /** Normalized OCLC number; "" = an unsourced example. */
+  oclc: string;
+  locator: string;
+}
+
+/** Editor leaf payload: one definition's notes, text and example sentences. */
 interface DefinitionDraft {
   notes: string[];
   text: string;
+  examples: ExampleDraft[];
 }
 
 /** Editor group-node payload: a heading's notes (no text). */
@@ -452,6 +481,334 @@ interface OtherFormDraft {
 let nextNodeId = 0;
 const mintNodeId = () => nextNodeId++;
 const emptyGroupDraft = (): GroupDraft => ({ notes: [] });
+const emptyLeafDraft = (): DefinitionDraft => ({ notes: [], text: "", examples: [] });
+
+/**
+ * The work a picked example cites, named the way the reader will see it: the
+ * source's own short citation form, resolved from its record. A number nobody
+ * has described yet keeps showing as the number — the citation is valid either
+ * way, and pretending otherwise in the editor would hide from the author
+ * exactly what a reader is going to see.
+ */
+function PickedSource({
+  oclc,
+  justPublished,
+}: {
+  oclc: string;
+  /**
+   * This contributor described the work a moment ago. Until the firehose has
+   * been round, the AppView still answers "nobody has described it" — which is
+   * true of the index and false of the world, so it is not what this editor
+   * says back to the person who just wrote the record.
+   */
+  justPublished: boolean;
+}) {
+  const { t } = useTranslation();
+  const state = useSourceCitation(oclc);
+  return (
+    <span className="min-w-0 flex-1 text-sm text-content">
+      {state.status === "resolved" ? (
+        <abbr title={state.citation.long} className="no-underline">
+          {state.citation.short}
+        </abbr>
+      ) : (
+        <span className="font-mono text-xs">
+          {t("examples.oclcLabel")} {oclc}
+        </span>
+      )}
+      {state.status === "undescribed" && (
+        <span className="ml-2 text-xs text-amber-700 dark:text-amber-400">
+          {justPublished
+            ? t("createEntry.exampleSourceIndexing")
+            : t("createEntry.exampleSourceUndescribed")}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/**
+ * One example sentence: the sentence itself, and — optionally — which work it
+ * came from and where in it.
+ *
+ * Three ways in to the same field, because a contributor arrives at a source
+ * from three different places: **search** the works already described (scoped
+ * to the entry's language, since that is what a source's `languages` list is
+ * for), **type the OCLC number** of a work nobody has described yet, or
+ * **describe the work** then and there. The middle one is the one the design
+ * insists on: a citation to an undescribed number is valid, and refusing it
+ * would force a contributor to write a bibliography before they may quote a
+ * sentence.
+ */
+function ExampleRow({
+  row,
+  onChange,
+  onRemove,
+  languageTag,
+  languages,
+  idPrefix,
+}: {
+  row: ExampleDraft;
+  onChange: (row: ExampleDraft) => void;
+  onRemove: () => void;
+  /** The entry's language: sources are searched among those declaring it. */
+  languageTag: string | null;
+  languages: LanguageView[];
+  idPrefix: string;
+}) {
+  const { t } = useTranslation();
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<SourceView[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [numberInput, setNumberInput] = useState("");
+  const [describing, setDescribing] = useState(false);
+  /** A number this contributor described from here, not yet indexed. */
+  const [justPublished, setJustPublished] = useState<string | null>(null);
+
+  // Search-as-you-type. An assist like every other lookup here: a failure
+  // leaves the list empty and both other paths in.
+  useEffect(() => {
+    const q = query.trim();
+    if (q === "") {
+      setResults([]);
+      setSearching(false);
+      return;
+    }
+    let cancelled = false;
+    setSearching(true);
+    const timer = setTimeout(() => {
+      searchSources(q, languageTag ?? "")
+        .then((found) => {
+          if (cancelled) return;
+          setResults(found);
+          setSearching(false);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setResults([]);
+          setSearching(false);
+        });
+    }, SOURCE_SEARCH_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [query, languageTag]);
+
+  function pick(oclc: string) {
+    onChange({ ...row, oclc });
+    setQuery("");
+    setResults([]);
+    setNumberInput("");
+  }
+
+  // Fail-closed, like every other reading of a number here: what will not
+  // normalize is refused rather than guessed at, because a wrong number would
+  // silently attach the sentence to somebody else's book.
+  const typedNumber = normalizeOclc(numberInput);
+
+  return (
+    <div className="mt-2 rounded-lg border bg-surface-muted/30 p-2">
+      <div className="flex items-start gap-2">
+        <label className="sr-only" htmlFor={`${idPrefix}-text`}>
+          {t("createEntry.exampleTextLabel")}
+        </label>
+        <textarea
+          id={`${idPrefix}-text`}
+          value={row.text}
+          onChange={(e) => onChange({ ...row, text: e.target.value })}
+          placeholder={t("createEntry.exampleTextPlaceholder")}
+          rows={2}
+          className="min-w-0 flex-1 rounded-lg border bg-surface px-3 py-2 text-sm text-content outline-none placeholder:text-content-subtle focus:ring-2"
+        />
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label={t("createEntry.removeExample")}
+          title={t("createEntry.removeExample")}
+          className="shrink-0 rounded-lg px-2 py-1 text-lg leading-none text-content-subtle hover:bg-surface-muted hover:text-content"
+        >
+          ×
+        </button>
+      </div>
+
+      {row.oclc !== "" ? (
+        <>
+          <div className="mt-2 flex items-center gap-2">
+            <PickedSource oclc={row.oclc} justPublished={justPublished === row.oclc} />
+            <button
+              type="button"
+              onClick={() => onChange({ ...row, oclc: "", locator: "" })}
+              aria-label={t("createEntry.exampleSourceClear")}
+              title={t("createEntry.exampleSourceClear")}
+              className="shrink-0 text-content-subtle hover:text-red-600"
+            >
+              ×
+            </button>
+          </div>
+          <label className="sr-only" htmlFor={`${idPrefix}-locator`}>
+            {t("createEntry.exampleLocatorLabel")}
+          </label>
+          <input
+            id={`${idPrefix}-locator`}
+            value={row.locator}
+            onChange={(e) => onChange({ ...row, locator: e.target.value })}
+            placeholder={t("createEntry.exampleLocatorPlaceholder")}
+            className="mt-2 w-full min-w-0 rounded-lg border bg-surface px-3 py-2 text-sm text-content outline-none placeholder:text-content-subtle focus:ring-2"
+          />
+        </>
+      ) : (
+        <div className="mt-2">
+          <label className="sr-only" htmlFor={`${idPrefix}-source-search`}>
+            {t("createEntry.exampleSourceSearchLabel")}
+          </label>
+          <input
+            id={`${idPrefix}-source-search`}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t("createEntry.exampleSourceSearchPlaceholder")}
+            className="w-full min-w-0 rounded-lg border bg-surface px-3 py-2 text-sm text-content outline-none placeholder:text-content-subtle focus:ring-2"
+          />
+          {searching && (
+            <p className="mt-1 text-xs text-content-subtle">
+              {t("createEntry.exampleSourceSearching")}
+            </p>
+          )}
+          {!searching && query.trim() !== "" && results.length === 0 && (
+            <p className="mt-1 text-xs text-content-subtle">
+              {t("createEntry.exampleSourceNoResults")}
+            </p>
+          )}
+          {results.length > 0 && (
+            <ul className="mt-1 space-y-1">
+              {results.map((source) => (
+                <li key={source.oclc}>
+                  <button
+                    type="button"
+                    onClick={() => pick(source.oclc)}
+                    className="w-full rounded-lg border bg-surface px-3 py-2 text-left hover:border-primary hover:bg-surface-muted/60"
+                  >
+                    <span className="block text-sm text-content">{source.citation.short}</span>
+                    <span className="block text-xs text-content-muted">
+                      {source.citation.long}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="mt-2 flex gap-2">
+            <label className="sr-only" htmlFor={`${idPrefix}-source-oclc`}>
+              {t("createEntry.exampleOclcLabel")}
+            </label>
+            <input
+              id={`${idPrefix}-source-oclc`}
+              value={numberInput}
+              onChange={(e) => setNumberInput(e.target.value)}
+              placeholder={t("createEntry.exampleOclcPlaceholder")}
+              autoCapitalize="none"
+              autoCorrect="off"
+              className="w-full min-w-0 rounded-lg border bg-surface px-3 py-2 font-mono text-sm text-content outline-none placeholder:text-content-subtle focus:ring-2"
+            />
+            <button
+              type="button"
+              disabled={typedNumber === null}
+              onClick={() => {
+                if (typedNumber !== null) pick(typedNumber);
+              }}
+              className="shrink-0 rounded-lg border px-3 py-2 text-sm text-content hover:border-primary disabled:opacity-50"
+            >
+              {t("createEntry.exampleOclcUse")}
+            </button>
+          </div>
+          {numberInput.trim() !== "" && typedNumber === null && (
+            <p className="mt-1 text-xs text-red-600">{t("createEntry.exampleOclcInvalid")}</p>
+          )}
+          <p className="mt-1 text-xs text-content-subtle">{t("createEntry.exampleOclcHelp")}</p>
+
+          <button
+            type="button"
+            onClick={() => setDescribing(true)}
+            className="mt-1 text-sm text-primary hover:text-primary-hover"
+          >
+            {t("createEntry.exampleDescribeSource")}
+          </button>
+        </div>
+      )}
+
+      {describing && (
+        <SourceEditorDialog
+          languages={languages}
+          // Whatever the contributor was already reaching for seeds it: a
+          // number they typed, otherwise the title they searched.
+          {...(typedNumber !== null
+            ? { seedOclc: typedNumber }
+            : { seedTitle: query.trim() })}
+          {...(languageTag !== null ? { mainLanguage: languageTag } : {})}
+          onClose={() => setDescribing(false)}
+          onPublished={(oclc) => {
+            setDescribing(false);
+            setJustPublished(oclc);
+            pick(oclc);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * A definition leaf's example sentences. Leaf-only by construction — it is
+ * never rendered on a group card, because a heading has no sense of its own to
+ * exemplify (the same asymmetry as the definition text, and the rule
+ * `validateDefinitions` enforces).
+ */
+function ExamplesEditor({
+  examples,
+  onChange,
+  languageTag,
+  languages,
+  idPrefix,
+}: {
+  examples: ExampleDraft[];
+  onChange: (examples: ExampleDraft[]) => void;
+  languageTag: string | null;
+  languages: LanguageView[];
+  idPrefix: string;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="mt-2">
+      <p className="text-xs text-content-subtle">{t("createEntry.examplesHelp")}</p>
+      {examples.map((row) => (
+        <ExampleRow
+          key={row.id}
+          row={row}
+          onChange={(next) => onChange(examples.map((e) => (e.id === row.id ? next : e)))}
+          onRemove={() => onChange(examples.filter((e) => e.id !== row.id))}
+          languageTag={languageTag}
+          languages={languages}
+          idPrefix={`${idPrefix}-${row.id}`}
+        />
+      ))}
+      {examples.length < MAX_DEFINITION_EXAMPLES && (
+        <button
+          type="button"
+          onClick={() =>
+            onChange([
+              ...examples,
+              { id: nextAnnotationId++, text: "", oclc: "", locator: "" },
+            ])
+          }
+          className="mt-2 text-sm text-primary hover:text-primary-hover"
+        >
+          {t("createEntry.addExample")}
+        </button>
+      )}
+    </div>
+  );
+}
 
 /**
  * The entry's grammatical categories: tags, picked from what the language has
@@ -721,12 +1078,26 @@ export function EntryEditorDialog({
     initial
       ? fromRecordDefinitions(
           initial.definitions,
-          (d) => ({ notes: d.notes ?? [], text: d.text ?? "" }),
+          (d) => ({
+            notes: d.notes ?? [],
+            text: d.text ?? "",
+            // Carried into the draft, flattened for editing. Examples the
+            // record put on a *group* node reach `recordToGroup` instead, which
+            // has nowhere to keep them — the lenient half of the leaves-only
+            // rule, exactly as the text rule is healed rather than refused
+            // here.
+            examples: (d.examples ?? []).map((example) => ({
+              id: nextAnnotationId++,
+              text: example.text,
+              oclc: example.source?.oclc ?? "",
+              locator: example.source?.locator ?? "",
+            })),
+          }),
           (d) => ({ notes: d.notes ?? [] }),
           emptyGroupDraft,
           mintNodeId,
         )
-      : [{ kind: "leaf", id: mintNodeId(), payload: { notes: [], text: "" } }],
+      : [{ kind: "leaf", id: mintNodeId(), payload: emptyLeafDraft() }],
   );
   const [etymology, setEtymology] = useState<string[]>(initial?.etymology ?? []);
   const [entryNotes, setEntryNotes] = useState<string[]>(initial?.notes ?? []);
@@ -842,20 +1213,40 @@ export function EntryEditorDialog({
     .filter((f) => f.tag !== null && f.form.trim() !== "")
     .map((f) => ({ tag: f.tag!, form: f.form.trim() }));
   const cleanNodeNotes = (notes: string[]) => notes.map((s) => s.trim()).filter((s) => s !== "");
+  // The flattened editor row folded back into the record's shape: a row with no
+  // sentence is dropped (it is the example), a blank number means an unsourced
+  // example rather than an empty citation, and a blank locator is omitted
+  // rather than published as "". Round-trips losslessly for a valid record.
+  const cleanExamples = (examples: ExampleDraft[]): EntryExample[] =>
+    examples
+      .map((example) => {
+        const oclc = example.oclc.trim();
+        const locator = example.locator.trim();
+        return {
+          text: example.text.trim(),
+          ...(oclc !== ""
+            ? { source: { oclc, ...(locator !== "" ? { locator } : {}) } }
+            : {}),
+        };
+      })
+      .filter((example) => example.text !== "")
+      .slice(0, MAX_DEFINITION_EXAMPLES);
   // Serialize the editor tree to record definitions under the tree place
   // convention: leaves become definitions with text, group nodes carrying
   // notes become group items, bare groups stay implicit.
   const cleanDefinitions = toRecordDefinitions(
     definitions,
-    (payload) =>
-      payload.text.trim() === ""
-        ? null
-        : {
-            ...(cleanNodeNotes(payload.notes).length > 0
-              ? { notes: cleanNodeNotes(payload.notes) }
-              : {}),
-            text: payload.text.trim(),
-          },
+    (payload) => {
+      if (payload.text.trim() === "") return null;
+      const examples = cleanExamples(payload.examples);
+      return {
+        ...(cleanNodeNotes(payload.notes).length > 0
+          ? { notes: cleanNodeNotes(payload.notes) }
+          : {}),
+        text: payload.text.trim(),
+        ...(examples.length > 0 ? { examples } : {}),
+      };
+    },
     (group) => {
       const notes = cleanNodeNotes(group.notes);
       // A group is only worth an explicit record item when it carries content.
@@ -1036,6 +1427,17 @@ export function EntryEditorDialog({
           {nodeNotes(`entry-definition-${node.id}`, node.payload.notes, (notes) =>
             setDefinitions((prev) => updateLeaf(prev, node.id, (p) => ({ ...p, notes }))),
           )}
+          {/* Leaf cards only: the group card above has no examples block,
+              because a heading has no sense of its own to exemplify. */}
+          <ExamplesEditor
+            examples={node.payload.examples}
+            onChange={(examples) =>
+              setDefinitions((prev) => updateLeaf(prev, node.id, (p) => ({ ...p, examples })))
+            }
+            languageTag={targetTag}
+            languages={languages}
+            idPrefix={`entry-definition-${node.id}-example`}
+          />
         </div>
       );
     });
@@ -1203,7 +1605,7 @@ export function EntryEditorDialog({
               onClick={() =>
                 setDefinitions((prev) => [
                   ...prev,
-                  { kind: "leaf", id: mintNodeId(), payload: { notes: [], text: "" } },
+                  { kind: "leaf", id: mintNodeId(), payload: emptyLeafDraft() },
                 ])
               }
               className="mt-2 text-sm text-primary hover:text-primary-hover"

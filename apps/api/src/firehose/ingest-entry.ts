@@ -6,10 +6,13 @@ import {
   isValidDefinitionPlace,
   isValidLanguageTag,
   isValidTag,
+  MAX_DEFINITION_EXAMPLES,
   normalizeLanguageTag,
+  normalizeOclc,
   tagKey,
   validateDefinitions,
   type EntryDefinition,
+  type EntryExample,
   type Tag,
 } from "@leksis/types";
 import { db } from "../db";
@@ -112,11 +115,59 @@ function parseTags(value: unknown): Tag[] | null {
 }
 
 /**
+ * Validate a definition leaf's example sentences: at most sixteen, each with a
+ * non-empty `text`, and — when one cites a work — a `source` whose `oclc` reads
+ * as an OCLC number, stored in the normal form so it addresses the same source
+ * record a differently-punctuated catalogue export would.
+ *
+ * Strict, like every other site here: a malformed example takes the whole
+ * record with it. The number is a reference, and a reference this AppView
+ * cannot normalize is one no reader could resolve — silently dropping it would
+ * publish an entry whose citation vanished without anybody being told.
+ *
+ * Nothing about examples is indexed: they are content, like `text`. This exists
+ * to reject what is malformed and to hand `validateDefinitions` the group-node
+ * rule's input.
+ */
+function parseExamples(value: unknown): EntryExample[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > MAX_DEFINITION_EXAMPLES) return null;
+  const examples: EntryExample[] = [];
+  for (const item of value) {
+    if (typeof item !== "object" || item === null) return null;
+    const example = item as Record<string, unknown>;
+    if (typeof example.text !== "string") return null;
+    const text = example.text.trim();
+    if (text === "") return null;
+    if (example.source === undefined) {
+      examples.push({ text });
+      continue;
+    }
+    if (typeof example.source !== "object" || example.source === null) return null;
+    const source = example.source as Record<string, unknown>;
+    if (typeof source.oclc !== "string") return null;
+    const oclc = normalizeOclc(source.oclc);
+    if (oclc === null) return null;
+    let locator: string | undefined;
+    if (source.locator !== undefined) {
+      if (typeof source.locator !== "string") return null;
+      const trimmed = source.locator.trim();
+      if (trimmed !== "") locator = trimmed;
+    }
+    examples.push({
+      text,
+      source: { oclc, ...(locator !== undefined ? { locator } : {}) },
+    });
+  }
+  return examples;
+}
+
+/**
  * Validate the definitions tree and harvest what the read models need: each
  * node's sense-level `categories` tags, and the canonical places of the
  * leaves — the version's senses, which the semantic network addresses. A node
  * whose place ends non-zero is a leaf (text required); a node ending in 0 is a
- * group (no text). The whole-tree invariants are checked by
+ * group (no text, and no examples). The whole-tree invariants are checked by
  * `validateDefinitions`. Returns null when the list is invalid.
  */
 function parseDefinitions(value: unknown): { tags: Tag[]; places: number[][] } | null {
@@ -139,11 +190,16 @@ function parseDefinitions(value: unknown): { tags: Tag[]; places: number[][] } |
       if (typeof def.text !== "string") return null;
       text = def.text.trim();
     }
+    const examples = parseExamples(def.examples);
+    if (examples === null) return null;
     const leaf = isLeafPlace(def.place);
     definitions.push({
       place: def.place,
       notes,
       ...(leaf ? { text } : {}),
+      // Kept on both node kinds, unlike `text`: it is what lets
+      // validateDefinitions see — and refuse — examples on a group node.
+      examples,
     });
   }
   if (validateDefinitions(definitions) !== "ok") return null;

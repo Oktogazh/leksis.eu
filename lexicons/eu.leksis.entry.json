@@ -119,6 +119,50 @@
           "maxLength": 20480,
           "maxGraphemes": 2048,
           "description": "The definition text. Required on and only on a leaf (place ending in a non-zero index); a group node (place ending in 0) must not carry text."
+        },
+        "examples": {
+          "type": "array",
+          "maxLength": 16,
+          "items": { "type": "ref", "ref": "#example" },
+          "description": "Sentences illustrating THIS sense, in the entry's own language. Allowed on a leaf only: an example exemplifies one meaning, and a group node is a heading with no meaning of its own to exemplify — the same asymmetry as `text`. A leaf may carry several, from several sources or from none."
+        }
+      }
+    },
+    "example": {
+      "type": "object",
+      "required": ["text"],
+      "description": "One example sentence for a definition: the sentence, and optionally the work it was taken from.",
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 10240,
+          "maxGraphemes": 1024,
+          "description": "The sentence itself, written in the entry's own language, as the entry's every other piece of text is. Long enough for a short passage rather than a single clause, because a citation that has to be truncated to fit stops attesting what it was quoted for."
+        },
+        "source": {
+          "type": "ref",
+          "ref": "#exampleSource",
+          "description": "The work this sentence was taken from, when it was taken from one. Absent means an unsourced example — constructed by the entry's author, or heard rather than read — which is a legitimate lexicographic object and not an incomplete citation."
+        }
+      }
+    },
+    "exampleSource": {
+      "type": "object",
+      "required": ["oclc"],
+      "description": "Where an example sentence comes from: which work, and where in it. The work is referenced by its OCLC number rather than by the AT URI of an eu.leksis.source record, deliberately — the number is the work's identity, so the reference stays valid across every version of that record and is valid before anybody has published one at all. A citation can therefore only degrade (the reader sees the bare number), never break. Everything a reader sees of the work — the short and long citation forms — is rendered from the eu.leksis.source record for this number, so a mistyped citation is corrected once for every entry that quotes the work.",
+      "properties": {
+        "oclc": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16,
+          "description": "OCLC number of the cited work, in normal form: digits only, without the \"(OCoLC)\" wrapper, the \"ocm\"/\"ocn\"/\"on\" prefixes, or leading zeros. The same normal form an eu.leksis.source record is keyed on — that is what makes the two meet. No grapheme cap: the value is ASCII digits by construction."
+        },
+        "locator": {
+          "type": "string",
+          "maxLength": 1280,
+          "maxGraphemes": 128,
+          "description": "Where in the source the sentence is: \"p. 142\", \"s.v. gwerzenn\", \"§4\", \"f. 12v\", \"14:03\". Free text rather than a page number, because pagination, column, folio, headword and timestamp locators do not share a schema, and an integer field would be false precision the moment the source is a dictionary, a manuscript or a recording. Optional: a whole work is a legitimate source for a sentence (a proverb collection cited in bulk)."
         }
       }
     },

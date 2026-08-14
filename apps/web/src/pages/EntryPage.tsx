@@ -29,7 +29,9 @@ import {
 import { useSession } from "../auth/SessionProvider";
 import { EntryParadigm } from "../components/ParadigmView";
 import { endonym } from "../components/LanguageSelector";
+import { SourceEditorDialog } from "../components/SourceEditorDialog";
 import {
+  fetchCurrentSourceRecord,
   fetchEntryCognates,
   fetchEntryRelations,
   fetchLabels,
@@ -38,6 +40,7 @@ import {
 } from "../lib/api";
 import { fetchEntryRecord } from "../lib/atproto-record";
 import { fetchLanguageGrammar } from "../lib/language-grammar";
+import { forgetSource } from "../lib/source-record";
 
 const SYNC_POLL_MS = 3_000;
 const SYNC_POLL_MAX_TRIES = 20; // ~60s of PDS → Jetstream → ArangoDB latency
@@ -134,6 +137,23 @@ export function EntryPage({
    * page simply re-reads the network's view of this entry until it settles.
    */
   const [relationSyncing, setRelationSyncing] = useState(false);
+  /**
+   * The OCLC number an example cites and nobody has described, which the reader
+   * offered to describe. Null = the source editor is closed.
+   *
+   * The invitation lives here rather than on the citation because describing a
+   * work is publishing a record: the dialog needs the language list, and the
+   * page is where the other editors are opened from.
+   */
+  const [describingSource, setDescribingSource] = useState<string | null>(null);
+  /** The number just described, while the AppView catches up with the PDS write. */
+  const [sourceSyncing, setSourceSyncing] = useState<string | null>(null);
+  /**
+   * Bumped once a described source is indexed, to re-key the definitions and
+   * make their citations resolve again — a citation that degraded to a bare
+   * number should stop doing so as soon as the work has a description.
+   */
+  const [citationNonce, setCitationNonce] = useState(0);
   /** The redirect target's own view, resolved for display when this entry was deleted as a duplicate. */
   const [redirectTarget, setRedirectTarget] = useState<EntryView | null>(null);
   /** Record URI written to the PDS but not yet seen back from the AppView. */
@@ -286,6 +306,32 @@ export function EntryPage({
     }, SYNC_POLL_MS);
     return () => clearInterval(timer);
   }, [cognateSyncing, entryKey]);
+
+  // After describing a source an example cites: poll until the AppView serves
+  // it, then drop it from the per-number cache and re-resolve the citations.
+  // The cache is cleared by the editor at publish time too, but that is before
+  // the firehose has been round, so resolving then would only re-learn that
+  // nobody has described it.
+  useEffect(() => {
+    if (sourceSyncing === null) return;
+    let tries = 0;
+    const timer = setInterval(() => {
+      tries += 1;
+      // Outside the promise, so a persistently failing API still ends the poll.
+      if (tries >= SYNC_POLL_MAX_TRIES) setSourceSyncing(null);
+      fetchCurrentSourceRecord(sourceSyncing)
+        .then((fresh) => {
+          if (fresh === null) return;
+          forgetSource(sourceSyncing);
+          setSourceSyncing(null);
+          setCitationNonce((n) => n + 1);
+        })
+        .catch(() => {
+          /* transient — the tries counter above ends it either way */
+        });
+    }, SYNC_POLL_MS);
+    return () => clearInterval(timer);
+  }, [sourceSyncing]);
 
   const language =
     view !== null ? (languages.find((l) => l.tag === view.languageID) ?? null) : null;
@@ -527,14 +573,21 @@ export function EntryPage({
             </section>
           )}
 
-          <section className="mt-6">
+          {/* Re-keyed when a cited work gains a description, so the citations
+              below resolve again instead of staying degraded until a reload. */}
+          <section className="mt-6" key={citationNonce}>
             <h2 className="sr-only">{t("entry.definitionsLabel")}</h2>
             <DefinitionList
               definitions={record.definitions}
               labels={labels}
               senseExtras={senseExtras}
+              showExamples
+              {...(did !== null ? { onDescribeSource: setDescribingSource } : {})}
             />
           </section>
+          {sourceSyncing !== null && (
+            <p className="mt-2 text-xs text-content-subtle">{t("examples.syncing")}</p>
+          )}
 
           {relations !== null && (
             <ParkedRelations
@@ -708,6 +761,19 @@ export function EntryPage({
           onDeleted={(uri) => {
             setProposing(false);
             setSyncingURI(uri);
+          }}
+        />
+      )}
+
+      {describingSource !== null && (
+        <SourceEditorDialog
+          languages={languages}
+          seedOclc={describingSource}
+          {...(view !== null ? { mainLanguage: view.languageID } : {})}
+          onClose={() => setDescribingSource(null)}
+          onPublished={(oclc) => {
+            setDescribingSource(null);
+            setSourceSyncing(oclc);
           }}
         />
       )}

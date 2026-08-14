@@ -40,7 +40,53 @@ export interface EntryDefinition {
   notes?: string[];
   /** The definition text — present on and only on a leaf (place ending non-zero). */
   text?: string;
+  /**
+   * Sentences illustrating this sense — present on a leaf only, for the same
+   * reason `text` is: an example exemplifies one meaning, and a group node is
+   * a heading with none of its own. Enforced by `validateDefinitions`
+   * ("example-rule").
+   */
+  examples?: EntryExample[];
 }
+
+/**
+ * One example sentence on a definition leaf: the sentence, and optionally the
+ * work it was taken from.
+ *
+ * An unsourced example is a legitimate lexicographic object — a constructed
+ * illustration, or one heard rather than read — so `source` is optional and its
+ * absence means "no source", never "the citation is missing".
+ */
+export interface EntryExample {
+  /** The sentence, in the entry's own language. */
+  text: string;
+  source?: EntryExampleSource;
+}
+
+/**
+ * The citation half of an example: which work, and where in it.
+ *
+ * **The work is referenced by its OCLC number, never by a record URI.** The
+ * number is the work's identity, so the reference survives every version of the
+ * eu.leksis.source record describing it and is valid *before* anybody publishes
+ * one — a citation can only degrade to the bare number, never break. What a
+ * reader sees of the work (the short and long citation forms) is rendered from
+ * that record, so correcting a mistyped citation corrects every entry quoting
+ * the work rather than requiring each of them to be republished.
+ */
+export interface EntryExampleSource {
+  /** Normalized OCLC number (`normalizeOclc`) — the key a source record is filed under. */
+  oclc: string;
+  /**
+   * Where in the source: "p. 142", "s.v. gwerzenn", "§4", "14:03". Free text,
+   * because pagination, folio, headword and timestamp locators do not share a
+   * schema. Absent when the whole work is the source.
+   */
+  locator?: string;
+}
+
+/** Most example sentences one definition leaf may carry (the lexicon's cap). */
+export const MAX_DEFINITION_EXAMPLES = 16;
 
 /** Maximum depth of the definitions hierarchy (a place's maximum length). */
 export const ENTRY_DEFINITIONS_MAX_DEPTH = 3;
@@ -106,8 +152,11 @@ export function isValidDefinitionPlace(value: unknown): value is number[] {
  * Rules, over the list in its given order:
  *  - a leaf (place ending non-zero) must carry non-empty text; a group node
  *    (place ending in 0) must not carry text ("text-rule");
- *  (`categories`/`notes` are not inspected here — they are
- *  well-formedness, checked where the record is parsed.)
+ *  - a group node must carry no examples ("example-rule"): an example
+ *    exemplifies one sense, and a heading has none of its own. The leaf half of
+ *    the text rule has no counterpart here — examples are optional on a leaf.
+ *  (`categories`/`notes`, and the well-formedness of each example item, are not
+ *  inspected here — they are checked where the record is parsed.)
  *  - places are strictly sorted in reading order ("order");
  *  - sibling indices are contiguous from 1 within each parent, and a group
  *    slot (a non-last index) that some node uses is opened by a matching
@@ -115,7 +164,12 @@ export function isValidDefinitionPlace(value: unknown): value is number[] {
  *    ("structure");
  *  - at least one leaf exists ("empty").
  */
-export type DefinitionsError = "order" | "structure" | "text-rule" | "empty";
+export type DefinitionsError =
+  | "order"
+  | "structure"
+  | "text-rule"
+  | "example-rule"
+  | "empty";
 
 export function validateDefinitions(
   definitions: readonly EntryDefinition[],
@@ -136,6 +190,12 @@ export function validateDefinitions(
     const hasText = typeof def.text === "string" && def.text.trim() !== "";
     if (leaf && !hasText) return "text-rule";
     if (!leaf && hasText) return "text-rule";
+
+    // example-rule: a heading exemplifies nothing. Only the group half exists —
+    // a leaf with no examples is the ordinary case, not a defect.
+    if (!leaf && Array.isArray(def.examples) && def.examples.length > 0) {
+      return "example-rule";
+    }
 
     if (prev !== null) {
       if (compareDefinitionPlaces(prev, place) >= 0) return "order";
@@ -214,7 +274,8 @@ export interface LeksisEntryRecord {
   otherForms?: EntryInflectedForm[];
   /**
    * Flat list of definition-tree nodes, sorted by `place` (see
-   * EntryDefinition). Leaves carry text; group nodes carry notes only.
+   * EntryDefinition). Leaves carry text and any example sentences; group nodes
+   * carry notes only.
    */
   definitions: EntryDefinition[];
   /**

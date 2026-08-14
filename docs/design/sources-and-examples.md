@@ -1,6 +1,7 @@
 # Design note: sources and example sentences
 
-**Status:** **Slices 1 and 2 built (2026-08-12, 2026-08-13); slices 3–4 designed, not yet built.**
+**Status:** **Slices 1, 2 and 3 built (2026-08-12, 2026-08-13, 2026-08-13); slice 4 (recording)
+designed, not yet done.**
 Shapes and surfaces settled in the 2026-08-12 design session. Slice 1 shipped the lexicon, the
 `sources` collection with firehose ingest, and the three read surfaces; slice 2 shipped the OCLC
 lookup package, the source editor, the search bar's kind filter, the create chooser, the
@@ -383,10 +384,40 @@ Each leaves master deployable; the usual loop order (lexicon → ingest → AQL 
      rather than dropping a stranger's edit. `fetchSourceRecord` also refuses to load a record whose
      `category` is unknown or whose `languages[0]` is unreadable — both are rewrites that would
      silently destroy something, which is the `isValidGrammar` precedent.
-3. **Examples on entries.** `definitions[].examples` in the entry lexicon +
-   `validateDefinitions` rule; the leaf-card examples editor with the source picker;
-   EntryPage rendering with the resolve-or-degrade citation. Extend the fixture set
-   (`leksis-testset`): a fixture source + a fixture entry with sourced and unsourced examples.
+3. ~~**Examples on entries.**~~ **Built 2026-08-13.** `definitions[].examples` in the entry
+   lexicon (`#example` + `#exampleSource` defs); `EntryExample`/`EntryExampleSource` and the
+   `example-rule` in `validateDefinitions`; strict `parseExamples` at ingest and its lenient
+   twin in the web record parser; the leaf-card examples editor with the source picker;
+   `ExampleSentences`/`ExampleCitation` and the resolve-or-degrade citation on EntryPage.
+   Coverage rows E-30/E-31 and a new **§3.4 source matrix (S-01…S-04)** were added to
+   `leksis-testset`; publishing them is the fixture bot's, and is **owed**.
+   **Zero API cost, as designed** — no collection, no endpoint, no `db:init` change: an
+   example is content, and the only thing the AppView does with one is refuse a malformed
+   record. Five things the build settled or changed:
+   - **The citation has three states, not two.** §4.3 names "resolves" and "no record
+     exists"; driving it produced a third — *described, but the record would not load* (or
+     the AppView is unreachable). It must not offer to describe the work: doing so would
+     invite a stranger's record to be overwritten on the strength of a network error. So
+     `undescribed` and `unreadable` are separate, and only the first carries the invitation.
+   - **The compact preview suppresses examples**, decided rather than inherited:
+     `DefinitionList` gained `showExamples`, off by default. The preview already omits the
+     etymology, the notes and the forms; examples are the bulkiest thing an entry carries and
+     each cited work costs a resolution the caller did not ask for.
+   - **`examples` is kept on group nodes through ingest's whitelist**, unlike `text`, which
+     is stripped there. That is what lets `validateDefinitions` see the violation and refuse
+     the record — strip it and the leaves-only rule would silently never fire.
+   - **The editor row is flat** (`{text, oclc, locator}`), not the record's nested shape: a
+     half-typed number should not have to conjure a `source` object to live in. Round-trip
+     losslessness is asserted by harness.
+   - **Describing a work from an entry page needs a poll**, the same one every other publish
+     here has: the source editor clears the per-number cache at publish time, which is before
+     the firehose has been round, so the page waits for `currentRecord` and then re-keys the
+     definitions. Without it a citation stayed degraded until a reload.
+
+   Still owed, and unchanged by this slice: the lexicon is **not published** (`eu.leksis.entry`
+   now joins `grammar.layout` and the widened fields in that backlog), and no example has yet
+   travelled through a real PDS — the reader's three states were exercised in a browser against
+   stubbed responses plus direct harnesses, never end-to-end.
 4. **Record.** CHANGELOG under the milestone; an ADR (this note graduates: a new lexicon and a
    new collection are ADR-grade, the ADR-0013 precedent); update the `leksis` skill's lexicon
    family, schema section and deferred-decisions table (strike "example sentences — after

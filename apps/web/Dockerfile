@@ -13,6 +13,7 @@ RUN npm install --workspaces --include-workspace-root
 COPY tsconfig.base.json ./
 COPY packages/types ./packages/types
 COPY packages/ud ./packages/ud
+COPY packages/oclc ./packages/oclc
 COPY apps/web ./apps/web
 RUN npm run build --workspace @leksis/web
 

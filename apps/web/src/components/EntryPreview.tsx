@@ -11,6 +11,7 @@ import {
 import { fetchLabels } from "../lib/api";
 import { fetchEntryRecord } from "../lib/atproto-record";
 import { definitionsDepth, placeLabel } from "../lib/definition-tree";
+import { ExampleSentences } from "./ExampleSentences";
 
 /**
  * A tag's chips, resolved against what the language has bound:
@@ -119,6 +120,8 @@ export function DefinitionList({
   definitions,
   labels,
   senseExtras,
+  showExamples = false,
+  onDescribeSource,
 }: {
   definitions: EntryDefinition[];
   labels: LabelView[];
@@ -129,6 +132,21 @@ export function DefinitionList({
    * is unchanged.
    */
   senseExtras?: ReadonlyMap<string, ReactNode>;
+  /**
+   * Whether a leaf's example sentences are printed. **Off by default, and the
+   * compact preview leaves it off deliberately**: the preview is a summary that
+   * already omits the etymology, the notes and the forms, examples are the
+   * bulkiest thing an entry carries, and each cited work costs a resolution the
+   * caller did not ask for. The entry page — where an example is the point —
+   * turns it on.
+   */
+  showExamples?: boolean;
+  /**
+   * Offered beside a citation whose work nobody has described yet. Omit for a
+   * reader who cannot publish; passing it is what turns the degraded citation
+   * into an invitation.
+   */
+  onDescribeSource?: (oclc: string) => void;
 }): ReactNode {
   const depth = definitionsDepth(definitions);
   const lookup = labelLookup(labels);
@@ -167,6 +185,15 @@ export function DefinitionList({
                   coordinates still in the index. */}
               {def.text !== undefined && (
                 <span className="text-sm text-content">{def.text}</span>
+              )}
+              {/* Leaves only — a heading has no sense of its own to
+                  exemplify — which is why this hangs off `text` being present
+                  rather than off the place. */}
+              {showExamples && def.text !== undefined && def.examples !== undefined && (
+                <ExampleSentences
+                  examples={def.examples}
+                  {...(onDescribeSource !== undefined ? { onDescribeSource } : {})}
+                />
               )}
               {senseExtras?.get(def.place.filter((n) => n !== 0).join("."))}
             </div>

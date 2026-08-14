@@ -4,6 +4,7 @@ import {
   isValidGrammar,
   isValidTag,
   isValidLanguageTag,
+  MAX_DEFINITION_EXAMPLES,
   normalizeLanguageTag,
   normalizeOclc,
   LEKSIS_COGNATE_COLLECTION,
@@ -13,6 +14,7 @@ import {
   LEKSIS_SOURCE_COLLECTION,
   SOURCE_CATEGORIES,
   type EntryDefinition,
+  type EntryExample,
   type EntryInflectedForm,
   type EntryReference,
   type Grammar,
@@ -104,9 +106,42 @@ function parseTextList(value: unknown): string[] {
 }
 
 /**
+ * Lenient parse of a leaf's example sentences: an item with no text is
+ * dropped, and so is a `source` whose number will not normalize — the reference
+ * is the citation's whole content, and a number no reader could resolve is
+ * worse than an unsourced sentence, which is itself a legitimate thing to show.
+ * The sentence survives either way; only the citation is dropped with the
+ * number. Capped at the lexicon's sixteen rather than refusing the record over
+ * a seventeenth, which is the lenient half of the same rule ingest enforces
+ * strictly.
+ */
+function parseExamples(value: unknown): EntryExample[] {
+  if (!Array.isArray(value)) return [];
+  const examples: EntryExample[] = [];
+  for (const item of value.slice(0, MAX_DEFINITION_EXAMPLES)) {
+    const example = item as Record<string, unknown> | null;
+    if (!example || typeof example.text !== "string" || example.text.trim() === "") continue;
+    const source = example.source as Record<string, unknown> | null | undefined;
+    const oclc =
+      source && typeof source.oclc === "string" ? normalizeOclc(source.oclc) : null;
+    const locator =
+      source && typeof source.locator === "string" && source.locator.trim() !== ""
+        ? source.locator
+        : undefined;
+    examples.push({
+      text: example.text,
+      ...(oclc !== null
+        ? { source: { oclc, ...(locator !== undefined ? { locator } : {}) } }
+        : {}),
+    });
+  }
+  return examples;
+}
+
+/**
  * Lenient parse of the flat definitions list: each node is
- * `{place, notes?, plainNotes?, text?}` with a well-formed place (1–3
- * non-negative integers). Both node kinds are kept — a leaf carries the
+ * `{place, notes?, plainNotes?, text?, examples?}` with a well-formed place
+ * (1–3 non-negative integers). Both node kinds are kept — a leaf carries the
  * definition text, a group node carries only its notes, and dropping the
  * group nodes would lose every heading and the notes that hang on them.
  *
@@ -130,15 +165,21 @@ function parseDefinitions(value: unknown): EntryDefinition[] {
     const categories = parseTags(def.categories);
     const notes = parseTextList(def.notes);
     // A node with nothing to show is dropped: an empty leaf, or a bare group
-    // the tree re-derives from its children anyway.
+    // the tree re-derives from its children anyway. Examples deliberately do
+    // not count as content here — they belong to a leaf, and a node with
+    // examples and no text is one whose examples are about to be dropped.
     if (text.trim() === "" && categories.length === 0 && notes.length === 0) {
       continue;
     }
+    // Leaves only, healed rather than refused: examples found on a group node
+    // are silently dropped, exactly as the text rule is healed here.
+    const examples = text.trim() === "" ? [] : parseExamples(def.examples);
     definitions.push({
       place: def.place,
       ...(categories.length > 0 ? { categories } : {}),
       ...(notes.length > 0 ? { notes } : {}),
       ...(text.trim() !== "" ? { text } : {}),
+      ...(examples.length > 0 ? { examples } : {}),
     });
   }
   return definitions.sort((a, b) => compareDefinitionPlaces(a.place, b.place));

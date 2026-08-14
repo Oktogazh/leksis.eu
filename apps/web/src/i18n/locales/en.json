@@ -428,7 +428,27 @@
     "etymologyItemLabel": "Etymology paragraph",
     "etymologyPlaceholder": "From Proto-Celtic *ɸatīr, itself from Proto-Indo-European *ph₂tḗr…",
     "addEtymology": "＋ Add a paragraph",
-    "removeEtymology": "Remove"
+    "removeEtymology": "Remove",
+    "examplesHelp": "Sentences showing this sense in use, written in the entry's own language. Each may name the work it was taken from — the citation a reader sees comes from that work's own record, so it is written once and stays correctable.",
+    "exampleTextLabel": "Example sentence",
+    "exampleTextPlaceholder": "A sentence using the word in this sense…",
+    "addExample": "＋ Add an example",
+    "removeExample": "Remove this example",
+    "exampleSourceSearchLabel": "Find the source",
+    "exampleSourceSearchPlaceholder": "Search the works described for this language…",
+    "exampleSourceSearching": "Searching…",
+    "exampleSourceNoResults": "No described work matches. Cite its OCLC number below, or describe it.",
+    "exampleSourceClear": "Remove this source",
+    "exampleSourceUndescribed": "nobody has described this number yet",
+    "exampleSourceIndexing": "described — waiting for the network to index it",
+    "exampleOclcLabel": "OCLC number",
+    "exampleOclcPlaceholder": "e.g. 300375",
+    "exampleOclcUse": "Cite it",
+    "exampleOclcInvalid": "This is not an OCLC number — digits, with or without a catalogue prefix.",
+    "exampleOclcHelp": "A work nobody has described yet can still be cited: the reference is to the number, so the citation resolves the day somebody describes the work.",
+    "exampleDescribeSource": "＋ Describe a new source",
+    "exampleLocatorLabel": "Where in the source",
+    "exampleLocatorPlaceholder": "p. 142, s.v. gwerzenn, §4, 14:03… (optional)"
   },
   "sourceEditor": {
     "title": "Describe a source",
@@ -501,6 +521,16 @@
     "citationLongLabel": "Full citation",
     "describedBy": "Described by",
     "syncing": "Published — waiting for the network to index it…"
+  },
+  "examples": {
+    "oclcLabel": "OCLC",
+    "openSource": "Open this source",
+    "undescribed": "· nobody has described this source yet",
+    "undescribedHint": "The citation is valid all the same: an example cites a work by its catalogue number, so it resolves the day somebody describes the work.",
+    "describeSource": "Describe it",
+    "unreadable": "· this source could not be read",
+    "unreadableHint": "Somebody has described this work, but the description could not be read just now — its author's server may be unreachable.",
+    "syncing": "Source described — waiting for the network to index it, then the citation will show its short form…"
   },
   "deleteRecords": {
     "oneTitle": "Delete these {{count}} records?",
