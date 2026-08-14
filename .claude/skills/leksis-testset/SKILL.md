@@ -1,16 +1,36 @@
 ---
 name: leksis-testset
 description: >
-  Instructions for the Leksis **fixture bot** — the one bot that does not populate the dictionary. It publishes a small, deliberately feature-complete set of live eu.leksis.* records (languages, entries, and later paradigms and other lexicons) under quarantined private-use language tags, to be used as fixed targets for agentic browsing tests of leksis.eu in later programming sessions. Use this skill when building, extending, resetting or consuming that fixture set: it defines the quarantine rule, the size budget, the on-record addressing convention that lets an agent open the right page directly, the manifest, and the coverage matrix every shipped design feature must appear in. It is NOT for importing real dictionary content — that is `leksis-ingest`, which this skill assumes you have read for the lexicon shapes and the PDS mechanics. This skill can also be used by programming agents to verify their changes against the fixture set, and to assert that a new lexicon layer or content loop behave like intended.
+  The Leksis **testset protocol** — a set of tests the agent itself runs against a small, deliberately feature-complete set of live eu.leksis.* fixture records (languages, entries, sources, and later paradigms and other lexicons) published under quarantined private-use language tags. Use this skill (a) as the MANDATORY final slice of every feature implementation — publish/refresh the fixture rows the feature added to the coverage matrix, then drive the affected flows in the browser against the manifest's expect lines — and (b) before ANY release tag, since a tag deploys to production (see leksis-evolution's pre-tag gate). Also use it when building, extending or resetting the fixture set itself: it defines the quarantine rule, the size budget, the on-record addressing convention, the manifest, and the coverage matrix every shipped design feature must appear in. It is NOT for importing real dictionary content — that is `leksis-ingest`, which this skill assumes you have read for the lexicon shapes and the PDS mechanics.
 ---
 
-# Leksis fixture bot — live test records for agentic browsing
+# Leksis testset — live fixture records, and the protocol that tests against them
 
-## What this bot is
+## What this is, and when it runs
 
-Every other bot exists to grow the dictionary. This one exists to be **looked
-at**. It publishes a fixed, small set of `eu.leksis.*` records whose only
-purpose is to give a browsing agent — in a future session, on the live site —
+Originally this skill specified a fixture *bot* to be built in another project.
+That bot was never built, and it turned out not to be needed: **the agent
+reading this skill is the test runner.** It publishes and maintains the fixture
+records itself (from the `leksis-testset` bot account, per §4), and it drives
+the browser against them.
+
+**When the protocol runs (decided 2026-08-14):**
+
+1. **As the final slice of every feature.** A feature implementation plan ends
+   with a dedicated verification slice: add the feature's rows to the coverage
+   matrix (§3), publish/refresh the fixtures those rows need, regenerate the
+   manifest, then drive the affected flows in the browser (§5) and assert
+   against the `expect` lines. A feature without this slice is not finished.
+2. **Before any release tag.** A tag deploys to production
+   (`leksis-evolution`'s pre-tag gate), and a tag is only created at a
+   feature's final slice — so in practice gate 1 and gate 2 are the same pass;
+   the rule exists so no tag ever ships on a stale pass.
+
+## What the fixture set is
+
+Every ingestion bot exists to grow the dictionary. This record set exists to be
+**looked at**. It is a fixed, small set of `eu.leksis.*` records whose only
+purpose is to give a browsing agent — in any session, on the live site —
 a page it can open and assert against for every feature the design has
 shipped.
 
@@ -278,7 +298,8 @@ Two rules do it:
 1. **Use a 16-digit number** (`MAX_OCLC_DIGITS`, the cap `normalizeOclc`
    enforces). Real OCLC numbers are around ten digits, so the top of the
    accepted range is empty by construction and will stay so far longer than
-   this fixture set lives. Allocate them `900000000000000n`.
+   this fixture set lives. Allocate them `9000000000000000n` (sixteen digits —
+   the very top of the range `normalizeOclc` accepts).
 2. **`languages` are fixture tags only** (`qtl` first), so the source is offered
    in no real language's entry editor and listed on no real dashboard.
 
@@ -293,8 +314,8 @@ what search matches and what every citing entry prints: put the handle in it
 | S-03 | the optional fields genuinely absent | a second described work with no `author`, no `year`, no `url` — "no author" must render as nothing, never as an empty row |
 | S-04 | a source of the **bare** language | `languages: ["qtm"]` — a work can be cited from a language that has declared no grammar at all |
 
-Publishing these is the fixture bot's job, in its own repo (`leksis-testset`),
-and the run is **owed**: this slice ships the entry-side field, and the fixtures
+Publishing these is part of the testset protocol (from the fixture account,
+per §4), and the run is **owed**: this slice ships the entry-side field, and the fixtures
 for E-30/E-31 and S-01…S-04 have not been published. Until they are, the
 citation states have been exercised only against stubbed responses, never
 end-to-end through a PDS and the firehose.
@@ -405,14 +426,12 @@ so the account is unreachable from outside the VPS's allowed sources regardless
 of the password. Use it to work through §7.1/§7.2 below; do not create a second
 test account without reason to.
 
-> **⚠ The account does not unblock an *agentic* session.** Typing a password
-> into a form is prohibited for an agent however the credentials reach it, so an
-> agent working §7 still cannot log in — only a human at the keyboard can, by
-> authenticating in the preview tab and handing it back. The blocker, and the
-> leads for removing it (a local PDS whose session is minted by script, an
-> exported restorable session, a dev-only bypass), are recorded in the `verify`
-> skill under *the session wall*. Plan around that, or the session is spent
-> discovering it again.
+> **The session wall is SOLVED (2026-08-14).** An agent still must never type
+> the password into a form, but it no longer needs to: the **dev-only scripted
+> session** (`apps/web/src/auth/dev-session.ts` + the `VITE_DEV_*` vars in
+> `apps/web/.env.local`) logs the dev build in as this account automatically on
+> load. See the `verify` skill's *session wall* section and CLAUDE.md for the
+> mechanics. §7.1/§7.2 below are therefore workable by an agent.
 
 **One caveat that will otherwise waste a session.** Local OAuth builds its client
 id from `window.location`, so a **deep link on a cold load throws**

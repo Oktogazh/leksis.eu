@@ -164,9 +164,43 @@ Each feature milestone follows this sequence. Do them in order; don't skip the d
 3. Update ArangoDB collections/queries            (AQL)
 4. Update shared types                            (packages/types)
 5. Build the frontend interface                   (apps/web)
-6. Tag a release: git tag vX.Y.Z && git push --tags  → GitHub Actions deploys over SSH
-7. Test the milestone on the live URL
+6. Verification slice: run the pre-tag gate below (testset pass + docker build)
+7. Tag a release: git tag vX.Y.Z && git push --tags  → GitHub Actions deploys over SSH
+8. Test the milestone on the live URL
 ```
+
+### When to tag, and the pre-tag gate (decided 2026-08-14)
+
+**A tag marks a feature's final slice, not a deployable commit.** Every commit on
+master must still leave the repo deployable, but deployability is no longer a
+reason to tag — intermediate slices of a feature are committed untagged, and one
+tag ships the finished feature. (This replaces the earlier practice of tagging
+several times a day.)
+
+Before ANY `git tag`, two gates must pass, in this order:
+
+1. **The testset pass** — run the `leksis-testset` skill's verification protocol
+   as the feature's dedicated final slice: publish/refresh whatever fixture rows
+   the feature added to the coverage matrix, then drive the affected flows in the
+   browser against the manifest's `expect` lines. A feature whose testset slice
+   has not run is not finished.
+2. **The Docker build** — the api + web images must build locally:
+
+   ```bash
+   PDS_ADMIN_PASSWORD=x PDS_JWT_SECRET=x PDS_PLC_ROTATION_KEY=x docker compose build api web
+   ```
+
+   (The dummy vars satisfy the `pds` service's required-variable interpolation,
+   which otherwise fails the compose file parse on a dev machine; the build
+   itself never reads them.) `npm run build` alone has twice passed while the image build failed
+   in production (custom packages missing from the Docker context when UD and
+   OCLC packages were added); the image build is the deploy's real build, so it
+   is the one that gates the tag. No CI duplication needed — the deploy workflow
+   already builds on the server; this gate exists so a failure is found *before*
+   the tag, not after it.
+
+Tagging itself remains a hard stop: propose the tag, never push it without
+explicit user approval.
 
 **Principles for the loop:**
 - **Deploy on day one, every loop.** A deployed empty shell is a working pipeline. A pipeline that breaks

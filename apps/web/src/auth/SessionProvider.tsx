@@ -13,6 +13,7 @@ import type { BrowserOAuthClient } from "@atproto/oauth-client-browser";
 import type { LeksisProfileRecord } from "@leksis/types";
 import i18n, { applyInterfaceLanguage } from "../i18n";
 import { getOAuthClient } from "./client";
+import { clearDevSession, initDevSession } from "./dev-session";
 import { fetchProfile, putProfile } from "../lib/profile";
 
 // The live OAuth session type, derived from the client API so we don't depend
@@ -75,6 +76,26 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
     void (async () => {
       try {
+        // Dev-only scripted session (see dev-session.ts) — lets an agentic
+        // browser session past the login wall. No-op in production builds and
+        // whenever the VITE_DEV_* vars are absent.
+        const devAgent = await initDevSession();
+        if (devAgent?.session) {
+          setAgent(devAgent);
+          setDid(devAgent.session.did);
+          setStatus("connected");
+          setHandle(await resolveHandle(devAgent, devAgent.session.did));
+          try {
+            const loaded = await fetchProfile(devAgent, devAgent.session.did);
+            if (loaded) applyInterfaceLanguage(loaded.interfaceLanguage);
+            setProfile(loaded);
+          } catch (err) {
+            console.error("could not load profile:", err);
+            setProfile(null);
+          }
+          return;
+        }
+
         const client = await getOAuthClient();
         // Restores a stored session, or processes the OAuth callback if we just
         // came back from the PDS (and cleans the params out of the URL).
@@ -132,6 +153,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       console.error("Sign out failed", err);
     }
+    clearDevSession();
     sessionRef.current = null;
     setAgent(null);
     setDid(null);

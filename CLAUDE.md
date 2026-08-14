@@ -13,8 +13,7 @@ The stack is based on aTurborepo monorepo: `apps/api` (Hono AppView), `apps/web`
 
 The user works, sequentially, step by step and keeps control of what happens and when.
 
-**Master is continuously released**: the user tags `v*` several times a day and every tag deploys to production. Treat everything committed on master as live or hours from it —
-there is no long-lived unreleased state, so every step must leave master deployable on its own.
+**Master is continuously deployable; tags mark finished features** (policy since 2026-08-14). Every commit must leave master deployable on its own, but a `v*` tag is created only at the **final slice of a feature**, never merely because a commit is deployable. Every tag deploys to production, so before proposing one, the pre-tag gate must have passed: a **testset pass** (the `leksis-testset` skill run as the feature's dedicated verification slice) and a successful local **`docker compose build`** (the image build is the deploy's real build — `npm run build` alone has missed production build breaks twice). See evolution skill step 3.
 
 1. **Orient** — establish where the project stands (evolution skill step 1).
 2. **Propose** — before any non-trivial change, state what you intend to change, in which files, and why. Wait for confirmation on anything beyond the agreed step.
@@ -22,6 +21,21 @@ there is no long-lived unreleased state, so every step must leave master deploya
 4. **Verify** — per `.claude/skills/verify/SKILL.md`. A change is done when the affected flow has been exercised and proof shown, not when it compiles. You can also use the **leksis-testset** skill to run the testset on the affected flow.
 5. **Record** — match the change to its home (CHANGELOG / ADR / skill update) per evolution skill step 4.
 
+
+## Logging in during browser tests (the session wall — solved 2026-08-14)
+
+Every surface except the landing page sits behind a login, and an agent must never type a
+password into a form. The standing solution is a **dev-only scripted session**:
+`apps/web/src/auth/dev-session.ts` logs the app in as `testaccount.leksis.eu` on load via
+`com.atproto.server.createSession` (an `AtpAgent`, which `SessionProvider` accepts because
+`AtpAgent extends Agent`), using the three `VITE_DEV_*` vars in the gitignored
+`apps/web/.env.local`. The path is compiled out of production builds (`import.meta.env.DEV`)
+and is a no-op when any var is blank. So: start the `web` preview, open `http://127.0.0.1:5173/`,
+and the app is already connected — no manual login, ever. If it lands on the login form instead,
+`.env.local` is missing/blank (the password line must be filled by the user by hand, once) or the
+dev server predates the file (Vite restarts on .env changes; restart it if in doubt). Writes made
+through this session are real records on the test account's PDS — that is the point, but never
+publish outside the fixture rules in `leksis-testset`.
 
 ## Verification rules
 

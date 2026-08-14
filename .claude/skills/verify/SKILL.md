@@ -39,40 +39,30 @@ Vite dev server, port 5173, defined as `web` in `.claude/launch.json`.
    and dark mode — the app is a PWA-to-be, mobile is not optional.
 6. Proof: `preview_screenshot` for visual changes, console/network output otherwise.
 
-### The session wall — authenticated surfaces cannot be exercised locally (unsolved)
+### The session wall — SOLVED (2026-08-14): the dev-only scripted session
 
-`App.tsx` renders `LandingPage` whenever the session is `disconnected`, and rewrites any
-resource URL back to `/`. So **every surface except the landing page sits behind a login**:
-the search results, the entry page, the language dashboard, and all the editors. Starting
-the preview proves the app boots; it proves nothing at all about a change to any of them.
+`App.tsx` renders `LandingPage` whenever the session is `disconnected`, so every surface
+except the landing page sits behind a login, and an agent must never type a password into
+a form. The solution is **`apps/web/src/auth/dev-session.ts`**: in a dev build, when the
+three `VITE_DEV_*` vars are set in the gitignored `apps/web/.env.local`
+(`VITE_DEV_PDS=https://pds.leksis.eu`, `VITE_DEV_HANDLE=testaccount.leksis.eu`,
+`VITE_DEV_PASSWORD=` filled in by the user by hand, once), `SessionProvider` skips OAuth
+and logs in as the test account via `com.atproto.server.createSession` — an `AtpAgent`,
+which the provider accepts because `AtpAgent extends Agent`. The session persists in
+localStorage and resumes on reload, so navigation and reloads keep it; signing out clears
+it and returns the OAuth landing page.
 
-**An agent cannot clear this wall by logging in.** Typing a password into a form is
-prohibited for the agent whoever supplies it, so the test account's published credentials
-(`leksis-testset` §7) do **not** unblock an agentic session — do not plan a verification
-pass as though they do.
+Rules of the road:
 
-**What to do until it is solved.** Verify to level 2, then prove the change's *data
-contract* directly — curl the endpoints the surface consumes, seeding fixtures with
-`apps/api/src/scripts/verify-network.ts --seed` or the equivalent for that surface — and
-then **say plainly that the UI was never driven**. A change proven this far is not
-verified, and calling it verified is the failure this skill exists to prevent. When a human
-is present the one-line unblock is to ask them to log in in the preview tab and hand it
-back; that is a round trip, not a solution.
-
-**Leads for actually solving it — none tried, in rough order of promise:**
-
-1. **A local PDS.** `docker-compose.yml` already defines a `pds` service
-   (`ghcr.io/bluesky-social/pds:0.4`). It wants `PDS_JWT_SECRET` and friends in `.env`,
-   whose absence is why `docker compose ps` currently fails outright. An account on a
-   local PDS could have its session **minted by script** rather than typed into a form.
-2. **A restorable session fixture.** `@atproto/oauth-client-browser` persists a DPoP-bound
-   session in browser storage. If that can be exported once from a human-logged-in profile
-   and re-seeded before load, an agent *restores* a session instead of authenticating.
-   Whether the DPoP key material survives the round trip is the thing to establish first —
-   if it does not, this lead is dead and should be struck from this list.
-3. **A dev-only bypass.** A `VITE_DEV_SESSION` flag mounting `HomePage` with a stub
-   session. Cheapest and least faithful: it touches app code, it verifies a surface no real
-   user reaches, and it must be impossible to enable in a production build.
+- **Real session, not a stub.** It is a full credential session against the real PDS
+  (which is IP-gated at Caddy, so the published password guards nothing). Writes publish
+  real records on the test account's repo and go through the production firehose — write
+  only within the `leksis-testset` fixture rules.
+- **Compiled out of production** — the whole path is behind `import.meta.env.DEV`, and a
+  blank/missing var makes it a verified no-op (the normal landing page renders).
+- If the browser lands on the login form: `.env.local` is missing or its password blank,
+  or the running dev server predates the file. Never work around it by typing the
+  password — that stays prohibited however the credentials reach you.
 
 ### The CORS wall — SOLVED (2026-08-08)
 
