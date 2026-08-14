@@ -49,7 +49,7 @@ fixture set lives entirely inside it. Three languages, each with a job:
 |---|---|---|
 | **`qtl`** | the **full** fixture language — everything that is supposed to work | layers 1–3 declared, `grammarIssues` **empty**, permanently |
 | **`qtm`** | the **bare** language — the degrade path the design promises | **no `grammar` at all**; its entries carry tags nobody bound |
-| **`qto`** | the **defective** language — the repair worklist's test target | one row per `GrammarIssue` kind, on purpose |
+| **`qto`** | the **defective** language — the *refusal* test target | published coherent first, then rewritten with one row per `GrammarIssue` kind, on purpose |
 
 Why three and not one: `qtm` proves the fallbacks (verbatim tag rendering, the
 flat `otherForms` list, the flat picker) which are load-bearing promises of the
@@ -58,6 +58,17 @@ that a *deliberately broken* grammar never has to live on `qtl` —
 **a language version cannot be un-published**: `eu.leksis.language` versions
 archive forever, so a broken grammar published on `qtl` stays in its history
 and its dashboard permanently. Think before you publish a language version.
+
+**`qto`'s job changed with ADR-0015 and its shape changed with it.** An
+incoherent grammar is no longer indexed-and-flagged, so there is no repair
+worklist for it to populate; what it now proves is the pair of properties the
+refusal rests on. Publish a **coherent** `qto` first, then the defective rewrite:
+the rewrite must be **refused** (the coherent version stays current, so `qto`
+stays browsable), while the browser — which reads `getRecord` by rkey, and a
+language record's rkey is its tag — reads the *defective* content and the binding
+editor must list every defect and block Publish. One consolation in the new rule:
+a refused version never enters the record's history at all, so the broken rewrite
+is less permanent than a bad version used to be.
 
 Reserve the next tags (`qtp`, `qtq`, …) for future lexicons rather than
 crowding an existing fixture language.
@@ -203,7 +214,11 @@ its rows here in the same loop.
 | L-41 | `layout-too-large` | `qto`: axes multiplying past `MAX_LAYOUT_CELLS` (4096) → the block draws nothing and says why |
 
 All of L-30…L-41 land in **one** `qto` record — they are rows in one `grammar`
-object, and the dashboard's repair worklist should show them all at once.
+object, and since ADR-0015 that record is **refused whole**, which is what these
+rows now assert: `GET /languages/qto/currentRecord` still points at the coherent
+version, and the ingest log names all twelve kinds. The place each kind is *read*
+is the binding editor's footer (U-16 below), because that is the surface a
+contributor repairs them in.
 
 Two of these are worth constructing deliberately rather than by accident. L-39
 is the only issue kind that reports something *harmless but useless*, so it is
@@ -303,8 +318,12 @@ end-to-end through a PDS and the firehose.
    activity feed is ordered by index time; a run that publishes everything at
    once makes the feed a single burst. If a fixture needs to test the feed,
    publish it last and note that in `expect`.
-4. **`grammarIssues` on `qtl` must be empty** after every run — check
-   `GET /languages/qtl/dashboard`. Treat non-empty as a failed run.
+4. **Every `qtl` version must actually index** — since ADR-0015 an incoherent
+   grammar is refused, so a run that publishes one leaves `qtl` silently on its
+   previous version. There is no `grammarIssues` field to check any more: confirm
+   `GET /languages/qtl/currentRecord` returns the `cid` you just wrote (and watch
+   the ingest log, which names the offending rows when it refuses). Treat a stale
+   `cid` as a failed run.
 5. **Reset = delete then republish.** Entry deletions are mirrored by the
    AppView, so deleting the bot's `eu.leksis.entry` records genuinely cleans
    the index. Language versions do **not** un-publish; a fixture language's
@@ -419,9 +438,10 @@ action item.
 | U-10 | the summary flag | marking a block shows it as "beside the headword" in the block list and in the resolved preview |
 | U-11 | the preview | the category level draws every block through the *shipped* resolver — an excluded cell is absent there while still clickable in the editor |
 | U-12 | removing blocks | removing the last block **withdraws the layout** and returns to the root |
-| U-13 | publishing | the rewritten record round-trips: reopen the dialog and the layout is as authored, `grammarIssues` empty on the dashboard |
+| U-13 | publishing | the rewritten record round-trips: reopen the dialog and the layout is as authored, and the version is **indexed** (it appears in the dashboard's activity feed — a refused one never would) |
 | U-14 | the no-orphan guard | withdrawing an axis a layout uses is refused at publish, naming the layout row |
 | U-15 | mobile | the whole tab at 375px, including the grid's horizontal scroll |
+| U-16 | the defect list (ADR-0015) | open the dialog on **`qto`**, whose live record is the defective rewrite: Publish is disabled and the footer lists **every** kind L-30…L-41 with its own copy — not only the ones this edit would introduce. Then repair them (bind the missing atoms and feature names, declare the grounding inherence, remove the one-atom `bindings` row with its own × control) and confirm the publish succeeds and indexes |
 
 ### 7.2 Grammar editor — layer 4's sibling, the Inflection classes section
 

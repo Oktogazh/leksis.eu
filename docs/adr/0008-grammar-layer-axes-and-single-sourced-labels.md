@@ -10,6 +10,12 @@
   **reverses** part of its invariant 3; that note remains the design source for
   layers 4–6
 
+> **Superseded on one point by ADR-0015** (2026-08-14): this layer's issue kinds
+> (`inherent-axis-conflict`, `empty-axis`) are refused at ingest rather than
+> indexed and flagged, and the "zero API cost" claim survives in a stronger form —
+> the check now runs *before* the first database round trip, so a refused record
+> costs less than an accepted one.
+
 ## Context
 
 Layer 2 let a language say what a headword *is*. It could not say what that

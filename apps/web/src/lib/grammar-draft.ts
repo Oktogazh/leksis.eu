@@ -29,9 +29,9 @@ import {
 // identity or array position.
 //
 // Nothing here enforces the layer-1 gate or the no-orphan rule — those live in
-// `grammarIssues`/`grammarDiff` in packages/types, shared with the AppView.
-// A draft is allowed to be momentarily incoherent while it is being edited;
-// what must not happen is *publishing* it.
+// `grammarIssues` in packages/types, shared with the AppView, which refuses to
+// index what it reports (ADR-0015). A draft is allowed to be momentarily
+// incoherent while it is being edited; what must not happen is *publishing* it.
 
 /** The parts of speech a language has bound, in record order. */
 export function posRows(grammar: Grammar): GrammarPos[] {

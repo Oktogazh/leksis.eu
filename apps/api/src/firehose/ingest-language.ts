@@ -5,7 +5,6 @@ import {
   isValidLanguageTag,
   normalizeLanguageTag,
   type Grammar,
-  type GrammarIssue,
   type LanguageTranslation,
 } from "@leksis/types";
 import { db } from "../db";
@@ -27,12 +26,6 @@ interface LanguageDoc {
   cid: string;
   authorDID: string;
   /**
-   * Defects in this version's grammar — a value whose feature name nobody
-   * bound, or two rows keying the same. Stored rather than recomputed so the
-   * dashboard can serve a repair worklist without resolving the record.
-   */
-  grammarIssues: GrammarIssue[];
-  /**
    * The labels this version's grammar declares. The grammar itself is not
    * indexed (the record is its source of truth), but its *labels* are, for the
    * same reason entry docs store their tags: the labels read model has to
@@ -51,7 +44,8 @@ export type IngestResult = "indexed" | "skipped-duplicate" | "skipped-invalid";
  * Validate an incoming record (unknown shape — anyone can put anything on
  * their PDS). Returns the normalized document fields, or null when invalid.
  * Rules: well-formed lowercase BCP 47 tag, non-empty translations of the
- * right shape, and the endonym present (an item whose languageID === tag).
+ * right shape, the endonym present (an item whose languageID === tag), and a
+ * `grammar` that is both well-formed and coherent (ADR-0015).
  */
 function parseRecord(record: unknown): {
   tag: string;
@@ -79,13 +73,36 @@ function parseRecord(record: unknown): {
   }
   if (!translations.some((t) => t.languageID === tag)) return null; // endonym required
 
-  // The grammar is validated for SHAPE only: a malformed one rejects the whole
-  // record, exactly like any other field. Vocabulary is never judged — a
-  // language may bind items no UD snapshot knows, which is the point of the
-  // layer.
+  // The grammar must be well-formed AND coherent (ADR-0015). Shape and
+  // cardinality first — a malformed or oversized one rejects the whole record,
+  // exactly like any other field — then the cascade's own checks, which used to
+  // be indexed-and-flagged.
+  //
+  // Rejecting incoherence is what keeps the interface out of a deadlock. The
+  // binding editor navigates the cascade, so it can neither produce a row
+  // hanging off something unbound nor offer a way to remove one; a record like
+  // that was indexed, reported on the dashboard as needing repair, and then
+  // unrepairable there. Refusing it leaves the previous version current — the
+  // language keeps a grammar every editor can still work on — and the record
+  // stays on its author's PDS, indexed the moment it is fixed.
+  //
+  // Vocabulary is still never judged: a language may bind items no UD snapshot
+  // knows, and a tag nothing has bound still renders. What is refused is a
+  // record that contradicts itself.
   let grammar: Grammar | null = null;
   if (r.grammar !== undefined) {
     if (!isValidGrammar(r.grammar)) return null;
+    // Named in the log, unlike every other failure here: this one is a bot's
+    // output being refused row by row, and "invalid record" alone would leave
+    // its author nothing to fix.
+    const issues = grammarIssues(r.grammar);
+    if (issues.length > 0) {
+      console.warn(
+        `firehose: language "${tag}" rejected — ${issues.length} incoherent grammar row(s): ` +
+          issues.map((i) => `${i.kind}(${i.key})`).join(", "),
+      );
+      return null;
+    }
     grammar = r.grammar;
   }
 
@@ -123,20 +140,6 @@ export async function ingestLanguage(
     return "skipped-duplicate";
   }
 
-  // A grammar can be well-formed and still incoherent — a value whose feature
-  // name nobody bound, two rows keying the same. That is **detected, never
-  // rejected**: refusing the version would discard everything else it carries
-  // to punish one row, and would make the AppView the arbiter of a language's
-  // grammar. An orphan renders safely anyway (by decomposition, or verbatim),
-  // so it is a repair worklist item, not a write error.
-  const issues = parsed.grammar === null ? [] : grammarIssues(parsed.grammar);
-  if (issues.length > 0) {
-    console.warn(
-      `firehose: language "${parsed.tag}" has ${issues.length} grammar issue(s): ` +
-        issues.map((i) => `${i.kind}(${i.key})`).join(", "),
-    );
-  }
-
   const labels = parsed.grammar === null ? [] : grammarLabelRows(parsed.grammar);
 
   const doc: LanguageDoc = {
@@ -144,7 +147,6 @@ export async function ingestLanguage(
     recordURI,
     cid,
     authorDID,
-    grammarIssues: issues,
     labels,
     createdAt: parsed.createdAt,
     indexedAt: new Date().toISOString(),

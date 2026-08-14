@@ -4,6 +4,64 @@ All notable changes to Leksis. Each section is one loop — a unit of work, not 
 unit of time: the content loops grow the dictionary outward, the grammar loops
 (the morphology arc) grow the entry deeper, and the two interleave.
 
+## The index admits only what the interface could have published
+
+Content loop 6 (polish), and a correction rather than a feature — it retires a
+rule the grammar loops had carried since layer 1.
+
+A rule change with a small diff behind it. The AppView used to index a record it
+could read but not act on — a `grammar` object whose rows point at things the
+language never declared — and report those rows on the dashboard as needing
+repair. The binding editor navigates the cascade, so it could not reach them:
+the worklist named rows no contributor could fix. See **ADR-0015**.
+
+> The old rule — "index loudly but don't block" — was written so that imperfect
+> bots could load external dictionaries and be corrected by hand later. That is
+> right for content and wrong for a language's grammar, where one bad row reaches
+> every entry in the language and the hand-correction it counted on turned out to
+> be impossible.
+
+### The gate
+
+- **An incoherent grammar is refused, not flagged.** Any of `grammarIssues`'
+  fourteen kinds now costs the record its place in the index. The previous version
+  stays current, so the language keeps a grammar every editor can work on, and the
+  refused record is indexed the moment its author fixes it.
+- **The lexicon's declared limits are validation, not documentation.** Every
+  `maxLength` the lexicons declare on an array is enforced in the shared
+  validators: the sixteen `grammar` caps, a tag's 32 `feats` (which binds entries
+  too), an entry's `todo` and `etymology`, a source's `languages`. One bot could
+  otherwise publish ten thousand `values` rows — ten thousand editor rows and
+  labels docs. `etymology` was not validated at all and now is.
+- **String caps stay unenforced.** A definition one grapheme over its cap renders
+  and edits perfectly well; refusing the record would lose a contribution to make
+  a point about counting.
+- **What stays lenient is a different thing, and the ADR says so.** An unbound tag
+  still renders verbatim; an unrecognised relation `kind` is still indexed and
+  never traversed (forward compatibility, not incoherence); a source's disputed
+  main language is still flagged. A record that contradicts *itself* is refused; a
+  record that contradicts *somebody else* is indexed and contested.
+
+### The interface
+
+- **The publish guard and the ingest gate are now one rule.** The editor blocked
+  only the defects an edit *introduced*, so that an already-incoherent record
+  stayed editable. With nothing incoherent indexed, the loaded record is coherent
+  and the distinction has no subject left — `grammarDiff` is retired. Leaving it
+  would have been the regression: the browser would publish a version the AppView
+  then dropped in silence.
+- **The defects moved to where the rows are.** The per-kind copy that explained
+  each one on the dashboard now renders in the editor's footer, one line per
+  defect, beside the blocked Publish button.
+- **One new control**: a remove button for a `bindings` row holding a single atom
+  — the only defect no level of the editor could reach, since every other reaches
+  a combination through a (category, feature) pair. It matters because a language
+  record's rkey is its tag: a refused rewrite still replaces the content behind
+  the pointer the index serves, so every defect needs a repair path.
+- **The grammar repair worklist is gone** end to end. The labels worklist stays:
+  a tag in use that nothing has named is a gap *between* records, which no gate
+  can close.
+
 ## Sources and example sentences — the citation becomes a record, written once
 
 Content loop 6 (polish), the whole sources-and-examples design

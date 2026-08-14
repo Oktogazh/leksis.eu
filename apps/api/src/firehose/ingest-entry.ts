@@ -7,6 +7,8 @@ import {
   isValidLanguageTag,
   isValidTag,
   MAX_DEFINITION_EXAMPLES,
+  MAX_ENTRY_ETYMOLOGY,
+  MAX_ENTRY_TODO,
   normalizeLanguageTag,
   normalizeOclc,
   tagKey,
@@ -309,15 +311,22 @@ function parseRecord(record: unknown): ParsedEntry | null {
 
   // `todo` is a list of freeform pending-task notes (one item per task, so
   // several bots or editors can each track their own); the DB stores only
-  // whether any non-empty item exists.
+  // whether any non-empty item exists. Capped as the lexicon declares
+  // (ADR-0015): the entry page renders every item.
   let todo = false;
   if (r.todo !== undefined) {
-    if (!Array.isArray(r.todo)) return null;
+    if (!Array.isArray(r.todo) || r.todo.length > MAX_ENTRY_TODO) return null;
     for (const item of r.todo) {
       if (typeof item !== "string") return null;
       if (item.trim() !== "") todo = true;
     }
   }
+
+  // `etymology` is record-only content like `notes`, and is validated for the
+  // same reason: a record whose prose is not prose should be rejected whole
+  // rather than indexed and left to fail in a reader's browser.
+  const etymology = parsePlainNotes(r.etymology);
+  if (etymology === null || etymology.length > MAX_ENTRY_ETYMOLOGY) return null;
 
   // `transcription` (IPA) is record-only content: type-checked so a malformed
   // record is rejected whole, then dropped — the DB never stores it.

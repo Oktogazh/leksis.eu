@@ -32,6 +32,15 @@ export const SOURCE_CATEGORIES = ["bibliographic"] as const;
 export type SourceCategory = (typeof SOURCE_CATEGORIES)[number];
 
 /**
+ * Most languages one source may declare (the lexicon's cap).
+ *
+ * Enforced rather than documented (ADR-0015): a work covering more languages
+ * than this is not a record the source editor could have written, and every
+ * language it names puts the source on that language's dashboard.
+ */
+export const MAX_SOURCE_LANGUAGES = 64;
+
+/**
  * How a source is rendered after an example sentence that cites it: what is
  * shown inline, and what it expands to. Both forms live on the source, so a
  * citation is written once rather than once per citing entry.
@@ -130,7 +139,8 @@ export function normalizeOclc(input: string): string | null {
  *    see the key. Rejecting `00012345` here would discard a MARC export over
  *    zero-padding, which is the same mistake as rejecting "BR" for "br" below;
  *  - `title` is non-empty ("title");
- *  - `languages` is non-empty and every tag is well-formed BCP 47 ("languages");
+ *  - `languages` is non-empty, no longer than the lexicon allows, and every tag
+ *    is well-formed BCP 47 ("languages");
  *  - `citation.short` and `citation.long` are both non-empty ("citation").
  *
  * Three things are deliberately NOT checked here.
@@ -166,6 +176,7 @@ export function validateSource(
 
   const languages = record.languages;
   if (!Array.isArray(languages) || languages.length === 0) return "languages";
+  if (languages.length > MAX_SOURCE_LANGUAGES) return "languages";
   for (const tag of languages) {
     if (typeof tag !== "string" || !isValidLanguageTag(tag)) return "languages";
   }

@@ -389,41 +389,12 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
               </div>
             )}
 
-            {/* The AppView indexes an incoherent grammar rather than rejecting
-                it — so this is where those rows get found and fixed. */}
-            {dashboard.grammarIssues.length > 0 && (
-              <div className="mt-4 rounded-lg border border-amber-400/60 bg-amber-50/40 p-3 dark:bg-amber-500/5">
-                <h3 className="text-sm font-semibold text-content">
-                  <span aria-hidden="true">⚠ </span>
-                  {t("languagePage.grammarIssuesTitle")}
-                </h3>
-                <p className="mt-1 text-xs text-content-subtle">
-                  {t("languagePage.grammarIssuesHint")}
-                </p>
-                <ul className="mt-2 space-y-1">
-                  {dashboard.grammarIssues.map((issue, i) => (
-                    <li key={i} className="font-mono text-xs text-content">
-                      {/* One case per kind, rather than a two-branch test: a
-                          later layer adding a kind must produce copy of its
-                          own, not silently inherit another kind's. */}
-                      {t(`languagePage.grammarIssue.${issue.kind}`, {
-                        key: issue.key,
-                        feature: issue.feature ?? "",
-                        atom: issue.atom ?? "",
-                      })}
-                    </li>
-                  ))}
-                </ul>
-                <button
-                  type="button"
-                  onClick={() => setGrammarOpen(true)}
-                  disabled={record === null}
-                  className="mt-2 text-xs text-primary hover:text-primary-hover disabled:opacity-50"
-                >
-                  {t("languagePage.grammarIssuesOpen")}
-                </button>
-              </div>
-            )}
+            {/* No grammar repair worklist: the AppView refuses to index an
+                incoherent grammar (ADR-0015), so the current record's rows are
+                coherent by construction and there is nothing here to list. The
+                worklist that remains is the labels one above — a tag some entry
+                uses that no declaration has named, which is a gap between two
+                records rather than a defect inside one. */}
           </section>
 
           {/* The works this language's entries can cite. Below the front

@@ -328,7 +328,12 @@ axis** · **live UD candidate lists with degrade-to-manual** · **sense-level ta
 **derived cells, never a stored matrix** · **a summary flag per block, not indices** · **bare coordinates,
 re-qualified before use** · **exact → containment → leftover** · **"no such form" ≠ "not entered yet"** ·
 **an inflection class is a minted feature and gets a door, not a mechanism** (ADR-0009) ·
-**index expansion at ingest for inflected-form search** (leaning, priced at layer 5).
+**index expansion at ingest for inflected-form search** (leaning, priced at layer 5) ·
+**the AppView indexes only what the interface could have published — structure validated, vocabulary and
+assertions not** (ADR-0015, which reversed "detection only, never rejection" for coherence while leaving it
+intact for rendering) · **the lexicons' declared array caps are validation, not documentation** ·
+**a record that contradicts itself is refused; one that contradicts somebody else is indexed and
+contested**.
 
 **Settled by the layer-1 build (ADR-0006), do not re-derive:** `grammar` is `pos` + `features` + `values`,
 with `bindings` reserved for layer-2 *combinations* (≥2 items) — a `values` row names its feature, which is
@@ -551,11 +556,16 @@ required at layer 1:
 
 - **The no-orphan rule.** Unbinding is refused while any higher layer depends on the row — including a
   feature name whose values are still bound. "Unbinding" is not a delete operation: the whole `grammar`
-  object is rewritten, so the client must **diff proposed against current** and refuse to publish a version
-  that orphans anything. A pure function over (old, new) in `packages/types`. Enforced in the browser; at
-  the AppView **detection only, never rejection** — the orphan already renders safely, and rejecting would
-  discard a version's good content and make the AppView the arbiter of a language's grammar. The dashboard
-  surfaces orphans as a **repair worklist** beside the unbound-tag worklist.
+  object is rewritten, so the check is a pure function over the *whole* object in `packages/types`
+  (`grammarIssues`). **Enforced in the browser and at the AppView, as one rule — ADR-0015 reversed this
+  entry's original answer**, which was "detection only, never rejection" with the dashboard surfacing a
+  **repair worklist**. That was wrong for one reason the argument never considered: the editor *navigates*
+  the cascade, so it has no level that lists a row hanging off something unbound — the worklist named rows
+  nobody could reach. An incoherent grammar is now refused at ingest (the previous version stays current)
+  and the browser blocks publishing **any** defect, not only a newly introduced one; the diff over
+  (old, new) is retired. Rendering stays lenient — refusing to *display* an orphan would make the AppView
+  the arbiter of a language's grammar, which the original objection was right about. The unbound-*tag*
+  worklist is untouched: a gap between two records is not a contradiction inside one.
 - **An optimistic-concurrency guard.** Refuse the write if the record changed since load: last-write-wins
   can now drop a reference, not merely a label.
 

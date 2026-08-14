@@ -7,6 +7,11 @@
 - **Supersedes:** `docs/design/grammatical-tagging.md` for layer 2 only; that
   note remains the design source for layers 3–6
 
+> **Superseded on one point by ADR-0015** (2026-08-14): §3's three issue kinds are
+> no longer "detected and never rejected" — a record carrying one is refused at
+> ingest, and the dashboard worklist they were reported on is gone. The kinds
+> themselves, and everything else here, stand.
+
 ## Context
 
 Layer 1 gave a language its **atoms**: the parts of speech it uses, the feature

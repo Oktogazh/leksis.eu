@@ -88,6 +88,17 @@ export interface EntryExampleSource {
 /** Most example sentences one definition leaf may carry (the lexicon's cap). */
 export const MAX_DEFINITION_EXAMPLES = 16;
 
+/**
+ * Most etymology paragraphs one entry may carry (the lexicon's cap).
+ *
+ * Enforced at ingest like every other declared limit (ADR-0015): the lexicon's
+ * `maxLength` is validation, not documentation.
+ */
+export const MAX_ENTRY_ETYMOLOGY = 16;
+
+/** Most pending-work notes one entry may carry (the lexicon's cap). */
+export const MAX_ENTRY_TODO = 64;
+
 /** Maximum depth of the definitions hierarchy (a place's maximum length). */
 export const ENTRY_DEFINITIONS_MAX_DEPTH = 3;
 

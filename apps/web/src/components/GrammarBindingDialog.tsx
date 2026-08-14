@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import {
   applicableAxes,
   excludesCell,
-  grammarDiff,
+  grammarIssues,
   grammarLookup,
   featureDocUrl,
   formatTagVerbatim,
@@ -12,6 +12,7 @@ import {
   resolveLayout,
   resolveTag,
   tagKey,
+  tagSize,
   uposDocUrl,
   uposGloss,
   valueTag,
@@ -262,14 +263,16 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
   }, [valuesFeature, valuesFeatureMinted]);
 
   /**
-   * The no-orphan guard. Only defects this edit *introduces* block the write:
-   * a record that arrived already incoherent has to stay editable, or it can
-   * never be repaired.
+   * The no-orphan guard, and every other coherence check: **any** defect in the
+   * draft blocks the write, not merely one this edit introduced (ADR-0015).
+   *
+   * The AppView now refuses to index an incoherent grammar, so publishing one
+   * would drop the whole version silently — the contributor's edit would appear
+   * to succeed and never arrive. The distinction the old diff drew has no
+   * subject left either: nothing incoherent gets indexed, so the record this
+   * dialog loads is always coherent to begin with.
    */
-  const introduced = useMemo(
-    () => grammarDiff(record?.grammar, draft).introduced,
-    [record, draft],
-  );
+  const defects = useMemo(() => grammarIssues(draft), [draft]);
 
   const dirty = useMemo(
     () => JSON.stringify(draft) !== JSON.stringify(record?.grammar ?? {}),
@@ -1035,17 +1038,37 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
               );
             })}
             {combinations.map((row) => (
-              <li key={tagKey(row.tag)}>
+              <li key={tagKey(row.tag)} className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setPath({ at: "l2category", category: row.tag })}
-                  className={levelButton}
+                  className={`${levelButton} flex-1`}
                 >
                   <span className="text-sm text-content">{row.label.short ?? row.label.long}</span>
                   <span className="text-xs text-content-subtle">
                     {t("grammar.l2InherentCount", { count: inherentRows(draft, row.tag).length })}
                   </span>
                 </button>
+                {/* A one-atom row is not a combination at all — it belongs in
+                    `pos` or `values` — and this is the ONLY control anywhere
+                    that can remove one: every other level reaches a
+                    combination through a (category, feature) pair, which a
+                    single atom has none of. Without it a record carrying one
+                    could never be made publishable, since ingest now refuses an
+                    incoherent grammar (ADR-0015). Hence the narrow condition:
+                    a well-formed combination is still removed where it was
+                    declared, not here. */}
+                {tagSize(row.tag) < 2 && (
+                  <button
+                    type="button"
+                    onClick={() => setDraft(removeCombination(draft, row.tag))}
+                    title={t("grammar.issue.single-item-binding", { key: tagKey(row.tag) })}
+                    aria-label={t("grammar.unbind")}
+                    className="text-content-subtle hover:text-red-600"
+                  >
+                    ×
+                  </button>
+                )}
               </li>
             ))}
           </ul>
@@ -2265,12 +2288,24 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
             </div>
 
             <footer className="border-t px-4 py-3 sm:px-5">
-              {introduced.length > 0 && (
-                <p className="mb-2 text-sm text-red-600">
-                  {t("grammar.errors.orphans", {
-                    rows: introduced.map((i) => i.feature ?? i.key).join(", "),
-                  })}
-                </p>
+              {defects.length > 0 && (
+                <div className="mb-2 text-sm text-red-600">
+                  <p>{t("grammar.errors.defects")}</p>
+                  <ul className="mt-1 space-y-0.5">
+                    {defects.map((issue, i) => (
+                      <li key={i} className="font-mono text-xs">
+                        {/* One case per kind, rather than a two-branch test: a
+                            later layer adding a kind must produce copy of its
+                            own, not silently inherit another kind's. */}
+                        {t(`grammar.issue.${issue.kind}`, {
+                          key: issue.key,
+                          feature: issue.feature ?? "",
+                          atom: issue.atom ?? "",
+                        })}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
               {error !== null && <p className="mb-2 text-sm text-red-600">{error}</p>}
               <div className="flex justify-end gap-3">
@@ -2285,7 +2320,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
                 <button
                   type="button"
                   onClick={() => void onPublish()}
-                  disabled={submitting || !dirty || introduced.length > 0 || !agent}
+                  disabled={submitting || !dirty || defects.length > 0 || !agent}
                   className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-fg hover:bg-primary-hover disabled:opacity-50"
                 >
                   {submitting ? t("grammar.publishing") : t("grammar.publish")}

@@ -49,6 +49,17 @@ export const FEATURE_VALUE_PATTERN = /^[A-Z0-9][A-Za-z0-9]*$/;
  */
 export const POS_VALUE_PATTERN = /^[A-Z][A-Za-z0-9]*$/;
 
+/**
+ * The most `Feature=Value` items one bundle may carry, mirroring the
+ * `maxLength` its `feats` array declares in `lexicons/eu.leksis.defs.json`.
+ *
+ * The lexicon's limit is validation, not documentation (ADR-0015): a bundle past
+ * it is not a tag of this lexicon, so no editor could have written it. Real
+ * bundles are two or three items — this is a ceiling, not a target, and it binds
+ * every site a tag appears at, on an entry as much as on a language record.
+ */
+export const MAX_TAG_FEATS = 32;
+
 /** Separator between the features of a bundle in UD's FEATS serialisation. */
 export const FEATS_SEPARATOR = "|";
 
@@ -136,15 +147,18 @@ export function isValidTagFeat(value: unknown): value is TagFeat {
 }
 
 /**
- * Whether an unknown value is a well-formed tag. Shape only — a tag is never
- * rejected for naming something absent from a UD snapshot, since the whole
- * point of the layer is that a language may declare vocabulary UD has not.
+ * Whether an unknown value is a well-formed tag. Shape and cardinality only —
+ * a tag is never rejected for naming something absent from a UD snapshot, since
+ * the whole point of the layer is that a language may declare vocabulary UD has
+ * not; a bundle past `MAX_TAG_FEATS` is rejected, because the lexicon says a
+ * bundle that size does not exist.
  */
 export function isValidTag(value: unknown): value is Tag {
   if (!isPlainObject(value)) return false;
   if (value.upos !== undefined && !isValidTagUpos(value.upos)) return false;
   if (value.feats !== undefined) {
-    if (!Array.isArray(value.feats) || !value.feats.every(isValidTagFeat)) return false;
+    if (!Array.isArray(value.feats) || value.feats.length > MAX_TAG_FEATS) return false;
+    if (!value.feats.every(isValidTagFeat)) return false;
   }
   const feats = Array.isArray(value.feats) ? value.feats : [];
   return value.upos !== undefined || feats.length > 0;

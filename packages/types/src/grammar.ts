@@ -141,9 +141,10 @@ export interface GrammarFeature {
    *
    * It is a flag on a feature rather than a sixth array because the machinery
    * is a feature's exactly — one name, several values, one label each — and a
-   * fact keeps one home. The exclusions are reported by `grammarIssues` and
-   * rendered as navigation in the editor, never enforced at ingest: a record
-   * that says otherwise is incoherent, not invalid.
+   * fact keeps one home. The exclusions are rendered as navigation in the
+   * editor — a lexicographic set is simply absent from the grammatical layers'
+   * pickers — and reported by `grammarIssues`, which is now also what refuses
+   * such a record at ingest (ADR-0015).
    */
   lexicographic?: boolean;
 }
@@ -410,6 +411,40 @@ export interface Grammar {
   layout?: GrammarLayout[];
   abbreviations?: GrammarAbbreviation[];
 }
+
+/**
+ * The maximum length of every array the `grammar` object holds, mirroring the
+ * `maxLength` each one declares in `lexicons/eu.leksis.language.json`.
+ *
+ * **The lexicon's limits are validation, not documentation.** A record past one
+ * of them is not a record of this lexicon, so the interface could never have
+ * published it and `isValidGrammar` refuses it — the cardinality half of the
+ * rule in ADR-0015. They are what stops one bot from turning the binding editor
+ * into ten thousand list items and the `labels` model into ten thousand docs;
+ * every real declaration is orders of magnitude below them.
+ */
+export const GRAMMAR_LIMITS = {
+  pos: 64,
+  features: 256,
+  values: 2048,
+  inherent: 512,
+  bindings: 1024,
+  axes: 512,
+  layout: 256,
+  abbreviations: 512,
+  /** Blocks of one layout declaration. */
+  blocks: 64,
+  /** Constants pinned on one block, and coordinates of one cell. */
+  coords: 16,
+  /** Features on one dimension of a table (`rows`, `columns`). */
+  dimension: 8,
+  /** Cells listed by one block (`items`, `exclude`). */
+  cells: 256,
+  /** Values one axis declares. */
+  axisValues: 256,
+  /** References on one row. */
+  references: 16,
+} as const;
 
 /** The tag a `pos` row binds. */
 export function posTag(row: { value: string; scheme?: string }): Tag {
@@ -735,8 +770,10 @@ function resolveAxes(grammar: Grammar, rows: readonly GrammarAxis[]): ResolvedAx
     const feature = features.find((f) => f.feature === row.feature);
     // A lexicographic label set is dropped here exactly as an orphan is: the
     // declaration is incoherent, `grammarIssues` says so, and an authoring
-    // surface is not where it gets repaired. Only a record authored elsewhere
-    // can carry one, since the editor never offers it.
+    // surface is not where it gets repaired. Nothing the AppView indexes
+    // carries one now (ADR-0015), but this stays total anyway: a record is read
+    // from its author's PDS, and a language record's rkey is its tag, so the
+    // content behind an indexed pointer can be rewritten under it.
     if (feature === undefined || feature.lexicographic === true) continue;
     const resolved: GrammarValue[] = [];
     for (const value of row.values) {
@@ -1432,17 +1469,27 @@ export interface GrammarIssue {
   atom?: string;
 }
 
-/** Stable identity of an issue, so two versions' issues can be compared. */
-export function grammarIssueKey(issue: GrammarIssue): string {
-  // A NUL separator, so no combination of a kind and a key can spell the
-  // same identity as another pair. Written as an escape rather than a
-  // literal, which would make this source file read as binary to grep.
-  const atom = issue.atom === undefined ? "" : `\u0000${issue.atom}`;
-  return `${issue.kind}\u0000${issue.key}${atom}`;
-}
-
 /**
- * Every defect in a grammar.
+ * Every defect in a grammar. **Empty is the condition for publishing one and
+ * the condition for indexing one — the same condition, checked twice**
+ * (ADR-0015).
+ *
+ * An incoherent grammar is a state no editor in `apps/web` can produce, because
+ * the binding editor navigates the cascade: a row hanging off something unbound
+ * has no level that lists it, no control that edits it and no button that
+ * removes it. So indexing one put the interface in front of a record it could
+ * neither render as intended nor repair — a deadlock the dashboard could report
+ * and nobody could clear. The browser now refuses to publish one and the AppView
+ * refuses to index one, which makes the current version of every language
+ * coherent by construction.
+ *
+ * Both callers want the list rather than a boolean — one to log which rows were
+ * refused, the other to name them to the contributor — which is why there is no
+ * `isCoherentGrammar` predicate wrapping this.
+ *
+ * Vocabulary is still never judged: an item absent from a UD snapshot is not a
+ * defect, and a tag nothing has bound still renders verbatim. What is refused is
+ * a grammar that contradicts *itself*.
  *
  * The gate matches a value to its feature **by name**, ignoring `scheme`:
  * within one record a name is unambiguous, and requiring the schemes to agree
@@ -1746,34 +1793,6 @@ export function grammarIssues(grammar: Grammar): GrammarIssue[] {
   return issues;
 }
 
-/**
- * The defects a proposed grammar would **introduce** — the no-orphan check,
- * as a pure function over (old, new).
- *
- * Unbinding is not a delete operation: the whole record is rewritten, so the
- * only way to catch an orphan is to compare proposed against current. Only
- * *introduced* defects are reported, never pre-existing ones: a record that
- * arrived orphaned (from a bot, or another client) must stay editable, or the
- * repair worklist is unreachable and the damage is permanent.
- *
- * Enforced in the browser, which refuses to publish. At the AppView this is
- * **detection only, never rejection** — rejecting a version would discard its
- * good content to punish one bad row, and would make the AppView the arbiter
- * of a language's grammar; an orphan already renders safely by decomposition
- * or verbatim.
- */
-export function grammarDiff(
-  previous: Grammar | undefined,
-  next: Grammar,
-): { introduced: GrammarIssue[] } {
-  const before = new Set(
-    (previous === undefined ? [] : grammarIssues(previous)).map(grammarIssueKey),
-  );
-  return {
-    introduced: grammarIssues(next).filter((issue) => !before.has(grammarIssueKey(issue))),
-  };
-}
-
 /** One chip a tag renders as. */
 export interface ResolvedTagPart {
   /** The bound homolingual label, when this part resolved to one. */
@@ -2000,7 +2019,7 @@ function isValidLabel(value: unknown): value is GrammarLabel {
 
 function isValidReferences(value: unknown): boolean {
   if (value === undefined) return true;
-  if (!Array.isArray(value)) return false;
+  if (!Array.isArray(value) || value.length > GRAMMAR_LIMITS.references) return false;
   return value.every((item) => {
     if (!isPlainObject(item)) return false;
     if (typeof item.text !== "string" || item.text.trim() === "") return false;
@@ -2024,16 +2043,20 @@ function isValidLayoutCoord(value: unknown): boolean {
 }
 
 function isValidLayoutCoords(value: unknown): boolean {
-  return Array.isArray(value) && value.every(isValidLayoutCoord);
+  return (
+    Array.isArray(value) &&
+    value.length <= GRAMMAR_LIMITS.coords &&
+    value.every(isValidLayoutCoord)
+  );
 }
 
 function isValidLayoutCells(value: unknown): boolean {
-  if (!Array.isArray(value)) return false;
+  if (!Array.isArray(value) || value.length > GRAMMAR_LIMITS.cells) return false;
   return value.every((cell) => isPlainObject(cell) && isValidLayoutCoords(cell.coords));
 }
 
 function isValidLayoutDimension(value: unknown): boolean {
-  if (!Array.isArray(value)) return false;
+  if (!Array.isArray(value) || value.length > GRAMMAR_LIMITS.dimension) return false;
   return value.every((name) => typeof name === "string" && FEATURE_NAME_PATTERN.test(name));
 }
 
@@ -2052,18 +2075,21 @@ function isValidLayoutBlock(value: unknown): value is LayoutBlock {
 }
 
 /**
- * Whether an unknown value is a well-formed `grammar` object. **Shape only**:
- * a row is never rejected for naming vocabulary absent from a UD snapshot,
- * which is what lets a language with no published tagset declare its own. The
- * gate and the orphan rule are reported by `grammarIssues`, not enforced here
- * — they describe a grammar that is well-formed but incoherent, and the two
- * failures have deliberately different consequences.
+ * Whether an unknown value is a well-formed `grammar` object — **shape and
+ * cardinality**, never vocabulary. A row is never rejected for naming an item
+ * absent from a UD snapshot, which is what lets a language with no published
+ * tagset declare its own; an array past the `maxLength` its lexicon declares
+ * *is* rejected, because that is not a record of this lexicon at all.
+ *
+ * Coherence — the gate and the orphan rule — is `isCoherentGrammar`'s business.
+ * Both now reject at ingest (ADR-0015); they stay separate functions because
+ * only this one describes a record that cannot be *read*.
  */
 export function isValidGrammar(value: unknown): value is Grammar {
   if (!isPlainObject(value)) return false;
 
   if (value.pos !== undefined) {
-    if (!Array.isArray(value.pos)) return false;
+    if (!Array.isArray(value.pos) || value.pos.length > GRAMMAR_LIMITS.pos) return false;
     for (const row of value.pos) {
       if (!isPlainObject(row)) return false;
       if (!isValidTagUpos({ value: row.value, scheme: row.scheme })) return false;
@@ -2073,7 +2099,9 @@ export function isValidGrammar(value: unknown): value is Grammar {
   }
 
   if (value.features !== undefined) {
-    if (!Array.isArray(value.features)) return false;
+    if (!Array.isArray(value.features) || value.features.length > GRAMMAR_LIMITS.features) {
+      return false;
+    }
     for (const row of value.features) {
       if (!isPlainObject(row)) return false;
       if (typeof row.feature !== "string" || !FEATURE_NAME_PATTERN.test(row.feature)) return false;
@@ -2087,7 +2115,12 @@ export function isValidGrammar(value: unknown): value is Grammar {
   // are required — a row missing either says nothing at all, where every other
   // shape failure here would be losing information the record does carry.
   if (value.abbreviations !== undefined) {
-    if (!Array.isArray(value.abbreviations)) return false;
+    if (
+      !Array.isArray(value.abbreviations) ||
+      value.abbreviations.length > GRAMMAR_LIMITS.abbreviations
+    ) {
+      return false;
+    }
     for (const row of value.abbreviations) {
       if (!isPlainObject(row)) return false;
       if (typeof row.short !== "string" || row.short.trim() === "") return false;
@@ -2097,7 +2130,7 @@ export function isValidGrammar(value: unknown): value is Grammar {
   }
 
   if (value.values !== undefined) {
-    if (!Array.isArray(value.values)) return false;
+    if (!Array.isArray(value.values) || value.values.length > GRAMMAR_LIMITS.values) return false;
     for (const row of value.values) {
       if (!isPlainObject(row)) return false;
       if (!isValidTagFeat({ feature: row.feature, value: row.value, scheme: row.scheme })) {
@@ -2109,7 +2142,9 @@ export function isValidGrammar(value: unknown): value is Grammar {
   }
 
   if (value.inherent !== undefined) {
-    if (!Array.isArray(value.inherent)) return false;
+    if (!Array.isArray(value.inherent) || value.inherent.length > GRAMMAR_LIMITS.inherent) {
+      return false;
+    }
     for (const row of value.inherent) {
       if (!isPlainObject(row)) return false;
       if (!isValidTag(row.category)) return false;
@@ -2118,16 +2153,18 @@ export function isValidGrammar(value: unknown): value is Grammar {
   }
 
   // An axis naming no values is well-formed and merely says nothing, so like a
-  // single-item combination it is reported by `grammarIssues` rather than
-  // rejected here: shape failures discard the whole record, and one empty row
-  // is not worth a language's entire declaration.
+  // single-item combination it belongs to `grammarIssues` rather than here. Both
+  // now cost the record its place in the index (ADR-0015); what the split still
+  // buys is a *diagnosis* — an issue is named, kind by kind, in the ingest log
+  // and in the editor, where "malformed grammar" could only say that something,
+  // somewhere, could not be read.
   if (value.axes !== undefined) {
-    if (!Array.isArray(value.axes)) return false;
+    if (!Array.isArray(value.axes) || value.axes.length > GRAMMAR_LIMITS.axes) return false;
     for (const row of value.axes) {
       if (!isPlainObject(row)) return false;
       if (!isValidTag(row.category)) return false;
       if (typeof row.feature !== "string" || !FEATURE_NAME_PATTERN.test(row.feature)) return false;
-      if (!Array.isArray(row.values)) return false;
+      if (!Array.isArray(row.values) || row.values.length > GRAMMAR_LIMITS.axisValues) return false;
       // Each value is validated as the feature item it stands for, so a
       // multivalue option ("Gender=Fem,Masc" for an épicène form) is accepted
       // on exactly the terms layer 1 accepts one.
@@ -2141,25 +2178,27 @@ export function isValidGrammar(value: unknown): value is Grammar {
   // be, so a malformed array cannot ride along unvalidated; which fields are
   // *meaningful* is the `kind`'s business, and a table carrying a stray `items`
   // is ignored rather than rejected. An empty block, like an empty axis, is
-  // reported by `grammarIssues` instead of discarding the record.
+  // `grammarIssues`' to report rather than this function's to refuse.
   if (value.layout !== undefined) {
-    if (!Array.isArray(value.layout)) return false;
+    if (!Array.isArray(value.layout) || value.layout.length > GRAMMAR_LIMITS.layout) return false;
     for (const row of value.layout) {
       if (!isPlainObject(row)) return false;
       if (!isValidTag(row.category)) return false;
-      if (!Array.isArray(row.blocks)) return false;
+      if (!Array.isArray(row.blocks) || row.blocks.length > GRAMMAR_LIMITS.blocks) return false;
       for (const block of row.blocks) {
         if (!isValidLayoutBlock(block)) return false;
       }
     }
   }
 
-  // A single-item combination is well-formed and merely redundant, so it is
-  // *not* rejected here: shape failures reject the whole record, and a whole
-  // language's declaration is far too much to discard over one row that says
-  // something true in the wrong place. `grammarIssues` reports it instead.
+  // A single-item combination is well-formed and merely says something true in
+  // the wrong place, so it is `grammarIssues`' to report rather than this
+  // function's to refuse — and the one defect the binding editor has a control
+  // of its own for, since no (category, feature) pair leads to a lone atom.
   if (value.bindings !== undefined) {
-    if (!Array.isArray(value.bindings)) return false;
+    if (!Array.isArray(value.bindings) || value.bindings.length > GRAMMAR_LIMITS.bindings) {
+      return false;
+    }
     for (const row of value.bindings) {
       if (!isPlainObject(row)) return false;
       if (!isValidTag(row.tag)) return false;

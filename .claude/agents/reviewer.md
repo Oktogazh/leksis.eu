@@ -32,6 +32,19 @@ These are project law (from ADRs and the evolution skill); flag any violation as
   network, not in the DB. Any other hard-delete path is a violation.
 - **Universal for any language.** No hardcoded language codes, scripts, orthography or
   grammar assumptions in logic (i18n resource files are fine).
+- **The AppView indexes only what the interface could have published (ADR-0015).**
+  Structure is validated; vocabulary and assertions are not. So flag: an ingest path that
+  accepts a record whose *structure* no editor in `apps/web` can produce or repair (the
+  canonical case is a `grammar` object with any `grammarIssues`), a lexicon-declared array
+  `maxLength` that nothing enforces, a validator that lives in one app instead of
+  `packages/types` where both surfaces share it, and any new "index it and flag it"
+  worklist for a defect *inside* one record. Equally flag the overcorrection: refusing a
+  record for its **vocabulary** (an item no UD snapshot documents), for a value the lexicon
+  admits via `knownValues` (an unrecognised relation `kind` — that is forward compatibility
+  with our own future records), or for *contradicting another version* rather than itself
+  (a source's disputed `languages[0]` is flagged, never rejected). A refusal must also
+  leave the previous version current and be logged with enough detail for a bot author to
+  fix it.
 - **Types are the contract.** If the diff changes the ArangoDB schema, the AT Proto
   lexicon, or `packages/types`, all representations of that shape must move together —
   flag any that lag.

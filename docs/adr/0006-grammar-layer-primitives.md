@@ -7,6 +7,14 @@
 - **Supersedes:** `docs/design/grammatical-tagging.md` for layer 1 only; that
   note remains the design source for layers 2–6
 
+> **Superseded on one point by ADR-0015** (2026-08-14): §5's "at the AppView both
+> are **detection only, never rejection**" is reversed. An incoherent grammar is
+> now refused at ingest and the repair worklist is gone — not because this ADR's
+> two reasons were wrong (they are still quoted there) but because neither
+> considered that the binding editor *navigates* the cascade, so it has no level
+> that lists a row hanging off something unbound: the worklist named rows nobody
+> could reach. Rendering stays lenient, exactly as §4 says.
+>
 > **Amended by ADR-0008** (2026-08-03): the annotation-site split survives, but
 > the free-pair side of it is gone — `annotations` was removed from the entry
 > and from the definition node, and the abbreviations model this ADR made

@@ -10,6 +10,13 @@
   particular its "the `layout` sub-object's inner shape" open question, which
   this ADR closes. That note remains the design source for layers 5–6
 
+> **Superseded on one point by ADR-0015** (2026-08-14): this layer's five
+> `layout-*` issue kinds no longer reach a dashboard worklist — a record carrying
+> one is refused at ingest. The kinds and the resolver's skip-don't-break
+> behaviour are untouched: a layout read from a PDS may still be defective, since
+> a language record's rkey is its tag and the content behind an indexed pointer
+> can be rewritten under it.
+
 ## Context
 
 Layer 3 gave a category its **cell space**: which features vary across its

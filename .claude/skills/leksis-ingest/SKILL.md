@@ -266,6 +266,25 @@ up on that language's dashboard as a translation worklist item. The cascade
 your entry over an unbound tag, because doing so would make it the arbiter of
 a language's grammar.
 
+**The mirror of that, and it bites hardest on a `grammar` object you publish
+(ADR-0015):** the AppView *does* reject a record that contradicts **itself**, and
+it does so silently — nothing surfaces it to a reader, so a bot that never reads
+the ingest log will simply see its version missing. Vocabulary is never judged;
+**structure always is**. For a language record that means every row above layer 1
+may only name atoms, feature names and values the *same object* binds, no two rows
+may key the same, a named combination holds ≥2 atoms and must be grounded, a
+(category, feature) pair is inherent XOR an axis, an axis names ≥1 value, a layout
+dimension names an axis that category declares, and a lexicographic set appears
+nowhere in the grammatical layers. It also means **every `maxLength` the lexicons
+declare on an array is enforced** — 64 `pos`, 256 `features`, 2048 `values`, 512
+`inherent`, 1024 `bindings`, 512 `axes`, 256 `layout`, 512 `abbreviations`, 32
+`feats` on one tag, 64 `todo` and 16 `etymology` items on an entry, 64 `languages`
+on a source. Text-length caps are *not* enforced, but stay inside them anyway.
+The reason for all of it: the web editors navigate these relations, so a row
+hanging off something you never declared cannot be reached or repaired there — an
+incoherent grammar used to be indexed and then deadlock the interface. Publish
+your bindings before, or in the same pass as, the rows that stand on them.
+
 That said, a bot that leaves everything unbound has done half the job. If your
 source has an abbreviation list — and a monolingual dictionary always does —
 that list *is* the language's binding declaration, and publishing it is part
@@ -373,23 +392,32 @@ declared for the first time. Never assume a published tagset exists.
 
 ### What the AppView does with a malformed grammar
 
-Two very different failures, deliberately:
+Two failures, and **since ADR-0015 (2026-08-14) they have the same consequence** —
+which is the opposite of what this section used to say:
 
 - **Shape failure** (`isValidGrammar` returns false — a row that is not an
-  object, a feature name breaking the pattern, a label with no `long`):
-  **the whole record is rejected**, silently. The language keeps its previous
-  version.
-- **Coherence failure** (`grammarIssues` — `unbound-feature`,
-  `unbound-atom`, `duplicate`, `ungrounded-combination`,
-  `single-item-binding`, `inherent-axis-conflict`, `empty-axis`): the record
-  is **indexed anyway**, and the issues are stored and served on the language
-  dashboard as a **repair worklist**. Rejecting would discard a whole
-  language's declaration to punish one row, and would make the AppView the
-  arbiter of a language's grammar.
+  object, a feature name breaking the pattern, a label with no `long`, or an
+  array past the `maxLength` its lexicon declares): **the whole record is
+  rejected**, silently. The language keeps its previous version.
+- **Coherence failure** (`grammarIssues` — `unbound-feature`, `unbound-atom`,
+  `duplicate`, `ungrounded-combination`, `single-item-binding`,
+  `inherent-axis-conflict`, `empty-axis`, the five `layout-*` kinds,
+  `lexicographic-in-grammar`, `duplicate-abbreviation`): **also rejected**,
+  silently, with the offending rows named in the AppView's log. The language
+  keeps its previous version.
 
-So a sloppy bot does not get an error — it gets a dirty dashboard. Run
-`grammarIssues()` locally before publishing and treat a non-empty result as a
-build failure.
+Such a record used to be indexed and its defects served on the dashboard as a
+repair worklist. That worklist is gone, and the reason it went is worth knowing,
+because it is not tidiness: **the web binding editor navigates the cascade**, so a
+row hanging off something you never declared has no level that lists it and no
+button that removes it. Indexing your defective record put a human in front of a
+grammar they could not repair.
+
+So a sloppy bot no longer gets a dirty dashboard — it gets **silence**, and a
+language stuck on the last version somebody got right. Run `grammarIssues()`
+locally before publishing and treat a non-empty result as a build failure. That
+advice used to be a courtesy; it is now the only thing standing between you and a
+no-op run.
 
 ### Rewriting a language record safely
 
@@ -742,7 +770,8 @@ against the earlier shape:
 
 An old-shape `otherForms` **rejects the record**; the removed `annotations`
 fields are ignored rather than rejected, so an un-migrated bot fails quietly
-by losing content. Reset and republish: delete the old records, regenerate
+by losing content. An `etymology` that is not a list of paragraphs, or a `todo`
+list past 64 items, now rejects too (ADR-0015). Reset and republish: delete the old records, regenerate
 from source + the mapping file. Pre-1.0 this is the sanctioned migration path
 and it is cheap — take the correct shape rather than a compatible one.
 
@@ -755,8 +784,13 @@ and it is cheap — take the correct shape rather than a compatible one.
    written.
 2. **In the index** (after relay/Jetstream propagation, usually seconds):
    - `GET https://leksis.eu/api/languages` — your language is listed;
+   - `GET https://leksis.eu/api/languages/<tag>/currentRecord` — **the `cid` must
+     be the one you just wrote.** A stale `cid` means the AppView refused your
+     version (shape or coherence) and kept the previous one; nothing else will
+     tell you, which is why this check comes before the interesting ones;
    - `GET https://leksis.eu/api/languages/<tag>/dashboard` — entry counter,
-     todo queue, activity feed, and **`grammarIssues`: this must be empty**;
+     todo queue and activity feed (there is no `grammarIssues` field any more —
+     a version whose grammar was incoherent never got indexed to carry one);
    - `GET https://leksis.eu/api/languages/<tag>/labels` — every label
      your language record bound, each with a usage `count` (zero is normal for
      a label declared before use) and `conflictsWith`; plus every tag your

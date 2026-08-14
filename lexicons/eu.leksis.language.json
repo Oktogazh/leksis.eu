@@ -24,7 +24,7 @@
           "grammar": {
             "type": "ref",
             "ref": "#grammar",
-            "description": "The grammatical vocabulary this language uses, each atom bound to a label written in this language. Optional: a language with nothing declared stays fully usable, and unbound tags on its entries still render."
+            "description": "The grammatical vocabulary this language uses, each atom bound to a label written in this language. Optional: a language with nothing declared stays fully usable, and unbound tags on its entries still render. It must be COHERENT to be indexed: every row above layer 1 may only name atoms, feature names and values this same object binds, no two rows may key the same, a named combination holds at least two atoms and must be reachable by removing one inherent feature at a time, a feature is inherent to a category XOR an axis of it, an axis names at least one value, a layout dimension names an axis that category declares, and a lexicographic label set is used nowhere in the grammatical layers. The AppView refuses a version that breaks any of these and keeps the previous one current — not because the vocabulary is wrong (a language may bind anything well-formed, minted or documented) but because the editing interface navigates these relations, so a row hanging off something undeclared can be neither reached nor repaired there. The declared maxLength of every array here is likewise enforced, not advisory."
           },
           "createdAt": {
             "type": "string",

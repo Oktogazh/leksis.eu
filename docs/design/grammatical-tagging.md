@@ -493,13 +493,20 @@ Unbinding a layer-1 atom orphans every higher row referencing it. Hence one `gra
 guards required at layer 1:
 
 - **The no-orphan rule.** Unbinding is refused while any higher layer depends on the row. Note "unbinding" is
-  not a delete operation — the whole object is rewritten, so the client must **diff proposed against
-  current** and refuse to publish a version that orphans a reference. Build it as a pure function over
-  (old, new) in `packages/types`, shared by every client. Enforced in the browser; at the AppView
-  **detection only, never rejection** — rejecting a version would discard that version's good content to
-  punish one bad row and would make the AppView the arbiter of a language's grammar, and it buys little
-  because an orphan already renders safely by decomposition or verbatim. The AppView indexes it, flags the
-  orphans, and the dashboard surfaces them as a **repair worklist** beside the unbound-tag worklist.
+  not a delete operation — the whole object is rewritten, so a client cannot check it row by row; the check
+  is a pure function over the *whole* object in `packages/types` (`grammarIssues`), shared by every client.
+  **Enforced in the browser AND at the AppView, as one rule — ADR-0015 replaced this paragraph's original
+  answer.** It used to read "detection only, never rejection": the AppView indexed an orphaned version,
+  flagged it, and the dashboard surfaced a **repair worklist**. The reasoning was that rejecting discards a
+  version's good content over one bad row, and that an orphan renders safely anyway. Both halves are true
+  and neither was the problem: **the editor navigates the cascade, so it has no level that lists a row
+  hanging off something unbound** — the worklist named rows nobody could reach, and the interface was
+  deadlocked by a record that came in through the front door. So an incoherent grammar is now refused at
+  ingest, the previous version stays current, and the browser blocks publishing any defect rather than only
+  a newly introduced one. The unbound-*tag* worklist is untouched: that is a gap between two records, not a
+  contradiction inside one. Rendering stays lenient in every case — refusing to *display* an orphan would
+  make the AppView the arbiter of a language's grammar, which this note's original objection was right
+  about.
 - **An optimistic-concurrency guard.** Refuse the write if the record changed since load: last-write-wins can
   now drop a *reference*, not merely a label.
 
