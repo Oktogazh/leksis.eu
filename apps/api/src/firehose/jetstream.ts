@@ -3,6 +3,7 @@ import {
   LEKSIS_COGNATE_COLLECTION,
   LEKSIS_ENTRY_COLLECTION,
   LEKSIS_LANGUAGE_COLLECTION,
+  LEKSIS_PARADIGM_COLLECTION,
   LEKSIS_RELATION_COLLECTION,
   LEKSIS_SOURCE_COLLECTION,
 } from "@leksis/types";
@@ -10,6 +11,7 @@ import { db } from "../db";
 import { ingestCognate, ingestCognateDelete } from "./ingest-cognate";
 import { ingestEntry, ingestEntryDelete } from "./ingest-entry";
 import { ingestLanguage, ingestLanguageDelete } from "./ingest-language";
+import { ingestParadigm, ingestParadigmDelete } from "./ingest-paradigm";
 import { ingestRelation, ingestRelationDelete } from "./ingest-relation";
 import { ingestSource, ingestSourceDelete } from "./ingest-source";
 
@@ -53,6 +55,7 @@ const WANTED_COLLECTIONS = [
   LEKSIS_RELATION_COLLECTION,
   LEKSIS_COGNATE_COLLECTION,
   LEKSIS_SOURCE_COLLECTION,
+  LEKSIS_PARADIGM_COLLECTION,
 ];
 
 const CURSOR_KEY = "jetstream";
@@ -124,6 +127,12 @@ async function handleEvent(event: JetstreamCommitEvent): Promise<void> {
       await ingestSourceDelete(recordURI);
     } else {
       await ingestSource(event.did, recordURI, cid ?? "", record);
+    }
+  } else if (collection === LEKSIS_PARADIGM_COLLECTION) {
+    if (operation === "delete") {
+      await ingestParadigmDelete(recordURI);
+    } else {
+      await ingestParadigm(event.did, recordURI, cid ?? "", record);
     }
   }
 }

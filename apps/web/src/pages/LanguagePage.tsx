@@ -73,6 +73,8 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
   const [todoOpen, setTodoOpen] = useState(false);
   /** The parked-relations queue dialog — the semantic network's repair worklist. */
   const [parkedOpen, setParkedOpen] = useState(false);
+  /** The missing-base-forms queue — the morphology arc's repair worklist. */
+  const [missingFormsOpen, setMissingFormsOpen] = useState(false);
   /** Record URI written to the PDS but not yet seen back from the AppView. */
   const [syncingURI, setSyncingURI] = useState<string | null>(null);
   /** The works entries in this language can cite. Side data, never blocking. */
@@ -301,6 +303,23 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
             >
               <p className="text-2xl font-semibold text-content">{parkedTotal}</p>
               <p className="mt-1 text-xs text-content-muted">{t("languagePage.statsParked")}</p>
+            </button>
+            {/* Entries a paradigm could not run on for want of a principal
+                part. Unlike the unbound-tag worklist, this one knows exactly
+                what is missing — the rule says so, in the language — so the
+                queue can name it rather than pointing at the word and stopping. */}
+            <button
+              type="button"
+              onClick={() => setMissingFormsOpen(true)}
+              disabled={dashboard.missingFormsCount === 0}
+              className="rounded-lg border bg-surface p-4 text-left hover:border-primary disabled:cursor-not-allowed disabled:hover:border-[color:inherit]"
+            >
+              <p className="text-2xl font-semibold text-content">
+                {dashboard.missingFormsCount}
+              </p>
+              <p className="mt-1 text-xs text-content-muted">
+                {t("languagePage.statsMissingForms")}
+              </p>
             </button>
             <button
               type="button"
@@ -638,6 +657,78 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
               <button
                 type="button"
                 onClick={() => setTodoOpen(false)}
+                className="rounded-lg border px-4 py-2 text-sm text-content hover:bg-black/5"
+              >
+                {t("languageRecord.cancel")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* The missing-base-forms queue: entries whose paradigm could not run
+          because a principal part has not been supplied. Every message here is
+          the rule author's own text, in this language — the AppView translates
+          none of it, which is the whole reason the message lives in the rule. */}
+      {missingFormsOpen && dashboard !== null && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="missing-forms-dialog-title"
+        >
+          <div className="max-h-[calc(100dvh-2rem)] w-full overflow-y-auto rounded-t-xl border bg-surface p-4 shadow-lg sm:max-w-lg sm:rounded-xl sm:p-6">
+            <h2 id="missing-forms-dialog-title" className="text-lg font-semibold text-content">
+              {t("languagePage.missingFormsTitle")}
+            </h2>
+            <p className="mt-1 text-sm text-content-subtle">
+              {t("languagePage.missingFormsHint")}
+            </p>
+
+            {dashboard.missingFormEntries.length === 0 ? (
+              <p className="mt-4 text-sm text-content-muted">
+                {t("languagePage.missingFormsEmpty")}
+              </p>
+            ) : (
+              <>
+                <ul className="mt-4 space-y-2">
+                  {dashboard.missingFormEntries.map((entry) => (
+                    <li key={entry.key} className="rounded-lg border bg-surface-muted/40 p-2.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMissingFormsOpen(false);
+                          onOpenEntry(entry.key);
+                        }}
+                        className="text-sm font-medium text-content hover:text-primary"
+                      >
+                        {entry.orthography[0]}
+                      </button>
+                      <ul className="mt-1 space-y-0.5">
+                        {entry.messages.map((message, i) => (
+                          <li key={i} className="text-xs text-content-muted">
+                            {message}
+                          </li>
+                        ))}
+                      </ul>
+                    </li>
+                  ))}
+                </ul>
+                {dashboard.missingFormsCount > dashboard.missingFormEntries.length && (
+                  <p className="mt-3 text-xs text-content-subtle">
+                    {t("languagePage.todoMore", {
+                      count: dashboard.missingFormsCount - dashboard.missingFormEntries.length,
+                      shown: dashboard.missingFormEntries.length,
+                    })}
+                  </p>
+                )}
+              </>
+            )}
+
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setMissingFormsOpen(false)}
                 className="rounded-lg border px-4 py-2 text-sm text-content hover:bg-black/5"
               >
                 {t("languageRecord.cancel")}

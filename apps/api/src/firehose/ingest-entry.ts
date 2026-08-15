@@ -22,6 +22,7 @@ import {
   type Tag,
 } from "@leksis/types";
 import { db } from "../db";
+import { expandEntry } from "./expand-forms";
 import { syncEntryTags } from "./labels";
 import type { IngestResult } from "./ingest-language";
 import { reviveUnresolvedCognates, syncEntryCognates } from "./ingest-cognate";
@@ -583,7 +584,28 @@ export async function ingestEntry(
       UPDATE ${current._key} WITH { current: false } IN entries
     `);
   }
-  await db.query(aql`INSERT ${doc} INTO entries`);
+  const insertedCursor = await db.query<string>(aql`INSERT ${doc} INTO entries RETURN NEW._key`);
+  const insertedKey = await insertedCursor.next();
+  // Layer 5's generation: run every paradigm of the language over the version
+  // that just became current, so an inflected form leads back to its entry
+  // whether its author wrote it out or a rule produced it. Straight after the
+  // insert, before the networks below, because it rewrites the doc's own
+  // `otherForms` — the search half — and nothing downstream should read a
+  // half-expanded version.
+  //
+  // Nothing is declared to the labels model from here: a generated form's
+  // address comes from coordinates the language itself declared, so counting it
+  // as usage would put a language's own declarations on its own worklist.
+  if (insertedKey !== undefined) {
+    await expandEntry(db, insertedKey, {
+      entryKey,
+      languageID: doc.languageID,
+      orthography: doc.orthography,
+      otherForms: doc.otherForms,
+      inherentAtoms: doc.inherentAtoms,
+      deleted: parsed.deleted,
+    });
+  }
   // The read model tracks current, non-withdrawn versions only: declaring
   // the new version's tags also retires the archived version's usage. A
   // deleted version declares none, even though its own `tags` stay stored on
@@ -637,8 +659,13 @@ export async function ingestEntryDelete(recordURI: string): Promise<void> {
   }
 
   const promotedCursor = await db.query<{
+    docKey: string;
     recordURI: string;
     languageID: string;
+    orthography: string[] | null;
+    otherForms: IndexedForm[] | null;
+    inherentAtoms: string[] | null;
+    formIssues: unknown[] | null;
     tags: Tag[] | null;
     places: number[][] | null;
     deleted: boolean;
@@ -649,8 +676,13 @@ export async function ingestEntryDelete(recordURI: string): Promise<void> {
       LIMIT 1
       UPDATE e WITH { current: true } IN entries
       RETURN {
+        docKey: NEW._key,
         recordURI: NEW.recordURI,
         languageID: NEW.languageID,
+        orthography: NEW.orthography,
+        otherForms: NEW.otherForms,
+        inherentAtoms: NEW.inherentAtoms,
+        formIssues: NEW.formIssues,
         tags: NEW.tags,
         places: NEW.places,
         deleted: NEW.deleted == true
@@ -662,6 +694,20 @@ export async function ingestEntryDelete(recordURI: string): Promise<void> {
   // entry. Versions indexed before tags were stored carry none and contribute
   // again once re-published.
   if (promoted) {
+    // A promotion makes a different version's forms the ones search holds, so
+    // generation is re-run over it exactly as it is over a newly ingested
+    // version. The promoted doc may still carry the generated rows it had when
+    // it was last current; `expandEntry` recomputes them from the asserted half,
+    // so a rule published in the meantime is applied and a withdrawn one is not.
+    await expandEntry(db, promoted.docKey, {
+      entryKey,
+      languageID: promoted.languageID,
+      orthography: promoted.orthography ?? [],
+      otherForms: promoted.otherForms ?? [],
+      inherentAtoms: promoted.inherentAtoms ?? [],
+      deleted: promoted.deleted,
+      hadIssues: (promoted.formIssues ?? []).length > 0,
+    });
     await syncEntryTags(db, entryKey, promoted.languageID, promoted.tags ?? []);
     // Same for its senses, and with them the relations pinning this entry: a
     // reversion to a version whose tree matches an assertion revives it, a

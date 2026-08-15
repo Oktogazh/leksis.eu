@@ -24,6 +24,29 @@ export interface DashboardTodoEntry {
 }
 
 /**
+ * One entry a paradigm could not generate forms for, because the entry has not
+ * supplied a base form the rules require (a Latin noun's genitive, a strong
+ * verb's preterite).
+ *
+ * The second worklist a language has, beside the unnamed tags — and the one
+ * that is *not* a gap between records: a paradigm names exactly what is
+ * missing, so this queue can say so rather than merely pointing at the entry.
+ *
+ * `messages` is the rule authors' own text, copied verbatim from the
+ * `requires` rows the entry failed. It is **homolingual by construction** —
+ * written by a speaker, in the rule — which is why no part of the AppView has to
+ * translate it, and why the interface must show it as-is rather than
+ * paraphrasing it.
+ */
+export interface DashboardMissingFormEntry {
+  key: string;
+  orthography: string[];
+  /** What the rules' authors say is missing, deduped, in the rules' own words. */
+  messages: string[];
+  indexedAt: string;
+}
+
+/**
  * One activity item: a version of an entry (or of the language record)
  * indexed by the AppView. "created" = the oldest indexed version of its
  * entry / tag, otherwise "edited". Deleted entry records leave the feed —
@@ -80,4 +103,15 @@ export interface LanguageDashboardResponse {
    * `sides[0]` is always this language's side.
    */
   parkedRelations: RelationView[];
+  /**
+   * Current entries a paradigm skipped for want of a required base form, and
+   * the capped queue itself — the morphology arc's side of the dashboard.
+   *
+   * Zero means one of two things and deliberately does not distinguish them:
+   * every entry has what its paradigms need, or the language has no paradigms
+   * at all. A counter is not the place to explain that a language has not
+   * started declaring its morphology.
+   */
+  missingFormsCount: number;
+  missingFormEntries: DashboardMissingFormEntry[];
 }

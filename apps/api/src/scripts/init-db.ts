@@ -16,6 +16,7 @@ import {
   toDeclaredLabel,
   type DeclaredLabel,
 } from "../firehose/labels";
+import { rebuildGeneratedForms } from "../firehose/expand-forms";
 import { rebuildCognateNetwork } from "../firehose/ingest-cognate";
 import { rebuildSemanticNetwork } from "../firehose/ingest-relation";
 import { syncLocalLanguages } from "../firehose/local-languages";
@@ -41,6 +42,7 @@ const documentCollections = [
   "cognates",
   "lexemes",
   "sources",
+  "paradigms",
   "firehoseState",
 ];
 // The two networks' edge collections. `relationEdges` joins `senses` vertices
@@ -164,6 +166,31 @@ async function main() {
     unique: false,
   });
   console.log('ensured 4 indexes on "sources"');
+
+  // Paradigms are versioned exactly as sources are: the identity is derived
+  // from the record's own fields and carried in its key, so every author's
+  // paradigm for one (language, category) shares one ladder. Reads: by identity
+  // (the version transition), by recordURI (deletion), and by language — which
+  // is both the read endpoint and the expansion job's "which rules apply here".
+  await db.collection("paradigms").ensureIndex({
+    type: "persistent",
+    name: "idx_paradigmkey_current",
+    fields: ["paradigmKey", "current"],
+    unique: false,
+  });
+  await db.collection("paradigms").ensureIndex({
+    type: "persistent",
+    name: "idx_paradigm_recorduri",
+    fields: ["recordURI"],
+    unique: false,
+  });
+  await db.collection("paradigms").ensureIndex({
+    type: "persistent",
+    name: "idx_paradigm_language_current",
+    fields: ["languageID", "current"],
+    unique: false,
+  });
+  console.log('ensured 3 indexes on "paradigms"');
 
   // Entries are versioned the same way (many docs per entryKey, one with
   // current: true). Ingestion looks versions up by entryKey and recordURI.
@@ -494,6 +521,16 @@ async function main() {
       `${cognateNetwork.edges} edge(s) from ${cognateNetwork.states.live} live cognate(s) ` +
       `(parked: ${cognateNetwork.states.stale} stale, ` +
       `${cognateNetwork.states.unresolved} unresolved)`,
+  );
+
+  // And the generated half of the search index, on the same principle: every
+  // `origin: "rule"` form is recomputed from the paradigms and the entries, so
+  // a re-run self-heals it. Cleared before it is rebuilt, which is what makes a
+  // paradigm deleted while this AppView was down stop producing forms.
+  const forms = await rebuildGeneratedForms(db);
+  console.log(
+    `rebuilt generated forms: cleared ${forms.cleared} entry version(s), ` +
+      `re-expanded ${forms.expanded} across ${forms.languages} language(s) with paradigms`,
   );
 
   console.log("database init complete.");

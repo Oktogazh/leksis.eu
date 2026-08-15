@@ -94,6 +94,19 @@ Rules are **content**: the record holds them, the doc is reference-only (`paradi
 layer 4) and resolves the records from their authors' PDSs through a per-URI session cache
 (`source-record.ts` pattern).
 
+**As built (slice 3), on one point this section had wrong.** The doc is *not* reference-only: it
+caches `rules` and `requires`, plus `selectorAtoms` (the scheme-blind atom keys the join runs on).
+It has to. §3 requires generation to run inside the firehose consumer, which is a **single
+sequential writer** — resolving a paradigm record from its author's PDS once per ingested entry
+would put a stranger's server in this AppView's write path, which is exactly the argument that put
+`inherent` on the language doc at slice 2. The line the code actually holds is narrower and
+sharper: **the consumer caches what it needs to compute, the read surface serves pointers only.**
+So `GET /languages/:tag/paradigms` returns no rules and no label — a reader still gets its
+morphology from the record, and nothing about the index looks like the source of truth for a
+language's grammar. The endpoint does serve the list **most specific selector first**, because that
+is the precedence the expansion job applied; a client sorting it itself would be a second place for
+the two to disagree.
+
 Display precedence in a cell, most authoritative first:
 
 1. **the entry's own `otherForms`** — an irregular form overrides any generated cell, matched by
@@ -198,6 +211,21 @@ always a bounded pass:
    `inherentAtoms[*]`, chunked (e.g. 500 docs per AQL batch), replacing rows with that
    `paradigmKey` and recomputing `formIssues` (§3.3). A rule edit re-expanding an entire language
    is the priced cost of ingest-time expansion — accepted at layer 3, paid here.
+
+   **As built (slice 3), on two points.** *Which entries*: the slice is two queries, not one —
+   the entries the selector reaches **now** (indexed), plus the entries still **carrying** that
+   `paradigmKey` in a generated row or a `formIssues` row. The second is what makes a withdrawal
+   clean up after itself: those entries match nothing any more, so the first query cannot find
+   them, and their rows would otherwise sit in search forever. It is also why the archived doc is
+   passed to the expander after a deletion — its selector still names the slice, and its key still
+   names the rows to sweep.
+
+   *What is rewritten*: **all** matching paradigms are re-run for each affected entry, not just the
+   one that transitioned. Per-paradigm row replacement is unsound the moment two paradigms can fill
+   one cell, because **precedence is a property of the set** — withdrawing the specific paradigm has
+   to hand its cells back to the general one, and no rewrite scoped to the withdrawn key could do
+   that. `paradigmKey` on a row therefore makes the *result* attributable; it is not what makes the
+   computation surgical. (Verified: `verify-paradigms.ts` asserts the hand-back in both directions.)
 2. **An entry version becomes current** (new entry, rewrite, promotion): expand that one entry
    against all current paradigms whose selector its `inherentAtoms` contain. This covers "adding
    inherent features to an existing entry triggers established rules".
@@ -226,6 +254,13 @@ DB-level only: no record is marked, no reader page shows an error banner. The la
 gains a **missing-forms queue** (a counter card + capped list, the `todo` queue's exact shape)
 served off a `["languageID", "formIssues[*]"]`-style filter, so human reviewers find the entries
 and add the missing forms — which, being an entry edit, re-triggers path 2 and clears the issue.
+
+**As built (slice 3):** capped at 100 like the todo queue, and with **no index of its own** — for
+the reason `todo` has none either, that the language's current entries are already the working set
+every counter on that dashboard reads. The messages are **deduped per entry**, since two paradigms
+reaching one word commonly want the same principal part. The dialog prints them verbatim under the
+headword: the whole point of writing the message in the rule is that a speaker wrote it, so the
+interface must not paraphrase it.
 
 ---
 
@@ -289,10 +324,13 @@ Every slice leaves master typechecking and deployable; the testset slice gates t
    (record-origin only, `origin: "record"`), new indexes, ingest-entry computing both, search AQL +
    `EntriesResponse` reporting match kind, `db:init` reshape, and the web search filter + form-hit
    rendering. Self-contained and useful with zero paradigms in existence.
-3. **Paradigm ingest + expansion.** `ingest-paradigm.ts` (versioned mirror, §1.2 identity, §4
-   gate), the `paradigms` collection + `GET /languages/:tag/paradigms`, `expand-forms.ts` with its
-   three trigger paths, `formIssues`, the dashboard missing-forms queue endpoint + card. Verified
-   by curl + a hand-published fixture rule.
+3. **Paradigm ingest + expansion.** ✅ **built.** `ingest-paradigm.ts` (versioned mirror, §1.2
+   identity, §4 gate), the `paradigms` collection + `GET /languages/:tag/paradigms`,
+   `expand-forms.ts` with its three trigger paths, `formIssues`, the dashboard missing-forms queue
+   endpoint + card. Verified by `apps/api/src/scripts/verify-paradigms.ts` (the
+   `verify-ingest-gate.ts` precedent — 42 checks against a local ArangoDB, driving the real ingest
+   functions rather than publishing to a PDS, which is slice 6's business), plus curl on both
+   endpoints and a browser pass on the card and its dialog. See the three "as built" notes above.
 4. **The reader.** Entry-page generation: resolve paradigms via the new endpoint + PDS cache, run
    the generator, merge into the layout with the §1.3 precedence and syncretism merging, style
    generated vs asserted vs missing, render `formIssues` nowhere (reader) while the dashboard queue

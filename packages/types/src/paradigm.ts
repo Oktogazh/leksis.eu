@@ -718,3 +718,47 @@ export function generateForms(
 
   return { forms, missing };
 }
+
+/**
+ * One paradigm as the API serves it — **a pointer, never the rules**.
+ *
+ * The rules are content, like an entry's definitions and a source's title: the
+ * record on its author's PDS is where a reader gets them, and this says which
+ * record that is. The AppView does cache them internally (its expansion job is
+ * a sequential writer that cannot make an HTTP round trip per entry), but a
+ * cache is not a read surface — serving it here would make the index look like
+ * the source of truth for a language's morphology, which is exactly what
+ * `subject`-less, last-write-wins records are designed not to have.
+ *
+ * `selector` rides along because a client has to know which paradigm to resolve
+ * for the entry it is looking at, and asking it to fetch every paradigm of a
+ * language to find out would defeat the point of an index.
+ */
+export interface ParadigmView {
+  /** Stable identity across versions, and the record key: `{lang}-{hash16}`. */
+  paradigmKey: string;
+  languageID: string;
+  /** The category these rules fill cells for, matched against an entry by containment. */
+  selector: Tag;
+  /** at:// URI of the current record (resolved client-side for the rules). */
+  recordURI: string;
+  /**
+   * CID of that version, for the editor's stale-rewrite guard. Present for the
+   * reason a source's is: a paradigm is rewritten by strangers, and one whose
+   * blast radius is every entry of a category should not be overwritten from a
+   * copy loaded ten minutes ago.
+   */
+  cid: string;
+  authorDID: string;
+}
+
+/**
+ * Response shape of GET /languages/:tag/paradigms — every current paradigm of
+ * one language, most specific selector first, so a client applying them to an
+ * entry inherits the precedence the AppView used and cannot disagree with the
+ * forms it indexed.
+ */
+export interface LanguageParadigmsResponse {
+  languageID: string;
+  paradigms: ParadigmView[];
+}

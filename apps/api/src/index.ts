@@ -10,6 +10,7 @@ import {
   type EntriesResponse,
   type EntryResolveResponse,
   type HealthResponse,
+  type LanguageParadigmsResponse,
   type LanguageSourcesResponse,
   type LanguagesResponse,
   type SourcesResponse,
@@ -21,6 +22,7 @@ import { pingDb } from "./db";
 import { getEntry, resolveEntryKeys, searchEntries } from "./entries";
 import { getEntryRelations, getTranslations } from "./relations";
 import { getCurrentLanguageRecord, listLanguages } from "./languages";
+import { getLanguageParadigms } from "./paradigms";
 import { getCurrentSourceRecord, getLanguageSources, searchSources } from "./sources";
 import { startJetstream } from "./firehose/jetstream";
 
@@ -99,6 +101,25 @@ app.get("/languages/:tag/labels", async (c) => {
     return c.json(body);
   } catch (err) {
     console.error("GET /languages/:tag/labels failed:", err);
+    return c.json({ error: "database unavailable" }, 503);
+  }
+});
+
+// The morphology arc's first endpoint. Kept off the dashboard payload for the
+// reason a language's sources are: this is what an *entry* page needs in order
+// to draw a word's tables, not a counter somebody reads while looking at a
+// language.
+app.get("/languages/:tag/paradigms", async (c) => {
+  const requested = normalizeLanguageTag(c.req.param("tag"));
+  if (!isValidLanguageTag(requested)) {
+    return c.json({ error: "invalid language tag" }, 400);
+  }
+  try {
+    const paradigms = await getLanguageParadigms(requested);
+    const body: LanguageParadigmsResponse = { languageID: requested, paradigms };
+    return c.json(body);
+  } catch (err) {
+    console.error("GET /languages/:tag/paradigms failed:", err);
     return c.json({ error: "database unavailable" }, 503);
   }
 });
