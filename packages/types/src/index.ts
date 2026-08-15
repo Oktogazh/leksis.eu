@@ -6,7 +6,8 @@
 // the translations loop adds the eu.leksis.relation contract behind the
 // semantic network, and the cognate loop its word-level sibling
 // eu.leksis.cognate; the sources loop adds eu.leksis.source, the work an
-// example sentence is cited from.
+// example sentence is cited from; and the morphology arc's layer 5 adds
+// eu.leksis.paradigm, a language's rules for generating inflected forms.
 
 export * from "./language.js";
 export * from "./entry.js";
@@ -20,6 +21,7 @@ export * from "./bcp47.js";
 export * from "./tag.js";
 export * from "./upos.js";
 export * from "./grammar.js";
+export * from "./paradigm.js";
 
 /** Response shape for the API health-check endpoint. */
 export interface HealthResponse {

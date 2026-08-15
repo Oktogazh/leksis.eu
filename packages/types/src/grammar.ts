@@ -856,6 +856,24 @@ export function featsMatchKey(tag: Tag): string {
   });
 }
 
+/**
+ * The join key of a bare coordinate list — the same string `featsMatchKey`
+ * produces for the tag those coordinates address, **without needing the
+ * grammar**.
+ *
+ * The equality is not a coincidence and is what makes this safe: `coordTag`
+ * only re-attaches provenance, and `featsMatchKey` drops it again. So a rule
+ * engine can address a cell before the language record has been resolved —
+ * which layer 5's expansion job does, since it runs inside ingest with only the
+ * paradigm record in hand — and still land on the address a viewer computed the
+ * long way round.
+ */
+export function coordsMatchKey(coords: readonly LayoutCoord[]): string {
+  return featsMatchKey({
+    feats: coords.map((coord) => ({ feature: coord.feature, value: coord.value })),
+  });
+}
+
 /** The scheme-blind keys of a tag's feature items. */
 function featKeySet(tag: Tag): Set<string> {
   return new Set((tag.feats ?? []).map((feat) => valueMatchKey(feat.feature, feat.value)));
@@ -995,7 +1013,7 @@ export function blockCells(block: ResolvedLayoutBlock): LayoutAddress[] {
 function toAddress(grammar: Grammar, coords: readonly LayoutCoord[]): LayoutAddress {
   const copied = coords.map((coord) => ({ feature: coord.feature, value: coord.value }));
   const tag = coordTag(grammar, copied);
-  return { coords: copied, tag, key: featsMatchKey(tag) };
+  return { coords: copied, tag, key: coordsMatchKey(copied) };
 }
 
 /** A block's caption: its constants, rendered by the ordinary chain. */
@@ -2037,7 +2055,7 @@ function isValidScheme(value: unknown): boolean {
  * exactly the terms layer 1 accepts one. A `scheme` is not read: coordinates are
  * bare by design and provenance is re-attached from the row that bound them.
  */
-function isValidLayoutCoord(value: unknown): boolean {
+export function isValidLayoutCoord(value: unknown): boolean {
   if (!isPlainObject(value)) return false;
   return isValidTagFeat({ feature: value.feature, value: value.value });
 }

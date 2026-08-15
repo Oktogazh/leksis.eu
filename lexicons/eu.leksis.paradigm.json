@@ -1,0 +1,201 @@
+{
+  "lexicon": 1,
+  "id": "eu.leksis.paradigm",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "One language's generation recipe for one category of words: affix rules that fill the cells the language's `grammar.layout` laid out, starting from an entry's lemma. It is a record of its own rather than a field on the language record because rules are large, written per inflection class, and edited at a different cadence than the tag bindings they address. Records prove authorship, not ownership: any user may publish a paradigm for any language and category, and the AppView treats the latest record for a given (language, category) as current, archiving the previous ones. By convention the record key is `{languageID}-{16 hex characters}`, the hexadecimal being a hash of the canonical key of `selector` — computed from this record's own fields, exactly as an eu.leksis.source record's key is computed from its OCLC number. Identity therefore comes from the key: every author's paradigm for one category shares one key by construction, no repository can hold two paradigms for the same category, and `selector` is immutable for a given identity — changing the category is publishing a different paradigm, not editing this one. An entry never stores a generated form: it stores its category and its irregular forms, and a form it asserts itself overrides whatever a rule here would produce for the same cell. That is what lets a language fix a wrong rule once and re-render every entry that uses it, without anybody republishing a record.",
+      "key": "any",
+      "record": {
+        "type": "object",
+        "required": ["languageID", "selector", "rules", "createdAt"],
+        "properties": {
+          "languageID": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "Well-formed IETF BCP 47 tag of the language these rules belong to, normalized to lowercase (e.g. \"br\", \"br-gw\"). It is repeated here rather than read from the record key alone because the key is a derived string, and a reader holding the record must be able to say which language it describes."
+          },
+          "selector": {
+            "type": "ref",
+            "ref": "eu.leksis.defs#tag",
+            "description": "The category these rules apply to — a bundle over what this language declared as inherent, e.g. {NOUN, Declension=1} or {VERB, Conjugation=2}. It is matched against an entry by containment, the way an axis and a layout are: a paradigm selecting {VERB} reaches an entry categorised {VERB, Conjugation=2}, and where several paradigms match one entry the most specific selector wins the cells they both fill. Immutable for one record key, since the key is derived from it."
+          },
+          "label": {
+            "type": "ref",
+            "ref": "#label",
+            "description": "How this language names the paradigm — \"first declension\", \"kentañ displegadur\". Optional, and homolingual like every other label in Leksis: the AppView never supplies a name in English for it."
+          },
+          "requires": {
+            "type": "array",
+            "maxLength": 16,
+            "items": { "type": "ref", "ref": "#requirement" },
+            "description": "Base forms an entry must supply for these rules to run, beyond the lemma. Many languages cannot generate a paradigm from the citation form alone — a Latin noun needs its genitive, a strong Germanic verb its preterite — and this is where a paradigm says so. An entry missing one of these is skipped by this paradigm rather than half-generated, and lands on the language dashboard's missing-forms queue carrying the row's own message."
+          },
+          "rules": {
+            "type": "array",
+            "minLength": 1,
+            "maxLength": 512,
+            "items": { "type": "ref", "ref": "#rule" },
+            "description": "The generation rules, one row per cell or set of cells, in the order they are applied. Several rows may target the same cell with different conditions — the ordinary Hunspell shape, where one suffix takes -ies and another -s — and the FIRST row whose condition matches wins that cell. A cell no row matches for a given lemma is simply not generated: an empty cell is not an error, and the only error state a paradigm has is a missing required base form."
+          },
+          "notes": {
+            "type": "array",
+            "maxLength": 16,
+            "items": { "type": "string", "maxLength": 10240, "maxGraphemes": 1024 },
+            "description": "Free-text remarks about the paradigm, in this language: what it covers, which lemmas it is known to mis-generate, where it came from. Prose for other contributors, never rendered to a dictionary reader."
+          },
+          "references": {
+            "type": "array",
+            "maxLength": 16,
+            "items": { "type": "ref", "ref": "#reference" },
+            "description": "Where the rules were taken from — a grammar, a treebank, a standardisation body's tables. A paradigm is an assertion about a language and should be able to say who is making it."
+          },
+          "subject": {
+            "type": "string",
+            "format": "at-uri",
+            "description": "AT URI of the paradigm record version this record rewrites. An audit trail only: identity comes from the record key, so a rewrite is recognised whether or not this is present, and a `subject` pointing at a record for a different category changes nothing."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "Client-declared creation time of this record version."
+          }
+        }
+      }
+    },
+    "requirement": {
+      "type": "object",
+      "required": ["coords", "message"],
+      "description": "\"To run these rules, an entry must have supplied this form.\" It names a cell of the language's layout, and the error a contributor sees when the entry has not filled it in.",
+      "properties": {
+        "coords": {
+          "type": "array",
+          "minLength": 1,
+          "maxLength": 16,
+          "items": { "type": "ref", "ref": "#coord" },
+          "description": "The address of the required form: the cell whose form an entry must have asserted itself. Matched against the entry's own forms exactly first, then by containment, so a form carrying more than the address — an inherent feature repeated on it, or a part of speech a bot wrote in — still answers the requirement."
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2560,
+          "maxGraphemes": 256,
+          "description": "What a contributor is told when an entry lacks this form: \"the preterite is missing\", written in this language. It lives in the rule rather than in the interface because the person who wrote the rule is a speaker, which is what lets the missing-forms queue be homolingual with no translation layer anywhere."
+        }
+      }
+    },
+    "rule": {
+      "type": "object",
+      "required": ["coords"],
+      "description": "One generation rule: which cell it fills, which form it starts from, the condition that form must satisfy, and the affixes to exchange. A row with no condition and no affixes is legitimate and means the cell is identical to its base.",
+      "properties": {
+        "coords": {
+          "type": "array",
+          "minLength": 1,
+          "maxLength": 16,
+          "items": { "type": "ref", "ref": "#coord" },
+          "description": "The cell this rule fills. A coordinate carrying several comma-separated values (\"Gender=Fem,Masc\") spans every cell it names with ONE form, which is how syncretism is written: the table then merges those cells under one heading instead of printing the form again in each. That is deliberately not a wildcard — a form covering an axis and a form nobody has entered must never look the same to a reader."
+        },
+        "base": {
+          "type": "array",
+          "maxLength": 16,
+          "items": { "type": "ref", "ref": "#coord" },
+          "description": "The form this rule transforms. Absent means the lemma — the entry's canonical orthography — which is the ordinary case. Otherwise it addresses another cell: either one the entry supplies (a `requires` row) or one an earlier rule generates, so a paradigm can build a stem once and inflect it many times. A base that names neither, or a chain of bases that loops, is a defect the AppView refuses the record for."
+        },
+        "match": {
+          "type": "string",
+          "maxLength": 512,
+          "description": "A regular expression the END of the base form must satisfy for this rule to apply — Hunspell's affix condition, written as a pattern rather than as a literal so that \"any consonant\" is expressible. Absent means the rule always applies. It is anchored at the end of the form by the generator, so it must not carry its own trailing anchor. A pattern that does not compile costs the record its place in the index, because a generator that throws would take a reader's page down with it."
+        },
+        "strip": {
+          "type": "string",
+          "maxLength": 640,
+          "maxGraphemes": 64,
+          "description": "A literal ending removed from the base before the addition. A base that does not end with it fails the rule, which then does not apply — the same outcome as a condition that does not match."
+        },
+        "add": {
+          "type": "string",
+          "maxLength": 640,
+          "maxGraphemes": 64,
+          "description": "A literal ending appended after the strip. Absent means nothing is appended, which is how a rule that only removes an ending is written."
+        },
+        "prefix": {
+          "type": "ref",
+          "ref": "#affix",
+          "description": "The same exchange at the front of the form, for the augments and mutations a suffix pair cannot express. Applied together with the suffix pair, never instead of it."
+        }
+      }
+    },
+    "affix": {
+      "type": "object",
+      "description": "A literal exchange at the front of a form: what to remove, and what to put in its place. Either half may be absent.",
+      "properties": {
+        "strip": {
+          "type": "string",
+          "maxLength": 640,
+          "maxGraphemes": 64,
+          "description": "A literal beginning removed from the base. A base that does not start with it fails the rule."
+        },
+        "add": {
+          "type": "string",
+          "maxLength": 640,
+          "maxGraphemes": 64,
+          "description": "A literal beginning prepended to what remains."
+        }
+      }
+    },
+    "coord": {
+      "type": "object",
+      "required": ["feature", "value"],
+      "description": "One coordinate of a cell address: a bare feature and value, carrying no provenance and no label. Bare for the same reason a layout's coordinates are — a paradigm is a selection from what the language has already declared, never a second place to declare it — so provenance is read back from the language's own `values` row before the address is displayed or matched against a form.",
+      "properties": {
+        "feature": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "The feature, e.g. \"Case\". Matched by name, as everywhere else."
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "The value, e.g. \"Gen\". Several comma-separated values mean one form spanning them all (\"Fem,Masc\")."
+        }
+      }
+    },
+    "label": {
+      "type": "object",
+      "required": ["long"],
+      "description": "How this language names the paradigm, for a reader of this language.",
+      "properties": {
+        "long": {
+          "type": "string",
+          "maxLength": 1280,
+          "maxGraphemes": 128,
+          "description": "Full form — the only required half: a lone form is always the full one."
+        },
+        "short": {
+          "type": "string",
+          "maxLength": 320,
+          "maxGraphemes": 32,
+          "description": "Optional abbreviated display form; when present it is shown instead of the full form, which appears on hover."
+        }
+      }
+    },
+    "reference": {
+      "type": "object",
+      "required": ["text"],
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 2560,
+          "maxGraphemes": 256,
+          "description": "The reference's display text (a citation, source name or note)."
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 2048,
+          "description": "Optional URL the reference links to."
+        }
+      }
+    }
+  }
+}
