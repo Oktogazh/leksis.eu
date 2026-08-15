@@ -726,6 +726,75 @@ export function applicableAxes(grammar: Grammar, categories: readonly Tag[]): Re
   return resolveAxes(grammar, applicableAxisRows(grammar, categories));
 }
 
+// ---- layer 5: which entries a paradigm reaches ---------------------------
+//
+// A paradigm selects the entries it generates forms for by **containment**: the
+// entry's inherent bundle contains the selector. Both sides are therefore
+// reduced to the same alphabet of atom keys, which is what lets the AppView
+// store an entry's on its doc and answer "every entry this new rule reaches"
+// with an indexed lookup — never a scan, and never a record fetched from a PDS.
+
+/**
+ * The keys of a bundle's atoms, **scheme-blind** — the alphabet an entry's
+ * categories and a paradigm's selector are compared in.
+ *
+ * Provenance is dropped for the reason `featsMatchKey` drops it wherever a form
+ * meets a cell: a bot writes `Conjugation=2` bare where the language's own
+ * editor writes it carrying the minting language's scheme, and a paradigm
+ * reaching only one of the two would be worse than one reaching both. The part
+ * of speech keeps its own slot, as it does in every key here — it is its own
+ * CoNLL-U column, and `upos=` can never collide with a feature item.
+ */
+export function tagAtomKeys(tag: Tag): string[] {
+  const keys: string[] = [];
+  if (tag.upos !== undefined) keys.push(tagKey({ upos: { value: tag.upos.value } }));
+  for (const feat of tag.feats ?? []) keys.push(featsMatchKey({ feats: [feat] }));
+  return keys;
+}
+
+/**
+ * The atom keys of an entry's **inherent bundle**: its part of speech, plus
+ * every feature the language declares inherent for the category carrying it.
+ *
+ * The filter is the point. `categories` is lexeme-level, but nothing stops a
+ * record from carrying a form's feature there, and an atom that is not inherent
+ * is noise a rule must not select on — what is stored is exactly the set a new
+ * paradigm's selector is tested against. Inherence is read **per category and by
+ * containment**, so a declaration on `{NOUN}` reaches an entry categorised
+ * `{NOUN, Gender=Fem}` exactly as `applicableAxes` reaches it, while the keys
+ * that come out are scheme-blind, the way every form-to-cell join is.
+ *
+ * The part of speech needs no declaration of any kind: it is what a paradigm
+ * minimally selects on, and requiring it to be bound first would make every
+ * paradigm of a language whose labels nobody has written yet silently inert.
+ *
+ * Takes the `inherent` rows rather than the whole grammar because the caller is
+ * the firehose consumer, which holds those rows cached on the language doc and
+ * has no record in hand. Deduped and sorted, so one entry's stored value is
+ * stable and two runs cannot differ on ordering alone.
+ */
+export function inherentAtomKeys(
+  inherent: readonly GrammarInherent[],
+  categories: readonly Tag[],
+): string[] {
+  const keys = new Set<string>();
+  for (const category of categories) {
+    if (category.upos !== undefined) {
+      keys.add(tagKey({ upos: { value: category.upos.value } }));
+    }
+    const feats = category.feats ?? [];
+    if (feats.length === 0) continue;
+    const held = heldKeys([category]);
+    for (const feat of feats) {
+      const declared = inherent.some(
+        (row) => row.feature === feat.feature && held.has(tagKey(row.category)),
+      );
+      if (declared) keys.add(featsMatchKey({ feats: [feat] }));
+    }
+  }
+  return [...keys].sort();
+}
+
 /**
  * The keys of every bundle these categories *contain* — each category itself
  * and all of its sub-bundles. This is what "applies to" means everywhere a

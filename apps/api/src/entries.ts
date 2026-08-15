@@ -9,9 +9,26 @@ import { db } from "./db";
 const SEARCH_LIMIT = 50;
 
 /**
- * Case-insensitive prefix search over current entries' orthographies,
- * optionally scoped to one language. Exact matches sort first, then by
- * canonical orthography.
+ * How many matching forms one hit reports. A regular verb of a language with a
+ * dense paradigm has hundreds of forms and a short query can prefix-match a
+ * great many of them, all saying the same thing to a reader deciding whether to
+ * open the entry; the entry is the result, the forms are the evidence for it.
+ */
+const FORM_HITS_PER_ENTRY = 8;
+
+/**
+ * Case-insensitive prefix search over current entries, optionally scoped to one
+ * language: the **headwords** and the word's **other forms**, as two halves that
+ * report themselves separately.
+ *
+ * Ranking, most authoritative first: an exact headword, any headword prefix,
+ * then a form-only hit — because a dictionary's answer to a spelling that is
+ * both somebody's headword and somebody else's plural is the headword. Ties go
+ * alphabetically, as before.
+ *
+ * Both filters are prefix scans, which no persistent index can serve; the
+ * indexes on the two arrays exist for the equality lookups elsewhere, and this
+ * reads the collection exactly as it did when the two halves were one array.
  */
 export async function searchEntries(query: string, languageID: string): Promise<EntryView[]> {
   const q = query.trim().toLowerCase();
@@ -21,15 +38,26 @@ export async function searchEntries(query: string, languageID: string): Promise<
     FOR e IN entries
       FILTER e.current == true
       FILTER ${languageID} == "" || e.languageID == ${languageID}
-      FILTER LENGTH(FOR s IN e.search FILTER STARTS_WITH(s, ${q}) LIMIT 1 RETURN 1) > 0
-      SORT ${q} IN e.search DESC, e.search[0] ASC
+      LET orthographies = NOT_NULL(e.orthographySearch, [])
+      LET headword = LENGTH(
+        FOR s IN orthographies FILTER STARTS_WITH(s, ${q}) LIMIT 1 RETURN 1
+      ) > 0
+      LET forms = (
+        FOR f IN NOT_NULL(e.otherForms, [])
+          FILTER STARTS_WITH(f.search, ${q})
+          LIMIT ${FORM_HITS_PER_ENTRY}
+          RETURN { form: f.form, tag: f.tag, generated: f.origin == "rule" }
+      )
+      FILTER headword || LENGTH(forms) > 0
+      SORT ${q} IN orthographies DESC, headword DESC, orthographies[0] ASC
       LIMIT ${SEARCH_LIMIT}
       RETURN {
         key: e.entryKey,
         languageID: e.languageID,
         orthography: e.orthography,
         recordURI: e.recordURI,
-        authorDID: e.authorDID
+        authorDID: e.authorDID,
+        match: { headword, forms }
       }
   `);
   return cursor.all();

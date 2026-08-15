@@ -12,6 +12,19 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "-w", "@leksis/api"],
       "port": 8080
+    },
+    {
+      "name": "web-local-api",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "LEKSIS_API=http://127.0.0.1:8080",
+        "npm",
+        "run",
+        "dev",
+        "-w",
+        "@leksis/web"
+      ],
+      "port": 5173
     }
   ]
 }

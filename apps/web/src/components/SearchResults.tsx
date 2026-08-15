@@ -1,13 +1,39 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { EntryView, LanguageView } from "@leksis/types";
-import { searchEntries } from "../lib/api";
+import { labelLookup, type EntryView, type LabelView, type LanguageView } from "@leksis/types";
+import { fetchLabels, searchEntries } from "../lib/api";
 import { CreatePanel, type CreateActions } from "./CreatePanel";
+import { TagLabel } from "./EntryPreview";
 import { endonym } from "./LanguageSelector";
 import type { SearchKind } from "../lib/search-kind";
 
 const SYNC_POLL_MS = 3_000;
 const SYNC_POLL_MAX_TRIES = 20; // ~60s of PDS → Jetstream → ArangoDB latency
+
+/**
+ * Which half of the index the reader wants to see. A search over a language
+ * with a dense paradigm answers with far more forms than headwords, and the two
+ * are different questions: "is this word in the dictionary" and "what word is
+ * this a form of".
+ */
+const MATCH_FILTERS = ["all", "headwords", "forms"] as const;
+type MatchFilter = (typeof MATCH_FILTERS)[number];
+
+/** Whether the query matched at least one of this entry's other forms. */
+function hasFormHit(entry: EntryView): boolean {
+  return (entry.match?.forms.length ?? 0) > 0;
+}
+
+/**
+ * A language's labels, kept for the session: naming a matched form needs them,
+ * and one search can hit several languages while the next hits the same ones
+ * again. Stale by construction and harmlessly so — a renamed label shows up on
+ * the next reload, and the alternative is a fetch per language per keystroke.
+ */
+const labelCache = new Map<string, LabelView[]>();
+
+/** A language whose labels have not arrived (or do not exist) names nothing. */
+const EMPTY_LOOKUP: ReadonlyMap<string, { long: string; short?: string }> = new Map();
 
 interface SearchResultsProps {
   /** The submitted search term. */
@@ -43,6 +69,9 @@ export function SearchResults({
   const [failed, setFailed] = useState(false);
   /** Record URI written to the PDS but not yet seen back from the AppView. */
   const [syncingURI, setSyncingURI] = useState<string | null>(null);
+  const [filter, setFilter] = useState<MatchFilter>("all");
+  /** Labels of the languages whose forms this result set names, by tag. */
+  const [labels, setLabels] = useState<ReadonlyMap<string, LabelView[]>>(new Map());
 
   const languageTag = language?.tag ?? "";
 
@@ -50,6 +79,9 @@ export function SearchResults({
     let cancelled = false;
     setEntries(null);
     setFailed(false);
+    // A filter narrowed to one half of the previous results would silently hide
+    // the new ones: the counts it was chosen against are gone.
+    setFilter("all");
     searchEntries(query, languageTag)
       .then((found) => {
         if (!cancelled) setEntries(found);
@@ -85,10 +117,55 @@ export function SearchResults({
     return () => clearInterval(timer);
   }, [syncingURI, query, languageTag]);
 
+  // Only the languages whose forms are actually named, and only once each: a
+  // headword hit needs no labels at all, and a result set is usually one
+  // language or a handful.
+  useEffect(() => {
+    if (entries === null) return;
+    const needed = [...new Set(entries.filter(hasFormHit).map((e) => e.languageID))];
+    if (needed.length === 0) return;
+    let cancelled = false;
+    Promise.all(
+      needed.map(async (tag) => {
+        const cached = labelCache.get(tag);
+        if (cached !== undefined) return [tag, cached] as const;
+        // A language whose labels cannot be fetched is cached as none, not
+        // retried per row: the form then renders verbatim and styled unbound,
+        // which is what an unnamed tag looks like everywhere else.
+        const list = await fetchLabels(tag).catch(() => [] as LabelView[]);
+        labelCache.set(tag, list);
+        return [tag, list] as const;
+      }),
+    ).then((pairs) => {
+      if (!cancelled) setLabels(new Map(pairs));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [entries]);
+
+  const lookups = useMemo(
+    () => new Map([...labels].map(([tag, list]) => [tag, labelLookup(list)] as const)),
+    [labels],
+  );
+
   const languageName = (tag: string) => {
     const known = languages.find((l) => l.tag === tag);
     return known ? endonym(known) : tag;
   };
+
+  const headwordHits = entries?.filter((e) => e.match?.headword !== false).length ?? 0;
+  const formHits = entries?.filter(hasFormHit).length ?? 0;
+  // Offered only when the two halves both answered: with one kind of hit, a
+  // filter can only take results away.
+  const filterable = headwordHits > 0 && formHits > 0;
+  const shown = (entries ?? []).filter((entry) =>
+    !filterable || filter === "all"
+      ? true
+      : filter === "headwords"
+        ? entry.match?.headword !== false
+        : hasFormHit(entry),
+  );
 
   return (
     <section className="mt-8" aria-live="polite">
@@ -128,34 +205,91 @@ export function SearchResults({
       {failed ? (
         <p className="mt-4 text-sm text-red-600">{t("search.loadFailed")}</p>
       ) : entries !== null && entries.length > 0 ? (
-        <ul className="mt-4 divide-y rounded-lg border bg-surface shadow-sm">
-          {entries.map((entry) => (
-            <li key={entry.key}>
-              <button
-                type="button"
-                onClick={() => onOpenEntry(entry.key)}
-                className="flex w-full items-baseline justify-between gap-3 px-4 py-3 text-left hover:bg-surface-muted/60"
-              >
-                <span className="min-w-0">
-                  <span className="text-sm font-medium text-content">
-                    {entry.orthography[0]}
-                  </span>
-                  {entry.orthography.length > 1 && (
-                    <span className="ml-2 text-sm text-content-muted">
-                      {entry.orthography.slice(1).join(", ")}
+        <>
+          {filterable && (
+            <div
+              className="mt-4 flex flex-wrap gap-2"
+              role="tablist"
+              aria-label={t("search.matchLabel")}
+            >
+              {MATCH_FILTERS.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="tab"
+                  aria-selected={filter === value}
+                  onClick={() => setFilter(value)}
+                  className={`rounded-full border px-3 py-1 text-xs font-medium ${
+                    filter === value
+                      ? "border-primary bg-surface text-primary"
+                      : "text-content-subtle hover:border-primary"
+                  }`}
+                >
+                  {value === "all"
+                    ? t("search.matchAll", { n: entries.length })
+                    : value === "headwords"
+                      ? t("search.matchHeadwords", { n: headwordHits })
+                      : t("search.matchForms", { n: formHits })}
+                </button>
+              ))}
+            </div>
+          )}
+          <ul className="mt-4 divide-y rounded-lg border bg-surface shadow-sm">
+            {shown.map((entry) => (
+              <li key={entry.key}>
+                <button
+                  type="button"
+                  onClick={() => onOpenEntry(entry.key)}
+                  className="flex w-full items-baseline justify-between gap-3 px-4 py-3 text-left hover:bg-surface-muted/60"
+                >
+                  <span className="min-w-0">
+                    <span className="text-sm font-medium text-content">
+                      {entry.orthography[0]}
                     </span>
-                  )}
-                </span>
-                <span className="shrink-0 text-sm text-content-muted">
-                  {languageName(entry.languageID)}{" "}
-                  <span className="rounded border bg-surface px-1.5 py-0.5 font-mono text-xs">
-                    {entry.languageID}
+                    {entry.orthography.length > 1 && (
+                      <span className="ml-2 text-sm text-content-muted">
+                        {entry.orthography.slice(1).join(", ")}
+                      </span>
+                    )}
+                    {/* What was matched, when it was not the headword above it:
+                        the form's own spelling and the cell it fills, named by
+                        the language's labels — never the canonical key, which
+                        is an identifier and not something to read. */}
+                    {hasFormHit(entry) && (
+                      <span className="mt-1 block text-xs text-content-muted">
+                        <span className="mr-1">
+                          {t("search.formMatch", { count: entry.match!.forms.length })}
+                        </span>
+                        {entry.match!.forms.map((form, i) => (
+                          <span key={i} className="mr-2 whitespace-nowrap">
+                            <span
+                              className={`text-content ${form.generated ? "italic" : "font-medium"}`}
+                              {...(form.generated
+                                ? { title: t("search.formGenerated") }
+                                : {})}
+                            >
+                              {form.form}
+                            </span>{" "}
+                            <TagLabel
+                              tag={form.tag}
+                              lookup={lookups.get(entry.languageID) ?? EMPTY_LOOKUP}
+                            />
+                          </span>
+                        ))}
+                      </span>
+                    )}
                   </span>
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
+                  <span className="shrink-0 text-sm text-content-muted">
+                    {languageName(entry.languageID)}{" "}
+                    <span className="rounded border bg-surface px-1.5 py-0.5 font-mono text-xs">
+                      {entry.languageID}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
       ) : entries !== null ? (
         <div className="mt-4 rounded-lg border border-dashed bg-surface px-4 py-6 text-center sm:px-6">
           <p className="text-sm font-medium text-content">{t("search.empty")}</p>

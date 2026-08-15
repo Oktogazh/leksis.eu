@@ -61,6 +61,19 @@ const namedGraphs = [
   { name: "cognateNetwork", edge: "cognateEdges", vertices: "lexemes" },
 ];
 
+/**
+ * Drop an index by name if the collection still carries it — the counterpart of
+ * `ensureIndex`, for one this script used to create and no longer wants.
+ * Idempotent, and silent when there is nothing to drop.
+ */
+async function dropIndex(db: Database, collection: string, name: string): Promise<void> {
+  const indexes = await db.collection(collection).indexes();
+  const found = indexes.find((index) => index.name === name);
+  if (found === undefined) return;
+  await db.collection(collection).dropIndex(found.id);
+  console.log(`dropped superseded index "${name}" on "${collection}"`);
+}
+
 async function main() {
   // Connect to _system first so we can create the project DB if needed.
   const system = new Database({ url, auth: { username, password } });
@@ -153,8 +166,7 @@ async function main() {
   console.log('ensured 4 indexes on "sources"');
 
   // Entries are versioned the same way (many docs per entryKey, one with
-  // current: true). Search filters on language + lowercased orthographies
-  // (`search[*]`); ingestion looks versions up by entryKey and recordURI.
+  // current: true). Ingestion looks versions up by entryKey and recordURI.
   await db.collection("entries").ensureIndex({
     type: "persistent",
     name: "idx_entrykey_current",
@@ -167,10 +179,30 @@ async function main() {
     fields: ["recordURI"],
     unique: false,
   });
+  // Search is two halves now — the headwords and the word's other forms — so a
+  // hit can say which one it came from and a form hit can name the form. Two
+  // indexed arrays where there was one, which is the whole cost of the split;
+  // prefix semantics are unchanged.
   await db.collection("entries").ensureIndex({
     type: "persistent",
-    name: "idx_language_search",
-    fields: ["languageID", "search[*]"],
+    name: "idx_language_orthography",
+    fields: ["languageID", "orthographySearch[*]"],
+    unique: false,
+  });
+  await db.collection("entries").ensureIndex({
+    type: "persistent",
+    name: "idx_language_forms",
+    fields: ["languageID", "otherForms[*].search"],
+    unique: false,
+  });
+  // The layer-5 join: "every entry in this language whose inherent bundle
+  // contains this selector" is an indexed intersection filter, which is what
+  // lets a newly published paradigm find the entries it reaches without
+  // scanning the language and comparing bundles doc by doc.
+  await db.collection("entries").ensureIndex({
+    type: "persistent",
+    name: "idx_language_inherent",
+    fields: ["languageID", "inherentAtoms[*]"],
     unique: false,
   });
   // Per-language reads (dashboard counters, todo queue, activity) filter on
@@ -181,6 +213,10 @@ async function main() {
     fields: ["languageID", "current"],
     unique: false,
   });
+  // The flat `search` array's index, superseded by the two above. Dropped
+  // rather than left in place: it indexes a field nothing writes any more, so
+  // every entry write would keep paying for it and nothing would ever read it.
+  await dropIndex(db, "entries", "idx_language_search");
   console.log('ensured indexes on "entries"');
 
   // The labels read model is served per language and maintained by entry
@@ -348,6 +384,39 @@ async function main() {
   }
   if (legacy.length > 0) {
     console.log(`backfilled "localLanguages" from ${legacy.length} pre-split language doc(s)`);
+  }
+
+  // Reshape entry docs written before the search index was split in two
+  // (docs/design/paradigm-rules.md §2.2). Only the headword half is
+  // recoverable from the doc — it is the lowercased orthographies, which are
+  // stored. The form half is not: the retired `search` array pooled the form
+  // spellings with the orthographies and said nothing about which form each one
+  // was, and a form's tag lives only in the record. Neither does the inherent
+  // bundle, computed from the record's lexeme-level categories. Both come back
+  // when an entry's author republishes it — pre-1.0 that is a bot rerunning its
+  // import, not a migration, which is why nothing here fetches a record.
+  const pendingCursor = await db.query<number>(aql`
+    RETURN LENGTH(FOR e IN entries FILTER e.orthographySearch == null RETURN 1)
+  `);
+  const pending = (await pendingCursor.next()) ?? 0;
+  if (pending > 0) {
+    await db.query(aql`
+      FOR e IN entries
+        FILTER e.orthographySearch == null
+        LET headwords = e.deleted == true
+          ? []
+          : UNIQUE(FOR o IN NOT_NULL(e.orthography, []) RETURN LOWER(o))
+        UPDATE e WITH {
+          orthographySearch: headwords,
+          otherForms: [],
+          inherentAtoms: [],
+          search: null
+        } IN entries OPTIONS { keepNull: false }
+    `);
+    console.log(
+      `reshaped ${pending} entry doc(s) to the split search index ` +
+        `(headwords recomputed; forms and inherent atoms on republication)`,
+    );
   }
 
   // Rebuild the derived `labels` read model wholesale. Idempotent by

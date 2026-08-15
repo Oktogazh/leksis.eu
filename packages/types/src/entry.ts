@@ -340,6 +340,40 @@ export interface LeksisEntryRecord {
 }
 
 /**
+ * One inflected form the search index holds, as a search hit reports it.
+ *
+ * `tag` rides along rather than the canonical key the index stores it under,
+ * because the reader is shown the form's **labels**, resolved against what the
+ * language bound — and a key is not a tag: it has had provenance folded into a
+ * string, so a minted item could never find the row that names it. The key is
+ * for joining, the tag is for showing.
+ */
+export interface EntryFormHit {
+  /** The spelling, as the entry prints it. */
+  form: string;
+  /** Which form it is — the cell's address in the paradigm. */
+  tag: Tag;
+  /** True when a paradigm's rules produced it rather than the entry asserting it. */
+  generated: boolean;
+}
+
+/**
+ * Which half of the index a search hit matched on — the headword, the word's
+ * other forms, or both.
+ *
+ * The two halves are reported rather than merged because they are different
+ * answers to the reader: *молодий* found under its own spelling is the entry
+ * they searched for, while *молода* found as one of its forms is a step away
+ * from it and has to say so. It is also what the results filter is built on.
+ */
+export interface EntryMatch {
+  /** The query prefix-matched one of the entry's orthographies. */
+  headword: boolean;
+  /** The forms the query prefix-matched — empty when only the headword did. */
+  forms: EntryFormHit[];
+}
+
+/**
  * One entry as indexed by the AppView and served by the entries endpoints.
  * Deliberately minimal — the DB supports search, it does not hold the
  * content. `recordURI` is what the frontend resolves to render the entry.
@@ -359,6 +393,11 @@ export interface EntryView {
   deletionReason?: string;
   /** Present when `deleted` is true and the reason is a duplicate: the correct entry's key. */
   redirectTo?: string;
+  /**
+   * Search hits only: what the query matched on. Absent everywhere a single
+   * entry is served by identity, where there is no query and nothing matched.
+   */
+  match?: EntryMatch;
 }
 
 /** Response shape of GET /entries?q=X&l=Y (orthography search). */

@@ -5,6 +5,7 @@ import {
   isValidLanguageTag,
   normalizeLanguageTag,
   type Grammar,
+  type GrammarInherent,
   type LanguageTranslation,
 } from "@leksis/types";
 import { db } from "../db";
@@ -33,6 +34,24 @@ interface LanguageDoc {
    * re-fetching every record from its PDS.
    */
   labels: DeclaredLabel[];
+  /**
+   * This version's inherence declarations, cached for the same reason `labels`
+   * is and for one more.
+   *
+   * The reason it shares: an entry's ingest has to know which of its categories'
+   * features this language considers inherent, and it cannot resolve a record
+   * from a PDS to find out — the consumer is a sequential writer, not an HTTP
+   * client. The reason it does not: `labels` is a read model's input, while this
+   * is a **matching** input — it decides what goes into an entry's
+   * `inherentAtoms`, and so which entries a paradigm's selector reaches
+   * (layer 5, docs/design/paradigm-rules.md §2.1).
+   *
+   * Stored raw, not resolved: an orphan cannot survive here (a row naming an
+   * unbound feature costs the record its place in the index, ADR-0015), and the
+   * one filter `inherentFeatures` applies — dropping a lexicographic label set —
+   * is likewise impossible in an indexed grammar.
+   */
+  inherent: GrammarInherent[];
   createdAt: string;
   indexedAt: string;
   current: boolean;
@@ -148,6 +167,7 @@ export async function ingestLanguage(
     cid,
     authorDID,
     labels,
+    inherent: parsed.grammar?.inherent ?? [],
     createdAt: parsed.createdAt,
     indexedAt: new Date().toISOString(),
     current: true,
@@ -165,6 +185,11 @@ export async function ingestLanguage(
   // label joins the language's own list even before any entry uses it.
   await syncLocalLanguages(db, parsed.tag, parsed.translations);
   await syncLanguageLabels(db, parsed.tag, labels);
+  // Nothing recomputes the entries' `inherentAtoms` here, deliberately: a
+  // grammar edit would otherwise re-read every entry of the language on every
+  // save. Each entry refreshes its own on its next republication, and whether a
+  // language-record transition should trigger a language-wide recompute waits
+  // for a real language's grammar to churn (design note §7.2).
   console.log(
     `firehose: indexed language "${doc.tag}" (${current ? "new version" : "new language"}) from ${authorDID}`,
   );

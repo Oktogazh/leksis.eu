@@ -234,8 +234,17 @@ export async function getTranslations(
     LET sources = (
       FOR e IN entries
         FILTER e.current == true AND e.deleted != true AND e.languageID == ${from}
-        FILTER LENGTH(FOR s IN e.search FILTER STARTS_WITH(s, ${q}) LIMIT 1 RETURN 1) > 0
-        SORT ${q} IN e.search DESC, e.search[0] ASC
+        // Both halves of the index, as the flat search array covered both:
+        // asking what an inflected form means is the same question as asking
+        // about its headword, and the senses traversed are the headword's
+        // either way. Which half matched is not reported here — a translation
+        // answers with the target language's words, not with the source's.
+        LET orthographies = NOT_NULL(e.orthographySearch, [])
+        FILTER LENGTH(FOR s IN orthographies FILTER STARTS_WITH(s, ${q}) LIMIT 1 RETURN 1) > 0
+          OR LENGTH(
+            FOR f IN NOT_NULL(e.otherForms, []) FILTER STARTS_WITH(f.search, ${q}) LIMIT 1 RETURN 1
+          ) > 0
+        SORT ${q} IN orthographies DESC, orthographies[0] ASC
         LIMIT ${TRANSLATE_SOURCE_LIMIT}
         RETURN {
           entryKey: e.entryKey,

@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { aql } from "arangojs";
 import {
   collectLeafPlaces,
+  featsMatchKey,
+  inherentAtomKeys,
   isLeafPlace,
   isValidDefinitionPlace,
   isValidLanguageTag,
@@ -15,6 +17,8 @@ import {
   validateDefinitions,
   type EntryDefinition,
   type EntryExample,
+  type EntryInflectedForm,
+  type GrammarInherent,
   type Tag,
 } from "@leksis/types";
 import { db } from "../db";
@@ -25,8 +29,10 @@ import { reviveUnresolvedRelations, syncEntrySenses } from "./ingest-relation";
 
 // Decomposition of eu.leksis.entry records into the `entries` collection.
 // The record on the author's PDS is the source of truth for content; the
-// AppView indexes only what search needs — orthographies, the language tag,
-// and the record reference. Versioned like `languages`: many docs per entry
+// AppView indexes only what search needs — orthographies, the other forms, the
+// language tag, the record reference — plus the few derived keys the read
+// models join on without re-fetching a record (`tags`, `places`, and layer 5's
+// `inherentAtoms`). Versioned like `languages`: many docs per entry
 // (sharing `entryKey`), one with current: true; previous versions are
 // archived, never deleted (Wikipedia model, last write wins across authors).
 //
@@ -34,12 +40,63 @@ import { reviveUnresolvedRelations, syncEntrySenses } from "./ingest-relation";
 // modifies) becomes a new version of the entry owning that record; a record
 // without one is a brand-new entry and gets a freshly minted entryKey.
 
+/**
+ * One inflected form of an entry as the index holds it — the search half of the
+ * doc that used to be a handful of undifferentiated strings in `search`.
+ *
+ * Four fields and each earns its place: `search` is what a query prefix-matches,
+ * `form` what a reader is shown, `feats` the scheme-blind join key a cell
+ * address is matched on (`coordsMatchKey` computes the same string from a
+ * rule's coordinates, with no grammar in hand), and `tag` the address itself,
+ * kept because a reader is shown the form's **labels** and a key cannot be
+ * resolved back into one.
+ *
+ * `origin` is what makes a rule edit surgical: generated rows carry the
+ * `paradigmKey` that produced them, so re-running one paradigm replaces exactly
+ * its own output and never touches what an author asserted. Layer 5's expansion
+ * job writes those; ingest writes only `record` rows.
+ */
+export interface IndexedForm {
+  form: string;
+  /** Lowercased `form`, for case-insensitive prefix search. */
+  search: string;
+  /** `featsMatchKey` of the tag — the address, scheme- and part-of-speech-blind. */
+  feats: string;
+  tag: Tag;
+  origin: "record" | "rule";
+  /** Present on a generated row only: which paradigm produced it. */
+  paradigmKey?: string;
+}
+
 interface EntryDoc {
   entryKey: string;
   languageID: string;
   orthography: string[];
-  /** Lowercased orthographies, kept for case-insensitive search only. */
-  search: string[];
+  /**
+   * Lowercased orthographies — the **headword** half of the search index.
+   *
+   * Split from the forms (below) rather than pooled as the former flat `search`
+   * array, because a hit has to be able to say which half it came from: finding
+   * *молодий* under its own spelling and finding it under *молода* are different
+   * answers, and one of them has to name the form and print its labels.
+   */
+  orthographySearch: string[];
+  /** The **form** half of the search index, one row per form. */
+  otherForms: IndexedForm[];
+  /**
+   * The atom keys of this version's inherent bundle — its part of speech plus
+   * the features the language declares inherent for the categories carrying them
+   * (`inherentAtomKeys`).
+   *
+   * This is the join a paradigm reaches an entry through: a selector's atoms are
+   * keyed the same way, so "every entry this rule applies to" is an indexed
+   * intersection filter rather than a scan of the language and a bundle
+   * comparison per doc. Only *inherent* features are stored — a form's feature
+   * on a headword is noise a rule must not select on — which is also what makes
+   * the stored set tell layer 5's expansion job precisely which entries a newly
+   * published rule reaches.
+   */
+  inherentAtoms: string[];
   recordURI: string;
   cid: string;
   authorDID: string;
@@ -75,8 +132,14 @@ interface EntryDoc {
 interface ParsedEntry {
   languageID: string;
   orthography: string[];
-  /** Spellings of the entry's other grammatical forms, indexed for search. */
-  otherForms: string[];
+  /**
+   * The entry's lexeme-level categories, kept whole rather than folded into
+   * `tags`: `inherentAtoms` is computed from these alone, and the deduped union
+   * of all three altitudes cannot be split back into which tag was a headword's.
+   */
+  categories: Tag[];
+  /** The entry's other grammatical forms — the tag and the spelling, both indexed. */
+  otherForms: EntryInflectedForm[];
   places: number[][];
   subject: string | null;
   todo: boolean;
@@ -218,11 +281,10 @@ function parseDefinitions(value: unknown): { tags: Tag[]; places: number[][] } |
  * with it. That is the wanted loud failure: a record whose forms are labelled
  * in a way this AppView can no longer resolve should not half-load.
  */
-function parseOtherForms(value: unknown): { tags: Tag[]; forms: string[] } | null {
-  if (value === undefined) return { tags: [], forms: [] };
+function parseOtherForms(value: unknown): EntryInflectedForm[] | null {
+  if (value === undefined) return [];
   if (!Array.isArray(value)) return null;
-  const tags: Tag[] = [];
-  const forms: string[] = [];
+  const forms: EntryInflectedForm[] = [];
   for (const item of value) {
     if (typeof item !== "object" || item === null) return null;
     const f = item as Record<string, unknown>;
@@ -230,10 +292,23 @@ function parseOtherForms(value: unknown): { tags: Tag[]; forms: string[] } | nul
     const form = f.form.trim();
     if (form === "") return null;
     if (!isValidTag(f.tag)) return null;
-    tags.push(f.tag);
-    forms.push(form);
+    forms.push({ tag: f.tag, form });
   }
-  return { tags, forms };
+  return forms;
+}
+
+/**
+ * One asserted form as the index holds it. The lowercased spelling is what a
+ * query matches, the canonical feats key what a cell address is joined on.
+ */
+function indexedForm(form: EntryInflectedForm): IndexedForm {
+  return {
+    form: form.form,
+    search: form.form.toLowerCase(),
+    feats: featsMatchKey(form.tag),
+    tag: form.tag,
+    origin: "record",
+  };
 }
 
 /**
@@ -299,7 +374,7 @@ function parseRecord(record: unknown): ParsedEntry | null {
   // `Number=Plur` on a plural is as much a gap in a language's declaration as
   // an unnamed `NOUN` on a headword.
   const tags = new Map<string, Tag>();
-  for (const tag of [...categories, ...definitions.tags, ...otherForms.tags]) {
+  for (const tag of [...categories, ...definitions.tags, ...otherForms.map((f) => f.tag)]) {
     tags.set(tagKey(tag), tag);
   }
 
@@ -356,7 +431,8 @@ function parseRecord(record: unknown): ParsedEntry | null {
   return {
     languageID,
     orthography,
-    otherForms: otherForms.forms,
+    categories,
+    otherForms,
     places: definitions.places,
     subject,
     todo,
@@ -391,6 +467,27 @@ async function mintEntryKey(languageID: string, orthography: string, recordURI: 
     if (!(await cursor.next())) return key;
   }
   throw new Error(`could not mint a unique entry key for ${recordURI}`);
+}
+
+/**
+ * The inherence declarations of the language this entry is in, read from the
+ * cache on its current language doc.
+ *
+ * From the index, never from a PDS: the consumer is a sequential writer, and an
+ * HTTP round trip per entry would put every author's server in the middle of
+ * this one's ingest. A language nobody has described yet — or one described
+ * before this cache existed — yields none, which costs nothing more than the
+ * entry's inherent bundle shrinking to its part of speech until either record is
+ * republished.
+ */
+async function languageInherent(languageID: string): Promise<GrammarInherent[]> {
+  const cursor = await db.query<GrammarInherent[] | null>(aql`
+    FOR l IN languages
+      FILTER l.tag == ${languageID} AND l.current == true
+      LIMIT 1
+      RETURN l.inherent
+  `);
+  return (await cursor.next()) ?? [];
 }
 
 /**
@@ -444,21 +541,26 @@ export async function ingestEntry(
     entryKey = current?.entryKey ?? (await mintEntryKey(parsed.languageID, parsed.orthography[0]!, recordURI));
   }
 
+  const inherent = await languageInherent(parsed.languageID);
+
   const doc: EntryDoc = {
     entryKey,
     languageID: parsed.languageID,
     orthography: parsed.orthography,
     // A deleted version is withdrawn from search — its entry stays
-    // addressable by entryKey, but never surfaces as a search result.
-    // Other grammatical forms are searchable too, so an inflected form (e.g.
-    // a plural) leads back to its entry.
-    search: parsed.deleted
+    // addressable by entryKey, but never surfaces as a search result. Both
+    // halves go, and so does the inherent bundle: a withdrawn entry is one its
+    // author says should not be offered, which no paradigm should be generating
+    // forms for either.
+    orthographySearch: parsed.deleted
       ? []
-      : [
-          ...new Set(
-            [...parsed.orthography, ...parsed.otherForms].map((o) => o.toLowerCase()),
-          ),
-        ],
+      : [...new Set(parsed.orthography.map((o) => o.toLowerCase()))],
+    // Other grammatical forms are searchable too, so an inflected form (e.g. a
+    // plural) leads back to its entry. Every row here is `record` — asserted by
+    // the entry's author — since generation runs after ingest and writes its
+    // own rows beside these.
+    otherForms: parsed.deleted ? [] : parsed.otherForms.map(indexedForm),
+    inherentAtoms: parsed.deleted ? [] : inherentAtomKeys(inherent, parsed.categories),
     recordURI,
     cid,
     authorDID,
