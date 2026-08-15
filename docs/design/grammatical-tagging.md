@@ -6,7 +6,8 @@ designed, not implemented, and this note remains their source.
 **Date:** 2026-07-30; rewritten 2026-08-01 around the layer model; layers renumbered 2026-08-01 (old layer 3
 merged into 1 + 2); layer 1 reconciled with what shipped 2026-08-02; layer 2 reconciled 2026-08-02; layer 3
 reconciled 2026-08-03.
-**For:** The morphology arc (`leksis-evolution` skill). **The next build is layer 4.**
+**For:** The morphology arc (`leksis-evolution` skill). **The next build is layer 5 — planned in
+`docs/design/paradigm-rules.md`, which is authoritative over this note for that layer.**
 **Related:** **ADR-0006 (layer 1, accepted)**, **ADR-0007 (layer 2, accepted)**,
 **ADR-0008 (layer 3 + the label inversion, accepted)**,
 `lexicons/eu.leksis.entry.json`, `lexicons/eu.leksis.language.json`, `lexicons/eu.leksis.defs.json`,
@@ -464,21 +465,12 @@ and content was always PDS-resolved.
 
 ### Layer 5 — Rules
 
-Hunspell-like rules populating the cells layer 4 laid out, in `eu.leksis.paradigm`. **The entry's own
-`otherForms` override any generated cell**, matched by canonical key on the cell address — which is why layer
-3 must make a form's annotation a bundle. An `otherForm` matching no declared cell falls back to the flat
-list rather than being dropped: the safe failure. The entry carries its inherent categories plus exceptions,
-**never generated forms** — fixing a language's rule must re-render every entry without republishing anything
-on anyone's PDS.
-
-**Which inherent feature selects a paradigm is decided here, not declared anywhere.** A rule keys on whatever
-bundle its author chooses — `{VERB, Conjugation=1}`, or `{VERB, Aspect=Perf}`, or both. That is why deleting
-the old class layer cost nothing: the "this feature is the paradigm selector" claim was never needed.
-
-**One shared generator**, in a shared package, never inside a React component: it serves the viewer now and
-the exporters later. Three things to price honestly: cells are **many-to-one** (syncretism — the table must
-merge, not repeat); ingest-time index expansion means a rule edit re-expands an entire language; and see §5
-on the three cell states. *Out:* export formats.
+**Designed in its own note — `docs/design/paradigm-rules.md` (2026-08-15), which supersedes this
+section.** What this section had already settled carries over unchanged and is restated there: the
+`eu.leksis.paradigm` lexicon; entry `otherForms` overriding any generated cell by canonical key;
+entries storing selectors and exceptions, never generated forms; the rule keying on whatever bundle
+its author chooses; one shared generator; syncretism merging; ingest-time index expansion and its
+re-expansion cost; the three cell states of §5. *Out:* export formats.
 
 ### Layer 6 — Export
 

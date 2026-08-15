@@ -83,10 +83,14 @@ whether the implementation uses base e (Rasch-style) is a pure change of units (
 
 ### 2.1 Upgradable documents and the ladder
 
-Five collections are **upgradable**: `languages` (shared key `tag`), `entries` (`entryKey`),
-`relations` (`relationKey`), `cognates` (`cognateKey`, added by ADR-0013) and `sources` (shared key
+Six collections are **upgradable**: `languages` (shared key `tag`), `entries` (`entryKey`),
+`relations` (`relationKey`), `cognates` (`cognateKey`, added by ADR-0013), `sources` (shared key
 `oclc`, added by `docs/design/sources-and-examples.md` — versioned like `languages`, rkey = the OCLC
-number, so all authors' records for one work share a ladder by construction). All versions sharing a
+number, so all authors' records for one work share a ladder by construction) and `paradigms`
+(shared key `paradigmKey`, added by `docs/design/paradigm-rules.md` — rkey derived from
+(language, selector), so all authors' rules for one category share a ladder exactly as sources do;
+a paradigm's blast radius is a whole language's inflection tables, so §7.6's language-record
+question covers paradigms identically). All versions sharing a
 key form that object's **ladder** — ordered by record rating, highest first.
 
 A source ladder has one wrinkle of its own: `languages[0]` (the main language) is immutable by
