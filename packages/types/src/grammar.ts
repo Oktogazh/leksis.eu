@@ -73,6 +73,7 @@
 
 import {
   featureKey,
+  featValues,
   formatTagVerbatim,
   isValidTag,
   isValidTagFeat,
@@ -948,6 +949,44 @@ function featKeySet(tag: Tag): Set<string> {
   return new Set((tag.feats ?? []).map((feat) => valueMatchKey(feat.feature, feat.value)));
 }
 
+/**
+ * Above this many spanned addresses one form stops being expanded and is matched
+ * as written. A form covering three binary axes spans eight cells; anything past
+ * this is a record mistyped rather than a language with unusually deep
+ * syncretism, and a cartesian product is not the place to find that out.
+ */
+const MAX_SPANNED_ADDRESSES = 64;
+
+/**
+ * The addresses one form **spans**: its own, expanded over every multivalue item
+ * it carries.
+ *
+ * This is how syncretism reaches the table. A form written `Gender=Fem,Masc`
+ * says "one form, both genders" — the settled spelling, deliberately not a
+ * wildcard — so in a gendered grid it belongs in the feminine cell *and* the
+ * masculine one, where a form written `Gender=Fem` belongs in exactly one. UD's
+ * multivalue notation is the only thing that makes a form answer to several
+ * distinct addresses, so expanding it is the whole of the rule.
+ *
+ * A form carrying no multivalue expands to itself, which is what makes this
+ * change invisible to everything written before layer 5: single-valued
+ * placement is bit-for-bit what it was.
+ */
+function spannedTags(tag: Tag): Tag[] {
+  const feats = tag.feats ?? [];
+  if (!feats.some((feat) => featValues(feat).length > 1)) return [tag];
+
+  let spread: TagFeat[][] = [[]];
+  for (const feat of feats) {
+    const values = featValues(feat);
+    if (spread.length * values.length > MAX_SPANNED_ADDRESSES) return [tag];
+    spread = spread.flatMap((prefix) =>
+      values.map((value) => [...prefix, { ...feat, value }]),
+    );
+  }
+  return spread.map((expanded) => ({ ...tag, feats: expanded }));
+}
+
 /** Whether every one of these coordinates appears among those keys. */
 function coordsContained(coords: readonly LayoutCoord[], keys: ReadonlySet<string>): boolean {
   return coords.every((coord) => keys.has(valueMatchKey(coord.feature, coord.value)));
@@ -1279,19 +1318,30 @@ export function placeForms<T extends { tag: Tag }>(
   };
 
   for (const form of forms) {
-    const key = featsMatchKey(form.tag);
-    if (byKey.has(key)) {
-      put(key, form);
-      continue;
+    // Every address this form spans — itself, unless it carries a multivalue
+    // item, in which case one form covers several cells and has to land in each
+    // of them. Each address is then matched exactly as a single-valued form
+    // always was.
+    const claimed = new Set<string>();
+    for (const address of spannedTags(form.tag)) {
+      const key = featsMatchKey(address);
+      if (byKey.has(key)) {
+        claimed.add(key);
+        continue;
+      }
+      const held = featKeySet(address);
+      let best: LayoutAddress | undefined;
+      for (const cell of cells) {
+        if (cell.coords.length === 0 || !coordsContained(cell.coords, held)) continue;
+        if (best === undefined || cell.coords.length > best.coords.length) best = cell;
+      }
+      if (best !== undefined) claimed.add(best.key);
     }
-    const held = featKeySet(form.tag);
-    let best: LayoutAddress | undefined;
-    for (const cell of cells) {
-      if (cell.coords.length === 0 || !coordsContained(cell.coords, held)) continue;
-      if (best === undefined || cell.coords.length > best.coords.length) best = cell;
-    }
-    if (best === undefined) leftover.push(form);
-    else put(best.key, form);
+    // Spanning some cells and not others is not a failure: a form covering both
+    // genders of a table that only lays out one still belongs in the cell it
+    // found. Only a form that reached **no** cell at all is a leftover.
+    if (claimed.size === 0) leftover.push(form);
+    else for (const key of claimed) put(key, form);
   }
   return { placed, leftover };
 }
@@ -1342,6 +1392,79 @@ export function layoutView<T extends { tag: Tag }>(
   if (cells.length === 0) return flat;
   const { placed, leftover } = placeForms(cells, forms);
   return { blocks, placed, leftover, filled: placed.size > 0 };
+}
+
+/**
+ * How one drawn cell of a table covers the grid: itself, or a rectangle of
+ * merged cells. `"covered"` marks a position some earlier cell already spans,
+ * which the viewer draws nothing at.
+ */
+export type CellSpan = { colSpan: number; rowSpan: number } | "covered";
+
+/**
+ * Plan a table's cells into merged rectangles — the geometry of syncretism.
+ *
+ * A form written `Gender=Fem,Masc` covers both cells with **one** form, and a
+ * table that printed it twice would say two things where the language said one.
+ * So contiguous cells whose contents are *the same form* are drawn as a single
+ * spanned cell. `key` decides sameness and must identify the form **instance**,
+ * never its spelling: two forms that merely happen to agree are two answers that
+ * coincide, and merging them would assert a syncretism nobody declared. A `key`
+ * of `undefined` never merges, which is how a designer's grid keeps every cell
+ * separately clickable.
+ *
+ * Only whole matching runs extend downwards, so every merge is a rectangle and
+ * never claims a position it does not cover; a non-rectangular group simply
+ * becomes several rectangles, which is still merged rather than repeated.
+ *
+ * It lives here rather than in the component for the reason `resolveLayout`
+ * does: what a reader sees should be checkable without a browser.
+ */
+export function mergeCellSpans(
+  cells: readonly (LayoutAddress | undefined)[][],
+  key: (address: LayoutAddress) => string | undefined,
+): CellSpan[][] {
+  const rows = cells.length;
+  const spans: CellSpan[][] = cells.map((line) => line.map(() => ({ colSpan: 1, rowSpan: 1 })));
+  const keyAt = (row: number, column: number): string | undefined => {
+    const address = cells[row]?.[column];
+    return address === undefined ? undefined : key(address);
+  };
+
+  for (let row = 0; row < rows; row++) {
+    const line = cells[row]!;
+    for (let column = 0; column < line.length; column++) {
+      if (spans[row]![column] === "covered") continue;
+      const wanted = keyAt(row, column);
+      if (wanted === undefined) continue;
+
+      let colSpan = 1;
+      while (
+        column + colSpan < line.length &&
+        spans[row]![column + colSpan] !== "covered" &&
+        keyAt(row, column + colSpan) === wanted
+      ) {
+        colSpan += 1;
+      }
+      let rowSpan = 1;
+      while (
+        row + rowSpan < rows &&
+        Array.from({ length: colSpan }, (_, i) => keyAt(row + rowSpan, column + i)).every(
+          (below) => below === wanted,
+        )
+      ) {
+        rowSpan += 1;
+      }
+
+      spans[row]![column] = { colSpan, rowSpan };
+      for (let r = row; r < row + rowSpan; r++) {
+        for (let c = column; c < column + colSpan; c++) {
+          if (r !== row || c !== column) spans[r]![c] = "covered";
+        }
+      }
+    }
+  }
+  return spans;
 }
 
 /**

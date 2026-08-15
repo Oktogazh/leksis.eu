@@ -1,5 +1,5 @@
 import { aql, type Database } from "arangojs";
-import { generateForms } from "@leksis/types";
+import { mergeParadigms } from "@leksis/types";
 import type { IndexedForm } from "./ingest-entry";
 import type { ParadigmDoc } from "./ingest-paradigm";
 
@@ -166,45 +166,45 @@ function expandOne(entry: ExpandableEntry, paradigms: readonly ParadigmDoc[]): E
   );
   if (matching.length === 0) return { otherForms: asserted, formIssues: [] };
 
-  const facts = {
-    lemma,
-    forms: asserted.map((form) => ({ tag: form.tag, form: form.form })),
-  };
+  // The merge itself is shared with the reader (`mergeParadigms`), so what this
+  // indexes and what an entry page draws cannot disagree about which of two
+  // paradigms fills a cell. All that is left here is the index's own shape.
+  const merged = mergeParadigms(
+    matching.map((paradigm) => ({
+      id: paradigm.paradigmKey,
+      rules: paradigm.rules,
+      requires: paradigm.requires,
+    })),
+    {
+      lemma,
+      forms: asserted.map((form) => ({ tag: form.tag, form: form.form })),
+    },
+  );
 
-  const taken = new Set(asserted.map((form) => form.feats));
-  const generated: IndexedForm[] = [];
-  const formIssues: EntryFormIssue[] = [];
+  const otherForms: IndexedForm[] = merged.forms.map((form, index) =>
+    form.from === undefined
+      ? // An asserted row keeps the doc's own row, not a rebuilt one: its
+        // `search` and `feats` were computed at ingest and nothing here improves
+        // on them. `mergeParadigms` emits the asserted forms first and in order,
+        // so the index is the row's.
+        (asserted[index] as IndexedForm)
+      : {
+          form: form.form,
+          search: form.form.toLowerCase(),
+          feats: form.key,
+          tag: form.tag,
+          origin: "rule",
+          paradigmKey: form.from,
+        },
+  );
 
-  for (const paradigm of matching) {
-    const { forms, missing } = generateForms(paradigm, facts);
-    for (const row of missing) {
-      formIssues.push({
-        paradigmKey: paradigm.paradigmKey,
-        requiresKey: row.key,
-        message: row.message,
-      });
-    }
-    for (const form of forms) {
-      if (taken.has(form.key)) continue;
-      taken.add(form.key);
-      generated.push({
-        form: form.form,
-        search: form.form.toLowerCase(),
-        feats: form.key,
-        // Bare, as every cell address is stored: a coordinate carries no
-        // provenance, and re-qualifying it against the language's `values` rows
-        // (`coordTag`) is a display step the consumer cannot take — it holds no
-        // grammar. The join key above is scheme-blind either way, so matching is
-        // unaffected; what a minted item costs is its label, until the surface
-        // showing it re-qualifies.
-        tag: { feats: form.coords.map((coord) => ({ ...coord })) },
-        origin: "rule",
-        paradigmKey: paradigm.paradigmKey,
-      });
-    }
-  }
+  const formIssues: EntryFormIssue[] = merged.missing.map((row) => ({
+    paradigmKey: row.from,
+    requiresKey: row.key,
+    message: row.message,
+  }));
 
-  return { otherForms: [...asserted, ...generated], formIssues };
+  return { otherForms, formIssues };
 }
 
 /** Write one batch of expansions back. `formIssues` disappears when clean. */

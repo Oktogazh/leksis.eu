@@ -2,11 +2,13 @@ import {
   compareDefinitionPlaces,
   isValidDefinitionPlace,
   isValidGrammar,
+  isValidParadigmRecord,
   isValidTag,
   isValidLanguageTag,
   MAX_DEFINITION_EXAMPLES,
   normalizeLanguageTag,
   normalizeOclc,
+  paradigmIssues,
   LEKSIS_COGNATE_COLLECTION,
   LEKSIS_ENTRY_COLLECTION,
   LEKSIS_LANGUAGE_COLLECTION,
@@ -23,6 +25,7 @@ import {
   type LeksisCognateRecord,
   type LeksisEntryRecord,
   type LeksisLanguageRecord,
+  type LeksisParadigmRecord,
   type LeksisRelationRecord,
   type LeksisSourceRecord,
   type SourceCategory,
@@ -476,4 +479,39 @@ export async function fetchSourceRecord(recordURI: string): Promise<LeksisSource
     },
     createdAt: typeof r.createdAt === "string" ? r.createdAt : "",
   };
+}
+
+/**
+ * Fetch a eu.leksis.paradigm record from its author's PDS — the rules the
+ * AppView deliberately does not serve.
+ *
+ * **All-or-nothing, and the strictest reader here**, because what this record
+ * produces is *words*. A language record with one unreadable translation still
+ * names its language; a paradigm with one unreadable rule generates a wrong
+ * form and prints it beside real ones, with nothing to tell a reader which is
+ * which. `isValidParadigmRecord` and `paradigmIssues` are the same two gates
+ * ingest applies, run here for the same reason: a browser resolves the record
+ * from a PDS directly, so it can be handed a version the index refused, or one
+ * the index has never seen.
+ */
+export async function fetchParadigmRecord(
+  recordURI: string,
+): Promise<LeksisParadigmRecord | null> {
+  const value = await fetchRecordValue(recordURI);
+  if (!isValidParadigmRecord(value)) {
+    if (value !== null) {
+      console.warn(`paradigm record ${recordURI} is malformed; refusing to load it`);
+    }
+    return null;
+  }
+  const issues = paradigmIssues(value);
+  if (issues.length > 0) {
+    console.warn(
+      `paradigm record ${recordURI} is incoherent (${issues
+        .map((issue) => `${issue.kind}(${issue.key})`)
+        .join(", ")}); refusing to load it`,
+    );
+    return null;
+  }
+  return value;
 }

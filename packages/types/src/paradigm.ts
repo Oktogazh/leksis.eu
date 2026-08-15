@@ -30,6 +30,7 @@ import { isValidLanguageTag } from "./bcp47.js";
 import type { EntryInflectedForm } from "./entry.js";
 import {
   coordsMatchKey,
+  featsMatchKey,
   isValidLayoutCoord,
   type GrammarLabel,
   type GrammarReference,
@@ -714,6 +715,98 @@ export function generateForms(
     emitted.add(key);
     const form = produce(key);
     if (form !== null) forms.push(form);
+  }
+
+  return { forms, missing };
+}
+
+/**
+ * One paradigm handed to the merger, with whatever the caller identifies it by:
+ * a `paradigmKey` in the AppView, the resolved record itself in a browser.
+ */
+export interface ParadigmSource<P> {
+  id: P;
+  rules: ParadigmRule[];
+  requires?: ParadigmRequirement[];
+}
+
+/** One form of an entry as a reader (or an index) holds it, after merging. */
+export interface MergedForm<P> {
+  tag: Tag;
+  form: string;
+  /** Scheme-blind join key of the address — what a cell is matched on. */
+  key: string;
+  /**
+   * Which paradigm produced it. **Absent means the entry asserts it itself**,
+   * and that is the whole of the distinction a reader is shown: a generated form
+   * is derived, not a claim its author made.
+   */
+  from?: P;
+}
+
+/** A required base form the entry lacks, and the paradigm that wanted it. */
+export interface MergedMissing<P> extends MissingBaseForm {
+  from: P;
+}
+
+export interface MergedForms<P> {
+  /** The entry's own forms in its own order, then the generated ones. */
+  forms: MergedForm<P>[];
+  missing: MergedMissing<P>[];
+}
+
+/**
+ * Every form an entry has — asserted and generated — with the precedence
+ * settled: **the entry's own `otherForms` win their cells**, and among
+ * paradigms the earlier one in the list wins.
+ *
+ * This exists so that the AppView's expansion job and the reader's entry page
+ * cannot disagree. They already share the *generator* (invariant 6); without
+ * sharing this they would still be free to differ on which of two candidates
+ * fills a cell, and a word findable by a form the page does not show — or worse,
+ * showing a form search cannot find — is the exact failure invariant 6 was
+ * written against. The caller supplies the paradigms **in precedence order**
+ * (most specific selector first, which is the order both the AppView's expansion
+ * and its `/paradigms` endpoint use); this decides nothing about which paradigms
+ * apply, only what happens when two of them fill one cell.
+ *
+ * A paradigm missing a required base form contributes **nothing** — not a
+ * partial table. Its rows land in `missing`, which the AppView records for the
+ * dashboard queue and a reader never sees: a dictionary reader has no use for
+ * the news that a principal part is absent, and half a generated paradigm is
+ * worse for them than none.
+ */
+export function mergeParadigms<P>(
+  paradigms: readonly ParadigmSource<P>[],
+  facts: ParadigmEntryFacts,
+): MergedForms<P> {
+  const forms: MergedForm<P>[] = facts.forms.map((form) => ({
+    tag: form.tag,
+    form: form.form,
+    key: featsMatchKey(form.tag),
+  }));
+  const missing: MergedMissing<P>[] = [];
+  // Exact-key suppression only. A generated form contained by an asserted one
+  // at a *vaguer* address is left in and settled where it is actually visible —
+  // by `placeForms`, which knows the cells. Here there is no layout in hand.
+  const taken = new Set(forms.map((form) => form.key));
+
+  for (const paradigm of paradigms) {
+    const generated = generateForms(paradigm, facts);
+    for (const row of generated.missing) missing.push({ ...row, from: paradigm.id });
+    for (const row of generated.forms) {
+      if (taken.has(row.key)) continue;
+      taken.add(row.key);
+      forms.push({
+        // Bare coordinates, as every stored cell address is: re-qualifying them
+        // against the language's `values` rows (`coordTag`) is a display step,
+        // and the join key above is scheme-blind either way.
+        tag: { feats: row.coords.map((coord) => ({ ...coord })) },
+        form: row.form,
+        key: row.key,
+        from: paradigm.id,
+      });
+    }
   }
 
   return { forms, missing };

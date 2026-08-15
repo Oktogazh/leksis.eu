@@ -295,6 +295,30 @@ dashboard's existing worklist logic can surface it later if wanted (§7).
 syncretic cells (many-to-one: one form spanning cells renders once with a spanned header, never
 repeated), styles generated forms as derived, and keeps the three layer-4 cell states distinct.
 
+**As built (slice 4), on four points.** *The shared thing is the **merger**, not only the generator.*
+`mergeParadigms` in `packages/types` decides asserted-beats-generated and earlier-paradigm-wins, and
+**the AppView's expansion job was refactored onto it**: sharing only `generateForms` would have left
+the index and the reader free to disagree about which of two candidates fills a cell, and a word
+findable by a form the page does not show is exactly the failure invariant 6 exists against.
+
+*Syncretism is placement, not presentation.* `placeForms` now expands a form's address over its
+multivalue items (`Gender=Fem,Masc` → both cells) and puts the **same form object** in each. A form
+with no multivalue expands to itself, so single-valued placement is unchanged — the property that
+made this safe to put in the shared path.
+
+*The geometry moved into `packages/types` too* (`mergeCellSpans`), because the drawing component's
+own contract is that it contains no arithmetic, and because a merged table should be checkable
+without a browser. It keys on the form **instance**: two cells merge only when one form spanned
+both, never when two forms happen to be spelled alike — the distinction the multivalue notation
+exists for, which a spelling comparison would erase.
+
+*The entry page renders the paradigm unconditionally.* The old `otherForms.length > 0` gate would
+have hidden precisely what this layer adds — an entry that writes out no form of its own and gets a
+full table from the rules. The component returns nothing when there is nothing.
+
+*Not in, deliberately:* `formIssues` reaches no reader surface, as §3.3 says. The unmet-requirement
+messages are contributor notes and the dashboard queue is their home.
+
 **The rule editor** opens from an **empty cell of the layout** (and from a dashboard door): it is
 scoped to the paradigm matching that entry's category, pre-addressed to the clicked cell, and
 states plainly that **an irregular form belongs in this entry's own `otherForms`, not in a rule** —
@@ -331,10 +355,16 @@ Every slice leaves master typechecking and deployable; the testset slice gates t
    `verify-ingest-gate.ts` precedent — 42 checks against a local ArangoDB, driving the real ingest
    functions rather than publishing to a PDS, which is slice 6's business), plus curl on both
    endpoints and a browser pass on the card and its dialog. See the three "as built" notes above.
-4. **The reader.** Entry-page generation: resolve paradigms via the new endpoint + PDS cache, run
-   the generator, merge into the layout with the §1.3 precedence and syncretism merging, style
-   generated vs asserted vs missing, render `formIssues` nowhere (reader) while the dashboard queue
-   lists them (already served by slice 3).
+4. **The reader.** ✅ **built.** Entry-page generation: resolve paradigms via the new endpoint + PDS
+   cache (`apps/web/src/lib/paradigms.ts`, the `language-grammar.ts` pattern), run the generator,
+   merge into the layout with the §1.3 precedence and syncretism merging, style generated vs
+   asserted vs missing, render `formIssues` nowhere (reader) while the dashboard queue lists them
+   (already served by slice 3). Verified by `apps/api/src/scripts/verify-paradigm-reader.ts` (19
+   pure checks over the merge, the spanning and the geometry — no DB, no browser, which is why they
+   live in the shared package) plus a browser pass proving the degradation path on real data. **The
+   one thing slice 4 cannot prove on its own** is generated forms rendering end to end, since that
+   needs paradigm records resolvable from a PDS; those are slice 6's fixtures. See the four "as
+   built" notes in §5.
 5. **The rule editor.** The `SourceEditorDialog`-class dialog of §5, the empty-cell door, live
    preview, publish path with issue blocking and cid guard.
 6. **Testset + recording.** Fixture paradigm records (quarantined per `leksis-testset`, including

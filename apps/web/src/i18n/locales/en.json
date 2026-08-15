@@ -660,6 +660,7 @@
     "otherFormsLabel": "Other forms",
     "paradigmLabel": "Forms of this word",
     "fullParadigm": "All forms",
+    "formGenerated": "Generated from this language’s inflection rules, not written in the entry.",
     "formUnknown": "Not entered yet",
     "formNone": "No such form in this language",
     "definitionsLabel": "Definitions",

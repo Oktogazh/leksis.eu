@@ -7,6 +7,7 @@ import {
   placePrefixMatches,
   type LabelView,
   type CognateNetworkResponse,
+  type EntryInflectedForm,
   type EntryRelationsResponse,
   type EntryView,
   type Grammar,
@@ -40,7 +41,15 @@ import {
 } from "../lib/api";
 import { fetchEntryRecord } from "../lib/atproto-record";
 import { fetchLanguageGrammar } from "../lib/language-grammar";
+import { fetchParadigms, type ResolvedParadigm } from "../lib/paradigms";
 import { forgetSource } from "../lib/source-record";
+
+/**
+ * A stable empty list for an entry that writes out no form of its own. A fresh
+ * `[]` on every render would defeat the paradigm's memoised generation, which is
+ * the one piece of real work on this page.
+ */
+const NO_FORMS: EntryInflectedForm[] = [];
 
 const SYNC_POLL_MS = 3_000;
 const SYNC_POLL_MAX_TRIES = 20; // ~60s of PDS → Jetstream → ArangoDB latency
@@ -109,6 +118,12 @@ export function EntryPage({
    */
   const [grammar, setGrammar] = useState<Grammar | undefined>(undefined);
   /**
+   * The language's inflection rules, resolved from their authors' PDSs. Side
+   * data like the grammar and just as optional: an empty list is a language
+   * nobody has written rules for, which is every language until someone does.
+   */
+  const [paradigms, setParadigms] = useState<ResolvedParadigm[]>([]);
+  /**
    * The semantic network's view of this entry: what it can be shown with, and
    * what is parked for repair. Best-effort side data like the rest — an entry
    * reads exactly as before when the network knows nothing about it.
@@ -167,6 +182,7 @@ export function EntryPage({
     setHomonyms([]);
     setLabels([]);
     setGrammar(undefined);
+    setParadigms([]);
     setRelations(null);
     setCognates(null);
     setRedirectTarget(null);
@@ -213,6 +229,12 @@ export function EntryPage({
         // to catch — an absent grammar is the flat list.
         fetchLanguageGrammar(found.languageID).then((declared) => {
           if (!cancelled) setGrammar(declared);
+        });
+        // And the rules that fill the layout the grammar lays out. Also total:
+        // it never rejects, and no rules simply means the entry shows the forms
+        // its author wrote.
+        fetchParadigms(found.languageID).then((rules) => {
+          if (!cancelled) setParadigms(rules);
         });
         const content = await fetchEntryRecord(found.recordURI);
         if (cancelled) return;
@@ -509,19 +531,24 @@ export function EntryPage({
                 <TagChips tags={record.categories} lookup={labelLookup(labels)} />
               </ul>
             )}
-            {record.otherForms !== undefined && record.otherForms.length > 0 && (
-              <div className="mt-3">
-                {/* Laid out the way the language says, and a flat list when it
-                    has said nothing — the fallback this layer must never
-                    break. */}
-                <EntryParadigm
-                  grammar={grammar}
-                  categories={record.categories}
-                  forms={record.otherForms}
-                  lookup={labelLookup(labels)}
-                />
-              </div>
-            )}
+            {/* Rendered unconditionally now: with rules behind the layout, an
+                entry that writes out no form of its own can still have a full
+                paradigm, so the old "only when otherForms is non-empty" gate
+                would have hidden exactly what layer 5 adds. The component
+                returns nothing when there is nothing — asserted or generated. */}
+            <div className="mt-3 empty:mt-0">
+              {/* Laid out the way the language says, and a flat list when it
+                  has said nothing — the fallback this layer must never
+                  break. */}
+              <EntryParadigm
+                grammar={grammar}
+                categories={record.categories}
+                lemma={record.orthography[0] ?? ""}
+                forms={record.otherForms ?? NO_FORMS}
+                paradigms={paradigms}
+                lookup={labelLookup(labels)}
+              />
+            </div>
             {/* Assertions about the word as a whole, rather than about one of
                 its senses — the record-level "every meaning" claim. */}
             {wholeEntry.length > 0 && (

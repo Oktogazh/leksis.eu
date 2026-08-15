@@ -1,9 +1,11 @@
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
   blockCells,
   flatFormOrder,
   layoutView,
+  mergeCellSpans,
+  mergeParadigms,
   type EntryInflectedForm,
   type Grammar,
   type GrammarLabel,
@@ -14,6 +16,7 @@ import {
   type ResolvedTagPart,
   type Tag,
 } from "@leksis/types";
+import type { ResolvedParadigm } from "../lib/paradigms";
 import { TagLabel } from "./EntryPreview";
 
 // Drawing a resolved layout — shared by the reader's paradigm and the layout
@@ -55,14 +58,32 @@ export function ParadigmTable({
   table,
   cell,
   empty,
+  mergeKey,
 }: {
   table: ResolvedLayoutTable;
   /** What to draw in a cell. */
   cell: (address: LayoutAddress) => ReactNode;
   /** What to draw where the paradigm has no such cell. Defaults to an em dash. */
   empty?: ReactNode;
+  /**
+   * Identity of what fills a cell, for merging syncretic ones. Adjacent cells
+   * returning the same non-undefined key are drawn as **one** spanned cell.
+   *
+   * It must identify the *form*, never its spelling: a form written
+   * `Gender=Fem,Masc` covers both cells and is one answer, while two forms that
+   * merely happen to agree are two answers that coincide, and a table that
+   * spanned the second would assert a syncretism nobody declared. Omitted (the
+   * designer's preview) means no merging at all.
+   */
+  mergeKey?: (address: LayoutAddress) => string | undefined;
 }) {
   const depths = (count: number): number[] => Array.from({ length: count }, (_, i) => i);
+
+  // Which cells merge into which rectangles. The arithmetic is `mergeCellSpans`
+  // in the shared package, as all of this component's arithmetic is: a table a
+  // reader sees should be checkable without a browser.
+  const spans = mergeCellSpans(table.cells, (address) => mergeKey?.(address));
+
   return (
     <div>
       <BlockCaption caption={table.caption} />
@@ -106,18 +127,28 @@ export function ParadigmTable({
                       {shown(header.value.label)}
                     </th>
                   ))}
-                {line.map((address, column) => (
-                  <td
-                    key={column}
-                    className="border px-2 py-1 align-top text-sm text-content"
-                  >
-                    {/* `undefined` is a cell the language says it has no form
-                        for. It must not look like a cell nobody has filled in
-                        yet — that distinction is the whole reason exclusions
-                        exist, and the reason this is not simply blank. */}
-                    {address === undefined ? (empty ?? <span aria-hidden="true">—</span>) : cell(address)}
-                  </td>
-                ))}
+                {line.map((address, column) => {
+                  const span = spans[row]?.[column];
+                  // Covered by a merged cell that started above or to the left:
+                  // the form is drawn once, spanning here.
+                  if (span === "covered" || span === undefined) return null;
+                  return (
+                    <td
+                      key={column}
+                      colSpan={span.colSpan > 1 ? span.colSpan : undefined}
+                      rowSpan={span.rowSpan > 1 ? span.rowSpan : undefined}
+                      className="border px-2 py-1 align-top text-sm text-content"
+                    >
+                      {/* `undefined` is a cell the language says it has no form
+                          for. It must not look like a cell nobody has filled in
+                          yet — that distinction is the whole reason exclusions
+                          exist, and the reason this is not simply blank. */}
+                      {address === undefined
+                        ? (empty ?? <span aria-hidden="true">—</span>)
+                        : cell(address)}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
@@ -164,12 +195,30 @@ export function ParadigmList({
   );
 }
 
+/**
+ * One form as this component handles it: the entry's own, or one a paradigm
+ * produced.
+ *
+ * `generated` is the only thing a reader is told about provenance, and it is
+ * told visually rather than in words — an italic and a tooltip. A derived form
+ * is not a claim the entry's author made, and a dictionary that presented the
+ * two identically would be putting words in their mouth.
+ *
+ * `id` identifies the *instance*, which is what lets syncretic cells merge:
+ * one form spanning two cells is one object in both, where two forms that
+ * happen to agree are two.
+ */
+interface DisplayForm extends EntryInflectedForm {
+  generated: boolean;
+  id: number;
+}
+
 /** The forms of an entry as a flat list — the fallback, and today's behaviour. */
 function FlatForms({
   forms,
   lookup,
 }: {
-  forms: readonly EntryInflectedForm[];
+  forms: readonly DisplayForm[];
   lookup: ReadonlyMap<string, GrammarLabel>;
 }) {
   const { t } = useTranslation();
@@ -183,10 +232,21 @@ function FlatForms({
           <span className="mr-1 font-mono text-xs text-content-muted">
             <TagLabel tag={form.tag} lookup={lookup} />
           </span>
-          {form.form}
+          <FormText form={form} />
         </li>
       ))}
     </ul>
+  );
+}
+
+/** A form's spelling, marked as derived when a rule produced it. */
+function FormText({ form }: { form: DisplayForm }) {
+  const { t } = useTranslation();
+  if (!form.generated) return <>{form.form}</>;
+  return (
+    <span className="italic" title={t("entry.formGenerated")}>
+      {form.form}
+    </span>
   );
 }
 
@@ -209,27 +269,80 @@ function FlatForms({
 export function EntryParadigm({
   grammar,
   categories,
+  lemma,
   forms,
+  paradigms,
   lookup,
 }: {
   grammar: Grammar | undefined;
   categories: readonly Tag[];
+  /** The entry's canonical orthography — every rule's implicit starting point. */
+  lemma: string;
+  /** The forms the entry asserts itself. */
   forms: readonly EntryInflectedForm[];
+  /** The language's rules, in precedence order. Empty until layer 5 reaches a language. */
+  paradigms: readonly ResolvedParadigm[];
   lookup: ReadonlyMap<string, GrammarLabel>;
 }) {
   const { t } = useTranslation();
-  if (forms.length === 0) return null;
 
-  const view = layoutView(grammar, categories, forms);
+  // Generation happens here, in the browser, from the records — the AppView's
+  // own copy of the rules exists only so search can find an inflected form. The
+  // two agree because they call one merger over one generator (invariant 6).
+  //
+  // Memoised because it is real work now: a dense paradigm is hundreds of cells
+  // of regex matching, and the entry page re-renders for every piece of side
+  // data it loads. The identity of `forms` and `paradigms` is stable across
+  // those renders — both come from state that only a reload replaces.
+  const all: DisplayForm[] = useMemo(
+    () =>
+      mergeParadigms(
+        paradigms.map((paradigm) => ({
+          id: paradigm.paradigmKey,
+          rules: paradigm.record.rules,
+          requires: paradigm.record.requires,
+        })),
+        { lemma, forms },
+      ).forms.map((form, id) => ({
+        tag: form.tag,
+        form: form.form,
+        generated: form.from !== undefined,
+        id,
+      })),
+    [paradigms, lemma, forms],
+  );
+  // `missing` is deliberately dropped. A reader has no use for the news that a
+  // principal part is absent — that note is written for contributors, in the
+  // rule author's own language, and the language dashboard's queue is where it
+  // belongs.
+
+  if (all.length === 0) return null;
+
+  const view = layoutView(grammar, categories, all);
   if (view.blocks.length === 0 || !view.filled) {
-    return <FlatForms forms={flatFormOrder(grammar ?? {}, categories, forms)} lookup={lookup} />;
+    return <FlatForms forms={flatFormOrder(grammar ?? {}, categories, all)} lookup={lookup} />;
   }
 
-  const held = (address: LayoutAddress): readonly EntryInflectedForm[] | undefined =>
-    view.placed.get(address.key);
-  // A block none of whose cells hold a form is not drawn. With no rules behind
-  // the layout yet, an empty grid would be a promise the entry cannot keep —
-  // revisit at layer 5, where generation fills what nobody entered.
+  /**
+   * The forms in one cell, with the entry's own winning it.
+   *
+   * `mergeParadigms` already settles the case where an asserted form and a
+   * generated one carry the *same* address. This settles the other one, which
+   * only a layout can see: a form the entry asserts at a more specific address
+   * lands in the same cell as a generated one by containment, and §1.3's
+   * precedence says the author's word wins. Dropping the generated form rather
+   * than printing both is what keeps a cell one answer.
+   */
+  const held = (address: LayoutAddress): readonly DisplayForm[] | undefined => {
+    const there = view.placed.get(address.key);
+    if (there === undefined) return undefined;
+    const asserted = there.filter((form) => !form.generated);
+    return asserted.length > 0 ? asserted : there;
+  };
+  // A block none of whose cells hold a form is not drawn — but generation is
+  // exactly what makes an empty table stop being empty, so a block the rules
+  // fill is now drawn where before layer 5 it was not (ADR-0009 predicted this
+  // revision).
   const drawn = view.blocks.filter((block) => blockCells(block).some((cell) => held(cell)));
   const marked = drawn.filter((block) => block.summary);
   const inline = marked.length > 0 ? marked : drawn;
@@ -247,10 +360,31 @@ export function EntryParadigm({
         </>
       );
     }
-    // Several forms in one cell are printed as they were written. Merging
-    // syncretic cells is layer 5's, where a generator knows they are the same
-    // form rather than two answers to one question.
-    return there.map((form) => form.form).join(", ");
+    // Several forms genuinely sharing one cell are printed as they were
+    // written. What is *not* printed twice is one form spanning several cells:
+    // that is the same object in each of them, and `mergeKey` below merges
+    // those into a single spanned cell instead.
+    return there.map((form, i) => (
+      <span key={form.id}>
+        {i > 0 ? ", " : ""}
+        <FormText form={form} />
+      </span>
+    ));
+  };
+
+  /**
+   * A cell's identity for merging: the forms in it, by instance.
+   *
+   * Two adjacent cells share a key only when they hold literally the same form
+   * object, which happens exactly when one form's address spanned both — a
+   * multivalue coordinate, the settled spelling of syncretism. Two cells whose
+   * forms merely happen to be spelled alike are different objects and stay
+   * apart, because a table that merged them would assert a syncretism the
+   * language never declared.
+   */
+  const mergeKey = (address: LayoutAddress): string | undefined => {
+    const there = held(address);
+    return there === undefined ? undefined : there.map((form) => form.id).join("+");
   };
 
   const block = (resolved: ResolvedLayoutBlock, key: number): ReactNode =>
@@ -273,6 +407,7 @@ export function EntryParadigm({
         key={key}
         table={resolved}
         cell={cellText}
+        mergeKey={mergeKey}
         empty={
           <>
             <span aria-hidden="true" className="text-content-subtle">

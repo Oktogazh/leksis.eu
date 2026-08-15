@@ -10,9 +10,11 @@ import {
   type EntryResolveResponse,
   type EntryView,
   type LanguageDashboardResponse,
+  type LanguageParadigmsResponse,
   type LanguageSourcesResponse,
   type LanguagesResponse,
   type LanguageView,
+  type ParadigmView,
   type SourcesResponse,
   type SourceView,
   type TranslateResponse,
@@ -107,6 +109,20 @@ export async function fetchLanguageDashboard(
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`GET /languages/${languageTag}/dashboard failed: ${res.status}`);
   return (await res.json()) as LanguageDashboardResponse;
+}
+
+/**
+ * The pointers to a language's current paradigms, most specific selector first.
+ *
+ * Pointers only — the rules live on their authors' PDSs, and `lib/paradigms.ts`
+ * is what resolves them. The order is the AppView's own precedence, so a caller
+ * applying the first paradigm that fills a cell reproduces exactly what the
+ * search index holds.
+ */
+export async function fetchLanguageParadigms(languageTag: string): Promise<ParadigmView[]> {
+  const res = await fetch(`${API_BASE}/languages/${encodeURIComponent(languageTag)}/paradigms`);
+  if (!res.ok) throw new Error(`GET /languages/${languageTag}/paradigms failed: ${res.status}`);
+  return ((await res.json()) as LanguageParadigmsResponse).paradigms;
 }
 
 /**
