@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import {
   canonicalizePlacePrefix,
   labelLookup,
+  inherentAtomKeys,
+  tagAtomKeys,
   placePathKey,
   placePrefixMatches,
   type LabelView,
@@ -11,11 +13,15 @@ import {
   type EntryRelationsResponse,
   type EntryView,
   type Grammar,
+  type LayoutCoord,
+  type ParadigmView as ParadigmPointer,
+  type Tag,
   type LanguageView,
   type LeksisEntryRecord,
   type RelationView,
 } from "@leksis/types";
 import { EntryEditorDialog } from "../components/CreateEntryPanel";
+import { ParadigmEditorDialog } from "../components/ParadigmEditorDialog";
 import { DefinitionList, TagChips } from "../components/EntryPreview";
 import { EntryCognates, ParkedCognates } from "../components/EntryCognates";
 import {
@@ -36,12 +42,13 @@ import {
   fetchEntryCognates,
   fetchEntryRelations,
   fetchLabels,
+  fetchLanguageParadigms,
   fetchEntry,
   searchEntries,
 } from "../lib/api";
 import { fetchEntryRecord } from "../lib/atproto-record";
 import { fetchLanguageGrammar } from "../lib/language-grammar";
-import { fetchParadigms, type ResolvedParadigm } from "../lib/paradigms";
+import { fetchParadigms, paradigmsReaching, type ResolvedParadigm } from "../lib/paradigms";
 import { forgetSource } from "../lib/source-record";
 
 /**
@@ -50,6 +57,9 @@ import { forgetSource } from "../lib/source-record";
  * the one piece of real work on this page.
  */
 const NO_FORMS: EntryInflectedForm[] = [];
+
+/** The same, for the categories a paradigm's selector is matched against. */
+const NO_CATEGORIES: Tag[] = [];
 
 const SYNC_POLL_MS = 3_000;
 const SYNC_POLL_MAX_TRIES = 20; // ~60s of PDS → Jetstream → ArangoDB latency
@@ -123,6 +133,32 @@ export function EntryPage({
    * nobody has written rules for, which is every language until someone does.
    */
   const [paradigms, setParadigms] = useState<ResolvedParadigm[]>([]);
+  /**
+   * The same paradigms as pointers.
+   *
+   * The reader needs only the rules, which `fetchParadigms` resolves; the
+   * *editor* needs the pointer behind them — the record URI to rewrite and the
+   * cid its concurrency guard compares. Kept beside rather than folded in, so
+   * nothing about reading an entry waits on a door most readers never open.
+   */
+  const [paradigmPointers, setParadigmPointers] = useState<ParadigmPointer[]>([]);
+  /**
+   * Of those, the ones whose selector this entry's inherent bundle contains —
+   * the only ones that govern its forms. Filtered here rather than in the
+   * renderer because only a caller holding an entry can answer the question,
+   * and memoised because the identity of the list is what keeps the generator's
+   * own memo from re-running on every piece of side data the page loads.
+   */
+  const reaching = useMemo(
+    () => paradigmsReaching(grammar, record?.categories ?? NO_CATEGORIES, paradigms),
+    [grammar, record?.categories, paradigms],
+  );
+  /** The empty-cell door's target: which paradigm, and the cell that was clicked. */
+  const [rulesLaunch, setRulesLaunch] = useState<{
+    selector: Tag;
+    existing?: { paradigmKey: string; recordURI: string; cid: string };
+    seedCoords: LayoutCoord[];
+  } | null>(null);
   /**
    * The semantic network's view of this entry: what it can be shown with, and
    * what is parked for repair. Best-effort side data like the rest — an entry
@@ -230,6 +266,13 @@ export function EntryPage({
         fetchLanguageGrammar(found.languageID).then((declared) => {
           if (!cancelled) setGrammar(declared);
         });
+        // Only a contributor can open the rule editor, so only a session pays
+        // for the pointers behind it.
+        if (did !== null) {
+          fetchLanguageParadigms(found.languageID)
+            .then(setParadigmPointers)
+            .catch(() => undefined);
+        }
         // And the rules that fill the layout the grammar lays out. Also total:
         // it never rejects, and no rules simply means the entry shows the forms
         // its author wrote.
@@ -545,8 +588,49 @@ export function EntryPage({
                 categories={record.categories}
                 lemma={record.orthography[0] ?? ""}
                 forms={record.otherForms ?? NO_FORMS}
-                paradigms={paradigms}
+                paradigms={reaching}
                 lookup={labelLookup(labels)}
+                {...(did !== null
+                  ? {
+                      onAddForm: () => setProposing(true),
+                      onEditRules: (coords: LayoutCoord[]) => {
+                        // The most specific paradigm that reaches this entry —
+                        // the endpoint already sorts them that way, so it is
+                        // the first whose selector the entry's inherent bundle
+                        // contains, and the contributor lands on the rules that
+                        // actually govern this cell rather than the general
+                        // ones behind them.
+                        //
+                        // The same containment test the reader and the AppView
+                        // use, over the same `inherentAtomKeys`: a door that
+                        // opened a paradigm the table above it never applied
+                        // would send a contributor to edit the wrong rules.
+                        const atoms = new Set(
+                          inherentAtomKeys(grammar?.inherent ?? [], record.categories),
+                        );
+                        const match = paradigmPointers.find((pointer) =>
+                          tagAtomKeys(pointer.selector).every((key) => atoms.has(key)),
+                        );
+                        setRulesLaunch({
+                          // Nothing matches: the language has no rules for this
+                          // kind of word yet, so the door becomes the way to
+                          // write the first ones — selected by what the entry
+                          // says it is.
+                          selector: match?.selector ?? record.categories[0] ?? { upos: undefined },
+                          ...(match !== undefined
+                            ? {
+                                existing: {
+                                  paradigmKey: match.paradigmKey,
+                                  recordURI: match.recordURI,
+                                  cid: match.cid,
+                                },
+                              }
+                            : {}),
+                          seedCoords: coords,
+                        });
+                      },
+                    }
+                  : {})}
               />
             </div>
             {/* Assertions about the word as a whole, rather than about one of
@@ -788,6 +872,34 @@ export function EntryPage({
           onDeleted={(uri) => {
             setProposing(false);
             setSyncingURI(uri);
+          }}
+        />
+      )}
+
+      {/* The rule editor, reached from a cell nothing fills. The same dialog
+          the grammar editor's Paradigms tab opens — that tab is the way a
+          language declares its morphology, and this is the shortcut from the
+          word that made somebody notice a gap. */}
+      {rulesLaunch !== null && view !== null && (
+        <ParadigmEditorDialog
+          tag={view.languageID}
+          grammar={grammar}
+          lookup={labelLookup(labels)}
+          selector={rulesLaunch.selector}
+          existing={rulesLaunch.existing}
+          seedCoords={rulesLaunch.seedCoords}
+          onClose={() => setRulesLaunch(null)}
+          onPublished={() => {
+            setRulesLaunch(null);
+            // The rules just changed, so this page's resolved copy is stale.
+            // The cache was already dropped at publish; re-resolving is what
+            // puts the new forms on the screen the contributor is looking at.
+            fetchParadigms(view.languageID)
+              .then(setParadigms)
+              .catch(() => undefined);
+            fetchLanguageParadigms(view.languageID)
+              .then(setParadigmPointers)
+              .catch(() => undefined);
           }}
         />
       )}

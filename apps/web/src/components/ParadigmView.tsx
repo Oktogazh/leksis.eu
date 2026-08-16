@@ -1,8 +1,9 @@
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
   blockCells,
   flatFormOrder,
+  formatTagVerbatim,
   layoutView,
   mergeCellSpans,
   mergeParadigms,
@@ -10,6 +11,7 @@ import {
   type Grammar,
   type GrammarLabel,
   type LayoutAddress,
+  type LayoutCoord,
   type ResolvedLayoutBlock,
   type ResolvedLayoutList,
   type ResolvedLayoutTable,
@@ -251,6 +253,102 @@ function FormText({ form }: { form: DisplayForm }) {
 }
 
 /**
+ * The two things a contributor can do about a cell nothing fills — offered
+ * side by side, because which one is right is the distinction this layer most
+ * needs a reader to understand.
+ *
+ * An **irregular** form belongs to the word: it goes in the entry, where it
+ * wins its cell over anything the rules generate. A **regular** one belongs to
+ * the language: it goes in a rule, and fills that cell for every word of the
+ * category at once. Offering only the first would leave every contributor
+ * hand-writing a paradigm the language could generate; offering only the second
+ * would invite them to bend the language's rules around one irregular word.
+ *
+ * Deliberately absent: a third option saying this word simply *has* no such
+ * form. Per-lexeme defectiveness has no shape in the lexicon yet, and guessing
+ * one here would be answering an open question in a popover.
+ */
+function EmptyCellDoor({
+  address,
+  onEditRules,
+  onAddForm,
+  label,
+}: {
+  address: LayoutAddress;
+  onEditRules?: (coords: LayoutCoord[]) => void;
+  onAddForm?: () => void;
+  label: ReactNode;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="relative inline-block">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        className="rounded px-1 hover:bg-black/5"
+      >
+        {label}
+      </button>
+      {open && (
+        <>
+          {/* Clicking anywhere else closes it — a popover in a table cell has
+              no room for a dismiss control. */}
+          <span
+            className="fixed inset-0 z-10 block cursor-default"
+            aria-hidden="true"
+            onClick={() => setOpen(false)}
+          />
+          <span className="absolute left-0 top-full z-20 mt-1 block w-64 rounded-lg border bg-surface p-3 text-left shadow-lg">
+            <span className="block text-xs font-medium text-content">
+              {t("entry.cellDoorTitle")}
+            </span>
+            <span className="mt-1 block font-mono text-xs text-content-subtle">
+              {formatTagVerbatim(address.tag)}
+            </span>
+            {onAddForm !== undefined && (
+              <span className="mt-3 block">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    onAddForm();
+                  }}
+                  className="text-sm font-medium text-primary hover:text-primary-hover"
+                >
+                  {t("entry.cellDoorOwnForm")}
+                </button>
+                <span className="mt-0.5 block text-xs text-content-subtle">
+                  {t("entry.cellDoorOwnFormHint")}
+                </span>
+              </span>
+            )}
+            {onEditRules !== undefined && (
+              <span className="mt-3 block border-t pt-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    onEditRules(address.coords);
+                  }}
+                  className="text-sm font-medium text-primary hover:text-primary-hover"
+                >
+                  {t("entry.cellDoorRules")}
+                </button>
+                <span className="mt-0.5 block text-xs text-content-subtle">
+                  {t("entry.cellDoorRulesHint")}
+                </span>
+              </span>
+            )}
+          </span>
+        </>
+      )}
+    </span>
+  );
+}
+
+/**
  * An entry's other forms, laid out the way its language says to.
  *
  * This is where the arc's promise lands: opening an entry **hydrates it with
@@ -273,6 +371,8 @@ export function EntryParadigm({
   forms,
   paradigms,
   lookup,
+  onEditRules,
+  onAddForm,
 }: {
   grammar: Grammar | undefined;
   categories: readonly Tag[];
@@ -283,6 +383,17 @@ export function EntryParadigm({
   /** The language's rules, in precedence order. Empty until layer 5 reaches a language. */
   paradigms: readonly ResolvedParadigm[];
   lookup: ReadonlyMap<string, GrammarLabel>;
+  /**
+   * The empty-cell door, both halves. Absent — logged out, or a preview — and
+   * this component is exactly the reader it was before layer 5: an unfilled
+   * cell is a dot and nothing more.
+   *
+   * Only an **unfilled** cell opens it. A cell the language says cannot exist
+   * offers nothing, because the two must stay distinguishable and inviting
+   * somebody to fill an impossible cell is the fastest way to collapse them.
+   */
+  onEditRules?: (coords: LayoutCoord[]) => void;
+  onAddForm?: () => void;
 }) {
   const { t } = useTranslation();
 
@@ -351,13 +462,22 @@ export function EntryParadigm({
   const cellText = (address: LayoutAddress): ReactNode => {
     const there = held(address);
     if (there === undefined) {
-      return (
+      const empty = (
         <>
           <span aria-hidden="true" className="text-content-subtle">
             ·
           </span>
           <span className="sr-only">{t("entry.formUnknown")}</span>
         </>
+      );
+      if (onEditRules === undefined && onAddForm === undefined) return empty;
+      return (
+        <EmptyCellDoor
+          address={address}
+          onEditRules={onEditRules}
+          onAddForm={onAddForm}
+          label={empty}
+        />
       );
     }
     // Several forms genuinely sharing one cell are printed as they were

@@ -4,6 +4,140 @@ All notable changes to Leksis. Each section is one loop — a unit of work, not 
 unit of time: the content loops grow the dictionary outward, the grammar loops
 (the morphology arc) grow the entry deeper, and the two interleave.
 
+## Grammar layer — layer 5: the rules that fill the cells
+
+Four layers had built a cell space and left it empty. A language can now say
+**how its words build their forms**, and a perfectly regular word carries
+nothing at all: its table is generated from the language's own rules, and the
+entry stores only what cannot be derived. See **ADR-0016**.
+
+> **Additive, and the fallback holds.** No entry record changes and no bot
+> republish. A language with no rules behaves exactly as before — an entry shows
+> the forms its author wrote — which is the degradation every layer of this arc
+> has been required not to break.
+
+### The new lexicon — `eu.leksis.paradigm`
+
+- **A record of its own, not a field on the language record.** The first break in
+  the arc's one-`grammar`-object pattern, and a deliberate one: rules are large,
+  written per inflection class, and edited at a different cadence by different
+  people. On the language record every rule edit would republish every binding.
+- **Identity is the record key**: `{languageID}-{hash16(canonical selector key)}`,
+  computed from the record's own fields, with ingest recomputing it and refusing
+  a mismatch — the `eu.leksis.source` scheme, with a hash where a source has a
+  catalogue number. So every author's paradigm for one category shares one
+  ladder, no repository can hold two paradigms for one category, and `selector`
+  is **immutable per identity**.
+- **A rule is `{coords, base?, match?, strip?, add?, prefix?}`** — Hunspell's
+  affix shape and nothing speculative. Several rows may target one cell and the
+  **first matching row in author order wins**, which makes rule order semantics
+  rather than presentation.
+- **A cell no rule matches is empty, not wrong.** The only error state a paradigm
+  has is a missing `requires` form.
+- **Syncretism is expressed, not expanded**: a rule targeting `Person=1,2`
+  produces **one** form spanning both cells, merged under a spanning header
+  instead of printed twice. A form covering an axis and a form nobody entered
+  must never look the same.
+- **`requires` skips rather than half-generating.** An entry lacking a principal
+  part gets nothing from that paradigm — a plausible wrong half-table is worse
+  for a dictionary than an empty one — and lands on the dashboard queue carrying
+  **the rule author's own message, verbatim**. The message lives in the rule
+  because the person who wrote the rule is a speaker, which is what lets the
+  queue be homolingual with no translation layer anywhere.
+
+### The AppView
+
+- **`GET /languages/:tag/paradigms`** — pointers only, most specific selector
+  first. The one endpoint the whole layer cost, and it was predicted at layer 4.
+- **The consumer caches what it needs to compute; the read surface serves
+  pointers.** The `paradigms` doc holds `rules`, `requires` and `selectorAtoms`
+  because expanding an entry at ingest cannot put a stranger's PDS in this
+  AppView's write path — but the endpoint returns none of it, not even the label,
+  so a language's morphology has one source of truth and the index is not it.
+- **`entries` caches `inherentAtoms`** — the part of speech plus every feature the
+  language declares *inherent* for the category carrying it. A paradigm reaches an
+  entry when that bundle contains the selector; several may reach one entry, and
+  the most specific wins each cell. Filtering on the inherent bundle rather than
+  on all of `categories` is what keeps a form's feature from selecting a paradigm.
+- **`paradigmIssues`** — five kinds (`empty-rules`, `unknown-base`, `base-cycle`,
+  `invalid-match`, `empty-message`), empty being the condition for publishing one
+  and for indexing one: ADR-0015 generalised to a second lexicon rather than
+  re-argued. It judges nothing the *language* record says, because a selector
+  nobody declared is a disagreement between two records and refusing it would
+  make ingest order matter.
+- **Inflected-form search**: the expansion job writes generated forms into the
+  entry's search index, so a reader who types a plural finds the word. A rule
+  edit re-expands its language — the price of the feature, paid by the consumer
+  and by nobody's PDS.
+
+### The reader
+
+- **An entry hydrates itself** with the language's rules and draws the full table:
+  the entry's own forms first, then generated ones rendered visually distinct,
+  then the layer-4 states — a cell the language says **cannot exist** against one
+  **nobody has filled in**.
+- **A block that only generation fills is now drawn.** Layer 4's "a block no form
+  fills is not drawn" is revised exactly as ADR-0009 said layer 5 would revise it:
+  generation is what makes an empty table stop being empty.
+- `formIssues` still reaches no reader. A reader has no use for the news that a
+  principal part is missing; that note is written for contributors, and the
+  dashboard queue is where it belongs.
+
+### The rule editor
+
+- **A Paradigms tab, after Layout** — and this inverts the design note, which had
+  put the editor behind an empty cell. The cell door cannot cold-start a
+  paradigm: an entry with no forms draws no table, so on the word that most needs
+  rules there is no cell to click. Layer 5 is a layer of the cascade like the four
+  before it, so it lives where they live.
+- **Each layout row is a list item**, counting the rule sets filed under it, with
+  a trailing group for paradigms **no table covers** — listed, never diagnosed.
+- **A standalone stacked dialog**: its own record, its own issue gate, its own
+  cid guard, its own footer. One draft per publish button is how a contributor
+  does not lose an edit. It swallows Escape, so closing it leaves the grammar
+  dialog open behind it.
+- **The selector is shown locked.** Changing the category is publishing a
+  different paradigm.
+- **A live preview through the reader's own component** — a sample headword in,
+  the generated table out — rather than a bespoke grid, which is how the editor's
+  idea of a cell and the reader's would have drifted.
+- **The empty-cell popover is the complement**, opening the same editor with the
+  clicked cell seeded as a rule target, and offering the two things side by side
+  that the moment actually poses: this word is irregular, or this is how the
+  language works. An **excluded** cell offers no door.
+
+### Fixed
+
+- **The reader applied every paradigm to every entry.** The AppView filtered by
+  inherent-bundle containment and the browser did not, so a language's verb
+  conjugation ran over its nouns and the page disagreed with the search index —
+  the one thing a shared generator exists to prevent. The filter now lives in
+  `lib/paradigms.ts` beside the resolver and is applied by the entry page, since
+  only a caller holding an entry can answer the question: the rule editor's
+  preview has no entry, and putting the filter inside the shared renderer emptied
+  that preview. Found by building the fixtures.
+
+### The testset
+
+- **The fixture set exists, and is published.** `scripts/fixtures/` plus
+  `scripts/publish-fixtures.ts`: three quarantined languages (`qtl` full, `qtm`
+  bare, `qto` defective), 25 entries, three sources and five paradigms, live on
+  the production index under private-use tags.
+- **The publish is gated on the AppView's own validators.** `--check` runs
+  `grammarIssues`, `validateDefinitions`, `validateSource`,
+  `isValidParadigmRecord` and `paradigmIssues` over every record and refuses to
+  start otherwise — because a language version archives forever, and an
+  incoherent one is refused at ingest and leaves the language silently on its
+  previous version. The run also asserts that `qto`'s deliberately defective
+  rewrite **was** refused, so a regression in the ADR-0015 gate cannot pass
+  quietly.
+- **`preview.ts` derives the assertions.** Every `expect` line in the manifest
+  comes from running the shared generator and `layoutView` exactly as the reader
+  does, rather than from reading the rules by eye.
+- Coverage matrix gains **P-01…P-12** (layer 5), **L-42/L-43** (the two issue
+  kinds ADR-0010 added and never got rows) and **U-60…U-71** (the rule editor's
+  flows, all but three now verified).
+
 ## The index admits only what the interface could have published
 
 Content loop 6 (polish), and a correction rather than a feature — it retires a

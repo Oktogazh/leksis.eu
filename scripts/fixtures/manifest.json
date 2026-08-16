@@ -1,0 +1,471 @@
+{
+  "generatedAt": "2026-08-16T08:29:03.935Z",
+  "botDID": "did:plc:sskf5uopmzotqtmq4banq6e5",
+  "site": "https://leksis.eu",
+  "note": "Regenerated from the live API by scripts/publish-fixtures.ts. Never hand-edit: a stale manifest sends an agent to a 404 and it reports a regression that does not exist.",
+  "languages": [
+    {
+      "tag": "qtl",
+      "role": "full",
+      "url": "https://leksis.eu/language/qtl",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.language/qtl",
+      "covers": [
+        "L-01",
+        "L-02",
+        "L-03",
+        "L-04",
+        "L-05",
+        "L-06",
+        "L-07",
+        "L-08",
+        "L-09",
+        "L-10",
+        "L-11",
+        "L-12",
+        "L-13",
+        "L-14",
+        "L-15",
+        "L-16",
+        "L-17",
+        "L-50",
+        "L-51",
+        "L-52",
+        "L-53",
+        "L-54",
+        "L-55",
+        "L-56",
+        "L-57",
+        "L-58",
+        "L-59"
+      ],
+      "expect": "GET /languages/qtl/labels serves 57 rows. Two pairs are flagged as indistinguishable: `t.` over `troad-rener` and `troad-reiñ` (two values of one feature), and `gou.` over `gour` and `gourel` (a feature NAME against a value — the case pair-keying used to collapse). `troad-gouzañv` sits at count 0, which is legitimate: the language named it before anyone used it. The grammar dialog's Layout tab shows two rows — NOUN with five blocks and {VERB, VerbForm=Fin} with two — and the Paradigms tab lists both, plus an uncovered group holding the {ADJ} paradigm."
+    },
+    {
+      "tag": "qtm",
+      "role": "bare",
+      "url": "https://leksis.eu/language/qtm",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.language/qtm",
+      "covers": [
+        "L-20"
+      ],
+      "expect": "No grammar at all: the dashboard offers to declare one, and every tag its entries carry renders verbatim and unbound."
+    },
+    {
+      "tag": "qto",
+      "role": "defective",
+      "url": "https://leksis.eu/language/qto",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.language/qto",
+      "covers": [
+        "L-30",
+        "L-31",
+        "L-32",
+        "L-33",
+        "L-34",
+        "L-35",
+        "L-36",
+        "L-37",
+        "L-38",
+        "L-39",
+        "L-40",
+        "L-41",
+        "L-42",
+        "L-43"
+      ],
+      "expect": "GET /languages/qto/currentRecord still points at the COHERENT version — the defective rewrite was refused whole, and never entered the record's history. Opening the grammar dialog on qto reads the defective content from the PDS: Publish is disabled and the footer lists all fourteen defect kinds."
+    }
+  ],
+  "sources": [
+    {
+      "oclc": "9000000000000001",
+      "url": "https://leksis.eu/source/9000000000000001",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.source/9000000000000001",
+      "covers": [
+        "S-01"
+      ],
+      "expect": "Every field renders: author, year and a working url. Listed on both /language/qtl and /language/qtm, since it covers two languages, and offered in both entry editors."
+    },
+    {
+      "oclc": "9000000000000003",
+      "url": "https://leksis.eu/source/9000000000000003",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.source/9000000000000003",
+      "covers": [
+        "S-03"
+      ],
+      "expect": "No author, no year, no url. Each absent field renders as NOTHING — never as an empty row or a dash."
+    },
+    {
+      "oclc": "9000000000000004",
+      "url": "https://leksis.eu/source/9000000000000004",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.source/9000000000000004",
+      "covers": [
+        "S-04"
+      ],
+      "expect": "A work of the BARE language: it is listed on /language/qtm, which has declared no grammar at all, proving a source is independent of the grammar cascade."
+    }
+  ],
+  "entries": [
+    {
+      "handle": "lxt-01",
+      "languageID": "qtl",
+      "entryKey": "qtl-tavesk-92fb",
+      "url": "https://leksis.eu/entry/qtl-tavesk-92fb",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.entry/3mt6rch4fu2w4",
+      "covers": [
+        "E-01"
+      ],
+      "expect": "The absolute floor: one spelling besides the handle, one flat definition, no categories, no notes, no references, no forms. This is the ONE fixture whose purpose is stated nowhere on the record — both purpose slots are deliberately empty, so it is identified by its handle and this manifest alone."
+    },
+    {
+      "handle": "lxt-02",
+      "languageID": "qtl",
+      "entryKey": "qtl-kambr-6ac8",
+      "url": "https://leksis.eu/entry/qtl-kambr-6ac8",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.entry/3mt6rcj5mrcoh",
+      "covers": [
+        "E-02",
+        "E-10",
+        "E-14",
+        "E-15",
+        "E-16"
+      ],
+      "expect": "Four spellings, all of them searchable. Three flat definitions numbered 1. 2. 3.; the second carries a free prose remark before its text. Entry-level notes render below the definitions (the evicted editorial label as prose), and two references at the very bottom — one a link, one plain text."
+    },
+    {
+      "handle": "lxt-03",
+      "languageID": "qtl",
+      "entryKey": "qtl-fdcb",
+      "url": "https://leksis.eu/entry/qtl-fdcb",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.entry/3mt6rcl7cdcl5",
+      "covers": [
+        "E-03",
+        "E-04"
+      ],
+      "expect": "The canonical spelling has no ASCII alphanumerics at all, so its entryKey was minted through the empty-slug path (`qtl--<hash>`). An IPA transcription renders under the headword."
+    },
+    {
+      "handle": "lxt-04",
+      "languageID": "qtl",
+      "entryKey": "qtl-roska-7fd7",
+      "url": "https://leksis.eu/entry/qtl-roska-7fd7",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.entry/3mt6rcnajakqv",
+      "covers": [
+        "E-09",
+        "E-17",
+        "E-19",
+        "E-27",
+        "E-28",
+        "P-01",
+        "P-08",
+        "P-11",
+        "P-12"
+      ],
+      "expect": "The main layer-5 page. The main noun grid is mostly GENERATED from the lemma `roska` by lxp-01 and styled as derived, not asserted: roska, roskas, roskenn, roskae, roskai, roskis. One cell is the entry's own and wins: `roskerum` overrides the genitive plural lxp-01 would otherwise have produced (roskarum). Gen×Sgv is EMPTY — a faint dot, no rule reaches it — while Dat×Sgv is EXCLUDED, an em dash; the two must look different, and that distinction is the whole reason the layer draws them apart. The possessed block below is filled ENTIRELY by generation from lxp-04 — a block no asserted form fills, drawn anyway, which is the layer-4 rule ADR-0009 predicted layer 5 would revise. In the feminine-pinned block, `roskai-hir` lands in the dative singular although its tag also carries a part of speech no cell address asks for: the placement's superset tolerance. Searching `roskerum` returns this entry."
+    },
+    {
+      "handle": "lxt-05",
+      "languageID": "qtl",
+      "entryKey": "qtl-kernos-7228",
+      "url": "https://leksis.eu/entry/qtl-kernos-7228",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.entry/3mt6rcpc2vkm7",
+      "covers": [
+        "P-03",
+        "P-09"
+      ],
+      "expect": "A second-declension noun that SUPPLIES the principal part lxp-02 requires (the genitive singular, `kerneris`). So the paradigm runs: the nominative plural is built from that form (kerneri), and the genitive plural from the plural in turn (kernerium) — a two-link base chain, neither link touching the lemma."
+    },
+    {
+      "handle": "lxt-06",
+      "languageID": "qtl",
+      "entryKey": "qtl-tornos-4194",
+      "url": "https://leksis.eu/entry/qtl-tornos-4194",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.entry/3mt6rcrcu5ca6",
+      "covers": [
+        "P-04"
+      ],
+      "expect": "The same declension as lxt-05 and NO genitive singular, so lxp-02 is skipped ENTIRELY rather than half-generated — a paradigm missing a principal part would otherwise produce a plausible, wrong half-table, which is worse for a dictionary than an empty one. Its main grid is therefore blank where lxt-05's is full. Note lxp-04 still runs, because it requires nothing: one paradigm being skipped does not silence the others. /language/qtl's missing-forms card lists this entry carrying lxp-02's own message, in the fixture language, word for word — nothing paraphrases it, because the person who wrote the rule is a speaker."
+    },
+    {
+      "handle": "lxt-07",
+      "languageID": "qtl",
+      "entryKey": "qtl-kan-bb9c",
+      "url": "https://leksis.eu/entry/qtl-kan-bb9c",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.entry/3mt6rctdx5kt5",
+      "covers": [
+        "P-05",
+        "P-07",
+        "L-52",
+        "L-53"
+      ],
+      "expect": "A perfectly regular verb that carries NO forms at all — the arc's promise in one page: kanan, kanez, kana, kanont are all generated. `kanomp` fills the 1st AND 2nd person plural under one merged heading rather than being printed twice, which is syncretism expressed instead of expanded. Two tables, told apart by their pinned tense: the present block's caption is ONE chip (the pair is named) and the past block's is two."
+    },
+    {
+      "handle": "lxt-08",
+      "languageID": "qtl",
+      "entryKey": "qtl-kanan-b0c4",
+      "url": "https://leksis.eu/entry/qtl-kanan-b0c4",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.entry/3mt6rcvf53klx",
+      "covers": [
+        "L-58"
+      ],
+      "expect": "The non-finite sibling. The language declares axes and a layout for `{VERB, VerbForm=Fin}` and NEITHER for `{VERB, VerbForm=Inf}`, and lxp-03's selector does not reach it — so this entry degrades to the flat `otherForms` list, which is the fallback layer 5 must never break."
+    },
+    {
+      "handle": "lxt-09",
+      "languageID": "qtl",
+      "entryKey": "qtl-brav-2941",
+      "url": "https://leksis.eu/entry/qtl-brav-2941",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.entry/3mt6rcxgiv2yk",
+      "covers": [
+        "L-17",
+        "L-59",
+        "P-10"
+      ],
+      "expect": "An adjective. `{ADJ}` declares an axis (Gender) and NO layout, so the forms print as a flat list in the axis's declared order, never as a fake table — the row verified by absence. lxp-05 generates the feminine (`brava`), and the entry's own `bravik` is tagged with the multivalue `Gender=Fem,Masc`: one form spanning the whole axis, which must never look like a form nobody entered."
+    },
+    {
+      "handle": "lxt-10",
+      "languageID": "qtl",
+      "entryKey": "qtl-gwez-a48e",
+      "url": "https://leksis.eu/entry/qtl-gwez-a48e",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.entry/3mt6rczibesec",
+      "covers": [
+        "E-11"
+      ],
+      "expect": "Depth 2 by IMPLICIT grouping: three leaves and no group items at all, rendering I. 1., I. 2., II. 1. The hierarchy is inferred from the leaves' places, which is what makes bare grouping free."
+    },
+    {
+      "handle": "lxt-11",
+      "languageID": "qtl",
+      "entryKey": "qtl-dougen-c7dc",
+      "url": "https://leksis.eu/entry/qtl-dougen-c7dc",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.entry/3mt6rd3kijczz",
+      "covers": [
+        "E-12",
+        "E-13"
+      ],
+      "expect": "Depth 3 with EXPLICIT group nodes: A. / A. I. / A. I. 1. and so on. A group node exists on the record only because it carries something — notes, or its own categories. The `A. I.` heading carries a sense-level category, so the transitivity is stated once at the heading rather than repeated on every leaf beneath it."
+    },
+    {
+      "handle": "lxt-12",
+      "languageID": "qtl",
+      "entryKey": "qtl-mor-95c8",
+      "url": "https://leksis.eu/entry/qtl-mor-95c8",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.entry/3mt6rd5lz72j3",
+      "covers": [
+        "E-06",
+        "E-18",
+        "E-29",
+        "L-14"
+      ],
+      "expect": "The category `{NOUN, Gender=Masc}` is deliberately NOT named as a combination although both its atoms are bound, so it renders as TWO chips by decomposition. Two forms fall outside the grid for different reasons and both survive below it, neither dropped: `dizanv` is tagged on a feature the language declares no axis of at all, while `kernosmo-hep` is tagged on a declared axis whose combination no block addresses."
+    },
+    {
+      "handle": "lxt-13",
+      "languageID": "qtl",
+      "entryKey": "qtl-nann-2109",
+      "url": "https://leksis.eu/entry/qtl-nann-2109",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.entry/3mt6rd7nltc47",
+      "covers": [
+        "E-07",
+        "E-08"
+      ],
+      "expect": "Two categories, both partly unbound. The first is a well-formed tag nobody bound at all, rendered VERBATIM and styled unbound. The second mixes a bound part of speech with the same unbound feature, so it decomposes partially: one resolved chip beside one verbatim one."
+    },
+    {
+      "handle": "lxt-14",
+      "languageID": "qtl",
+      "entryKey": "qtl-skeud-f037",
+      "url": "https://leksis.eu/entry/qtl-skeud-f037",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.entry/3mt6rdbosqk6h",
+      "covers": [
+        "E-05",
+        "L-57"
+      ],
+      "expect": "The category is EXACTLY the combination the language named, so it renders as ONE chip (`akg.`, expanding to `anv-kadarn gwregel` on hover) rather than as its two atoms. Contrast lxt-12, whose category is equally well bound and deliberately unnamed. Its form `skeudez` is what draws the last list block: the block is addressed on `Gender=Fem`, a value the language has bound and declared NO axis of — legitimate, and it must never be reported as a defect."
+    },
+    {
+      "handle": "lxt-15",
+      "languageID": "qtl",
+      "entryKey": "qtl-nezenn-b7db",
+      "url": "https://leksis.eu/entry/qtl-nezenn-b7db",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.entry/3mt6rddq6k243",
+      "covers": [
+        "E-20"
+      ],
+      "expect": "Carries exactly ONE todo item. With lxt-16's two, the flagged-for-review counter on /language/qtl is a known constant — 2 entries — and its dialog lists both with their items."
+    },
+    {
+      "handle": "lxt-16",
+      "languageID": "qtl",
+      "entryKey": "qtl-seren-8861",
+      "url": "https://leksis.eu/entry/qtl-seren-8861",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.entry/3mt6rdfrei2tl",
+      "covers": [
+        "E-20"
+      ],
+      "expect": "Carries exactly TWO todo items, so several bots or editors can each track their own. It is also the entry lxt-19's withdrawal redirects readers to."
+    },
+    {
+      "handle": "lxt-17",
+      "languageID": "qtl",
+      "entryKey": "qtl-seren-10a8",
+      "url": "https://leksis.eu/entry/qtl-seren-10a8",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.entry/3mt6rdhsu6kn7",
+      "covers": [
+        "E-22"
+      ],
+      "expect": "Shares its canonical spelling `seren` with lxt-16 and is a DIFFERENT entry — homonyms coexist, because an entry's identity is its record chain and not its spelling. Each page lists the other under homonyms."
+    },
+    {
+      "handle": "lxt-18",
+      "languageID": "qtl",
+      "entryKey": "qtl-ster-e187",
+      "url": "https://leksis.eu/entry/qtl-ster-e187",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.entry/3mt6rdjyhps5d",
+      "covers": [
+        "E-21"
+      ],
+      "expect": "Three versions chained by `subject`, so the entry has a real history to vote on later. Only the last is current: the page shows three definitions, and the first two versions are archived rather than deleted."
+    },
+    {
+      "handle": "lxt-19",
+      "languageID": "qtl",
+      "entryKey": "qtl-faziek-cb43",
+      "url": "https://leksis.eu/entry/qtl-faziek-cb43",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.entry/3mt6rdlztjc36",
+      "covers": [
+        "E-23"
+      ],
+      "expect": "Withdrawn: absent from search entirely, and still served at /entry/<key> with its reason, so old links resolve and the withdrawal can be contested. A statement about the dictionary, not about its author — the record itself was never deleted."
+    },
+    {
+      "handle": "lxt-20",
+      "languageID": "qtl",
+      "entryKey": "qtl-serenn-4f8a",
+      "url": "https://leksis.eu/entry/qtl-serenn-4f8a",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.entry/3mt6rdybwfcfm",
+      "covers": [
+        "E-24"
+      ],
+      "expect": "Withdrawn as a duplicate, with a redirect: the page points readers at lxt-16, whose entryKey the publisher resolved after that entry landed."
+    },
+    {
+      "handle": "lxt-21",
+      "languageID": "qtl",
+      "entryKey": "qtl-dour-1205",
+      "url": "https://leksis.eu/entry/qtl-dour-1205",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.entry/3mt6rdo3ac26f",
+      "covers": [
+        "E-25"
+      ],
+      "expect": "The ceiling on how big one fixture gets: eight definitions across two levels and six other forms, so the layout has something to strain against. Nothing here is exotic — it is bulk."
+    },
+    {
+      "handle": "lxt-22",
+      "languageID": "qtl",
+      "entryKey": "qtl-gwerz-d311",
+      "url": "https://leksis.eu/entry/qtl-gwerz-d311",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.entry/3mt6rdq4qxsve",
+      "covers": [
+        "E-30",
+        "E-31"
+      ],
+      "expect": "The three citation states, on one line each and visibly different. On the first leaf: one example citing lxs-01 with a locator (renders as the short citation form), one UNSOURCED (the sentence alone — a legitimate object, not an incomplete citation), and one citing a number no record describes (the bare `OCLC …`, styled unresolved, carrying the invitation to describe it). The second leaf cites lxs-01 AGAIN with a different locator: one description, two citations, resolved once through the per-number cache — and correcting the source corrects both."
+    },
+    {
+      "handle": "lxt-23",
+      "languageID": "qtm",
+      "entryKey": "qtm-nozel-7dc2",
+      "url": "https://leksis.eu/entry/qtm-nozel-7dc2",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.entry/3mt6rds67p2oj",
+      "covers": [
+        "E-26",
+        "L-21",
+        "L-22"
+      ],
+      "expect": "A well-formed tag in a language that has declared NO grammar at all, so it renders verbatim and styled unbound, and appears on GET /languages/qtm/labels as a row with a COUNT and no `long` — the worklist item, and the reason a bound label's `long` is nullable."
+    },
+    {
+      "handle": "lxt-24",
+      "languageID": "qtm",
+      "entryKey": "qtm-skalier-9ac7",
+      "url": "https://leksis.eu/entry/qtm-skalier-9ac7",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.entry/3mt6rdu7cpcd3",
+      "covers": [
+        "E-26",
+        "L-21"
+      ],
+      "expect": "A second bare-language entry, so the unbound-tag worklist has more than one row and its counts are distinguishable. Its forms print as the flat list, because no layout can exist without a grammar."
+    },
+    {
+      "handle": "lxt-25",
+      "languageID": "qtm",
+      "entryKey": "qtm-levr-145a",
+      "url": "https://leksis.eu/entry/qtm-levr-145a",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.entry/3mt6rdwaho24i",
+      "covers": [
+        "E-26",
+        "S-04"
+      ],
+      "expect": "A bare-language entry citing lxs-04, the work whose only language is qtm — proving an example and its source are independent of the grammar cascade: a language that has declared nothing can still quote a book."
+    }
+  ],
+  "paradigms": [
+    {
+      "handle": "lxp-01",
+      "languageID": "qtl",
+      "paradigmKey": "qtl-27287dc8f4183fb5",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.paradigm/qtl-27287dc8f4183fb5",
+      "covers": [
+        "P-01",
+        "P-02",
+        "P-06"
+      ],
+      "expect": "On /entry/<lxt-04>, the noun grid is filled by generation from the lemma `roska`: roskae, roskai, roskas, roskarum, roskis, roskenn — each styled as generated, not asserted. Gen×Sgv is EMPTY (no rule targets it) while Dat×Sgv is EXCLUDED, and the two must not look the same. The genitive singular comes from the FIRST of the two rows targeting it whose condition matches."
+    },
+    {
+      "handle": "lxp-02",
+      "languageID": "qtl",
+      "paradigmKey": "qtl-27287ac8f4183a9c",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.paradigm/qtl-27287ac8f4183a9c",
+      "covers": [
+        "P-03",
+        "P-04",
+        "P-09"
+      ],
+      "expect": "On /entry/<lxt-05> the paradigm runs, because that entry supplies the genitive singular `kerneris`: the plural is built from it (kerneri), and the genitive plural from THAT (kernerium) — a two-link base chain. On /entry/<lxt-06> nothing is generated at all, and /language/qtl's missing-forms card lists it carrying this record's own message, in the fixture language, unaltered."
+    },
+    {
+      "handle": "lxp-03",
+      "languageID": "qtl",
+      "paradigmKey": "qtl-76e3ea23ce302721",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.paradigm/qtl-76e3ea23ce302721",
+      "covers": [
+        "P-05",
+        "P-07"
+      ],
+      "expect": "On /entry/<lxt-07> the present-tense block fills (kanan, kanez, kana, kanont) and ONE form, `kanomp`, spans the 1st and 2nd person plural cells under a merged heading — never printed twice. The past-tense block is a second table of the same category, told apart by its pinned tense, and its caption reads as ONE chip for the present pair and two for the past."
+    },
+    {
+      "handle": "lxp-04",
+      "languageID": "qtl",
+      "paradigmKey": "qtl-d6480c2362862166",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.paradigm/qtl-d6480c2362862166",
+      "covers": [
+        "P-08",
+        "P-12"
+      ],
+      "expect": "The possessed-declension block on /entry/<lxt-04> fills from this broader paradigm, which the narrower lxp-01 never addresses. Where the two DO collide — the dative plural — the more specific selector wins: the cell reads `roskis` (from lxp-01), never `roskaobus`."
+    },
+    {
+      "handle": "lxp-05",
+      "languageID": "qtl",
+      "paradigmKey": "qtl-7a1f92bb0c445897",
+      "recordURI": "at://did:plc:sskf5uopmzotqtmq4banq6e5/eu.leksis.paradigm/qtl-7a1f92bb0c445897",
+      "covers": [
+        "P-10"
+      ],
+      "expect": "No layout row covers `{ADJ}`, so the Paradigms tab lists this one under its own 'no layout covers these' heading — LISTED, never diagnosed. Its generated forms still reach /entry/<lxt-09>, in the FLAT list, which is the fallback the whole layer must never break."
+    }
+  ]
+}

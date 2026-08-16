@@ -1,4 +1,10 @@
-import type { LeksisParadigmRecord } from "@leksis/types";
+import {
+  inherentAtomKeys,
+  tagAtomKeys,
+  type Grammar,
+  type LeksisParadigmRecord,
+  type Tag,
+} from "@leksis/types";
 import { fetchLanguageParadigms } from "./api";
 import { fetchParadigmRecord } from "./atproto-record";
 
@@ -81,4 +87,39 @@ export function fetchParadigms(tag: string): Promise<ResolvedParadigm[]> {
 /** Forget a language's cached paradigms — after this reader publishes one. */
 export function forgetParadigms(tag: string): void {
   cache.delete(tag);
+}
+
+/**
+ * The paradigms that actually reach one entry, in the precedence order they
+ * arrived in.
+ *
+ * **A paradigm matches an entry by containment**: the entry's inherent bundle
+ * contains the selector (design note §1.3). Without this filter a language's
+ * verb conjugation runs over its nouns, and — worse than untidy — the reader
+ * shows a different set of forms from the one the AppView expanded into the
+ * search index, which is the single thing one shared generator exists to
+ * prevent. It uses `inherentAtomKeys`, the same function the firehose consumer
+ * computes an entry's stored `inherentAtoms` with, so the two sides cannot
+ * drift.
+ *
+ * It lives here rather than inside `EntryParadigm` because only a caller
+ * holding an *entry* can answer the question. The rule editor's live preview
+ * has no entry — its draft is by construction the paradigm for the category
+ * being previewed — so it renders the draft directly and must not be put
+ * through this.
+ *
+ * With no grammar loaded it yields the part of speech alone, which is the right
+ * answer for a language that has declared nothing inherent: a paradigm keyed on
+ * the bare part of speech still reaches, one keyed on an inflection class does
+ * not until the language says that class is something a word *is*.
+ */
+export function paradigmsReaching(
+  grammar: Grammar | undefined,
+  categories: readonly Tag[],
+  paradigms: readonly ResolvedParadigm[],
+): ResolvedParadigm[] {
+  const held = new Set(inherentAtomKeys(grammar?.inherent ?? [], categories));
+  return paradigms.filter((paradigm) =>
+    tagAtomKeys(paradigm.record.selector).every((atom) => held.has(atom)),
+  );
 }

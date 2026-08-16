@@ -1,7 +1,9 @@
 # Design note: layer 5 — the paradigm lexicon (inflection rules)
 
-**Status:** Draft — designed 2026-08-15, not yet built. This file is the plan the layer-5 build
-sessions execute; where it and shipped code later disagree, the code and the layer-5 ADR win.
+**Status:** **Built** — designed 2026-08-15, all six slices shipped 2026-08-16 (**ADR-0016**). This
+file was the plan the build sessions executed and is kept for its reasoning and its "as built"
+notes; where it and shipped code disagree, **the code and ADR-0016 win**. The §7 questions are still
+open and are still not to be answered by guessing.
 **For:** the morphology arc's layer 5 (`leksis-evolution` skill). Supersedes the "Layer 5 — Rules"
 section of `docs/design/grammatical-tagging.md`, which now points here.
 **Related:** ADR-0009 (layout — the cell space rules fill), ADR-0008 (axes), ADR-0007 (inherence),
@@ -121,6 +123,22 @@ A paradigm **matches an entry by containment**: the entry's inherent bundle (§2
 selector. Several paradigms may match one entry (a `{VERB}` paradigm and a `{VERB, Conjugation=2}`
 one); all apply, most-specific-selector's row winning per cell — the same most-specific-first
 instinct `placeForms` already has.
+
+**As built (slice 6): that rule was enforced on one side only, and it took fixtures to notice.**
+The expansion job filtered on `inherentAtoms` from the day it shipped; the **browser did not**, so
+`EntryParadigm` merged *every* paradigm of a language into *every* entry. A language with a noun
+declension and a verb conjugation therefore showed conjugated nouns — and, worse than untidy, showed
+a different set of forms from the one the AppView had expanded into the search index, which is the
+single thing one shared generator exists to prevent. It survived slices 4 and 5 because until this
+slice **no language anywhere had two paradigms**, so nothing could disagree.
+
+The filter now lives in `apps/web/src/lib/paradigms.ts` as `paradigmsReaching`, beside the resolver,
+and is applied by the entry page. Not inside `EntryParadigm`, which was the first attempt and was
+wrong for a reason worth recording: **only a caller holding an entry can answer the question.** The
+rule editor's live preview has no entry — its draft is by construction the paradigm for the category
+being previewed — so a filter inside the shared renderer computed an inherent bundle from the
+selector alone, found the selector not contained in it, and silently rendered nothing. The renderer
+draws what it is given; the page decides what reaches the page.
 
 ---
 
@@ -319,13 +337,63 @@ full table from the rules. The component returns nothing when there is nothing.
 *Not in, deliberately:* `formIssues` reaches no reader surface, as §3.3 says. The unmet-requirement
 messages are contributor notes and the dashboard queue is their home.
 
-**The rule editor** opens from an **empty cell of the layout** (and from a dashboard door): it is
-scoped to the paradigm matching that entry's category, pre-addressed to the clicked cell, and
-states plainly that **an irregular form belongs in this entry's own `otherForms`, not in a rule** —
-the two affordances sit side by side in the cell's popover. Publishing follows the standard shape:
+**The rule editor. ⚠ The doors are inverted — §5.1 below is authoritative over the next paragraph's
+framing.** This section put the empty-cell popover first; it is a **complement**. The primary interface is a **Paradigms tab in the
+grammar dialog, last, after Layout**, where each layout row is a list item leading to that
+category's paradigms. The reason is one this section did not consider: `EntryParadigm` draws no
+block none of whose cells hold a form, and nothing at all for an entry with no forms — so on exactly
+the entry that most needs rules, a regular word whose author wrote out nothing, **there is no cell to
+click**. A door that appears only once the table is half-filled cannot be how a language declares
+its morphology; a layout row, which exists because the language declared it, can.
+
+The popover itself is unchanged and still built in the same slice: it opens from an **empty cell of
+the layout**, scoped to the paradigm matching that entry's category, pre-addressed to the clicked
+cell, and states plainly that **an irregular form belongs in this entry's own `otherForms`, not in a
+rule** — the two affordances sit side by side. Publishing follows the standard shape:
 full-rewrite record from the editor's own PDS, `paradigmIssues` blocking on any defect, a
 stale-rewrite `cid` guard (paradigms are edited by strangers, like sources). The editor shows a
 **live preview**: the current entry's lemma run through the draft rules into the layout.
+
+**As built (slice 5), on five points.** *The editor is its own dialog, stacked.* It publishes a
+different record — own key, own issue gate, own concurrency guard — and the grammar dialog's single
+publish footer is bound to the language record; a second draft behind that one footer is how a
+contributor loses an edit. It swallows Escape (capture phase) so closing it cannot also close the
+grammar draft behind it, and the same component serves both doors.
+
+*A paradigm files under a layout row by scheme-blind atom containment*, not by `tagKey` — the reason
+`inherentAtoms` is keyed that way: a bot writes `Conjugation=2` bare where this editor writes it
+carrying the minting scheme, and filing under only one of the two would hide a paradigm from the
+person who has to fix it. A selector containing several layout categories files under the most
+specific. Paradigms **no layout covers** get their own group at the root, listed and openable but
+**not diagnosed** — §7.3 stays open, and a row nobody can reach is the mistake ADR-0015 was written
+about.
+
+*The base is a select, not a text field.* Its options are exactly what `unknown-base` accepts — the
+lemma, a `requires` address, another rule's target, its own excluded — so the commonest defect is
+unreachable from the control while `paradigmIssues` still guards the manual paths.
+
+*The preview is `EntryParadigm`, not a table of its own.* Same argument as the layout designer's,
+one layer on: the shared thing at slice 4 was the merger precisely so the index and the reader could
+not disagree about a cell, and an editor drawing its own grid would reintroduce the disagreement at
+the place the author is looking. Verified in the browser: a `Number=Plur` rule adding `-où` over
+`gwerzenn` previews as `lies. gwerzennoù`, italic, under the language's own homolingual label.
+
+*The cell door lives on table cells only.* A list block **skips** an address nothing fills rather
+than drawing it, so a list has no empty cell — which is right (a list of forms enumerates what
+exists) and worth stating, because it is the second reason the tab had to be the primary door.
+Consequently the door could **not** be exercised against live data: the only layout Breton declares
+is a one-item list block, so no table cell is drawn anywhere in production. That is slice 6's
+fixtures to close, the same gap slice 4 left for the same reason. An excluded cell gets no door, and
+no "this word has no such form" affordance was added — §7.1 stays open.
+
+**Closed by slice 6.** `qtl`'s noun layout draws five blocks, so the door finally had table cells to
+sit on. On `lxt-04`: **20** unfilled cells are doors and **0** excluded cells are — the asymmetry the
+design asks for, verified by counting rather than by looking. The popover prints the cell's address
+(`Case=Gen|Number=Sgv`) above both affordances, and "edit the language's rules" opened **lxp-01**,
+the most specific paradigm reaching that entry rather than the general `{NOUN}` one behind it, with
+the clicked cell seeded as rule 9. The generated table it sits in is the rest of the proof: an
+asserted `roskerum` upright beside seven italic generated forms, one faint dot and one em dash in the
+same grid.
 
 **The search results** gain the headword/word-form filter (§2.2), rendered as a small kind toggle
 on word results; a form hit prints its entry's headword plus the form's labels.
@@ -333,6 +401,52 @@ on word results; a form hit prints its entry's headword plus the form's labels.
 **Voting:** `paradigms` joins the upgradable collections in
 `docs/design/weighted-voting.md` §2.1 (shared key `paradigmKey`) — recorded there, nothing to build
 here now; §7.6 of that note (language records' blast radius) applies to paradigms identically.
+
+### 5.1 The rule editor, as decided and built
+
+> Merged in from `docs/design/paradigm-rules-slice-5.md`, the separate execution plan slice 5 ran
+> from. That file is gone: two design files for one layer, numbered by *step* where this one is
+> numbered by *slice*, was a confusion waiting to happen. Its verified-facts table and its
+> step-by-step were scaffolding and died with the build; what follows is the part that outlived it.
+> **ADR-0016 wins over this section**, as it does over the whole note.
+
+**The primary door is the tab, and the reasoning is the load-bearing part.** §5 above put the editor
+behind an empty cell. That is inverted, because the cell door **cannot cold-start a paradigm**:
+`EntryParadigm` returns nothing when an entry has no forms at all, and a block none of whose cells
+hold a form is not drawn — so on the entry that most needs rules, a regular word whose author wrote
+out nothing, there is no cell to click. A door that only appears once the table is already
+half-filled cannot be how a language declares its morphology. The grammar dialog has no such
+precondition: a layout row exists *because* the language declared it. Layer 5 is a layer of the
+cascade like the four before it, so it belongs where the other four live, in the same path-scoped
+tree behind the same door on the language dashboard.
+
+**Two levels, mirroring layer 4.** `l5root` lists one item per layout row, labelled by its category
+and counting the paradigms filed under it, plus the trailing group for paradigms no layout row
+covers. `l5category` lists that category's paradigms, most specific selector first, each opening the
+editor. **Clicking a layout row never opens the editor directly, not even when exactly one paradigm
+exists** — conditional navigation is the one thing this dialog never does, and the level is also
+where "add a narrower paradigm" has to live.
+
+**Adding one.** At `l5category` the offered selectors are: the layout category itself (unless a
+paradigm already exists for it — the pointer list is the check), every layer-2 named combination
+whose tag contains that category, and a manual tag input. Picking one opens the editor in create
+mode with that selector **seeded and locked**.
+
+**The selector is never editable.** Immutable per identity (§1.2): changing the category is
+publishing a different paradigm, not editing this one. Displayed locked, the `languages[0]` pattern
+from `SourceEditorDialog`.
+
+**Rule order is semantics, so it gets controls.** The first matching row in author order wins a cell,
+which means the rules list carries ↑/↓/× exactly as a layout's list items do, and a collapsed row
+summarises address + `match` + the affix exchange so ordering is legible without expanding anything.
+
+**`AddressPicker` is shared, and its `id` is required.** Extracted from the grammar dialog because
+the rule editor renders **several pickers on one screen** — one per rule target, one per `base`, one
+per `requires` row — and duplicate DOM ids across them is a real bug, not a nicety. Its behaviour is
+otherwise unchanged, including the one worth stating: **one value per axis, multivalue through the
+manual field only.** `Gender=Fem,Masc` (syncretism) is typed, and **no multivalue picker is to be
+built** — an axis-spanning form is a deliberate assertion, and a checkbox grid would make it an
+accident.
 
 ---
 
@@ -365,13 +479,29 @@ Every slice leaves master typechecking and deployable; the testset slice gates t
    one thing slice 4 cannot prove on its own** is generated forms rendering end to end, since that
    needs paradigm records resolvable from a PDS; those are slice 6's fixtures. See the four "as
    built" notes in §5.
-5. **The rule editor.** The `SourceEditorDialog`-class dialog of §5, the empty-cell door, live
-   preview, publish path with issue blocking and cid guard.
-6. **Testset + recording.** Fixture paradigm records (quarantined per `leksis-testset`, including
-   one `requires`-missing case exercising the queue), the U-flow additions to the coverage matrix,
-   the browser pass, `docker compose build`, CHANGELOG, **ADR-0016**, skill/status updates, and the
-   one-line §2.1 edit to `weighted-voting.md` (done with this note — verify it survived). Then
-   propose the tag.
+5. **The rule editor.** ✅ **built.** The `SourceEditorDialog`-class dialog of §5, live preview,
+   publish path with issue blocking and cid guard — reached primarily from a **Paradigms tab in the
+   grammar dialog** (each layout row a list item), with the empty-cell door as its complement.
+   `ParadigmEditorDialog` + `lib/paradigm-draft.ts` are new, `AddressPicker` was extracted from the
+   grammar dialog (it now needs an `id`: several pickers share one screen here), and
+   `GrammarBindingDialog` gained the fifth tab and two levels. **No api, types or lexicon change** —
+   the arc's zero-cost pattern held for the fifth layer, and `GET /languages/:tag/paradigms` already
+   carried the `cid` the guard needed. Its execution plan lived in a file of its own and has been
+   **merged into §5.1**; see also the five "as built" notes in §5.
+6. **Testset + recording.** ✅ **built.** And it turned out to be a bigger slice than "add the
+   paradigm rows", because **the fixture set had never been published at all** — production held
+   `br`, `cy` and `en`, there was no manifest anywhere in the repo, and no fixture bot account
+   existed. So this slice built the set from nothing: `scripts/fixtures/` (content, one file per
+   lexicon, each record carrying its own `covers` and `expect`) plus `scripts/publish-fixtures.ts`
+   (validate → publish → rebuild the manifest), and published three quarantined languages, 25
+   entries, three sources and five paradigms live. Coverage matrix gains **P-01…P-12**, **L-42/L-43**
+   and **U-60…U-71**; **ADR-0016** covers the layer; the `weighted-voting.md` §2.1 edit was verified
+   to have survived. Two things worth carrying forward. The publish is **gated on the AppView's own
+   validators** and refuses to start otherwise, because a language version archives forever and an
+   incoherent one is refused at ingest and leaves the language silently on its previous version —
+   care is not a gate. And the browser pass **found a real defect** (§1.3's containment rule was
+   enforced by the AppView and not by the reader), which is what a verification slice is for; see
+   the "as built (slice 6)" note in §1.3.
 
 Slices 1–2 and 2–3 are strictly ordered; 4 and 5 both depend on 3 and could swap. If a session runs
 long, slice 2's web half (filter UI) can split off cleanly.

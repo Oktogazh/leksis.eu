@@ -1,0 +1,6 @@
+{
+  "//": "Not a workspace (the root globs only apps/* and packages/*). This file exists solely to put scripts/ in ESM mode, so tsx loads @atproto/api as the ESM package it is — the same reason publish-lexicons is an .mjs file.",
+  "name": "leksis-scripts",
+  "private": true,
+  "type": "module"
+}

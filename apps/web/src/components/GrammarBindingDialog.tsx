@@ -11,6 +11,7 @@ import {
   posTag,
   resolveLayout,
   resolveTag,
+  tagAtomKeys,
   tagKey,
   tagSize,
   uposDocUrl,
@@ -27,15 +28,17 @@ import {
   type LayoutAddress,
   type LayoutCoord,
   type LeksisLanguageRecord,
-  type ResolvedAxis,
+  type ParadigmView as ParadigmPointer,
   type ResolvedLayoutBlock,
   type ResolvedLayoutTable,
   type Tag,
 } from "@leksis/types";
+import { AddressPicker } from "./AddressPicker";
+import { ParadigmEditorDialog } from "./ParadigmEditorDialog";
 import { BlockCaption, ParadigmList, ParadigmTable } from "./ParadigmView";
 import { fetchFeatureNames, fetchFeatureValues, type UdValue } from "@leksis/ud";
 import { useSession } from "../auth/SessionProvider";
-import { fetchCurrentLanguageRecord } from "../lib/api";
+import { fetchCurrentLanguageRecord, fetchLanguageParadigms } from "../lib/api";
 import { fetchLanguageRecord } from "../lib/atproto-record";
 import {
   abbreviationRows,
@@ -47,6 +50,7 @@ import {
   axisRows,
   blockWithoutExclusions,
   classRows,
+  combinationRows,
   findAbbreviation,
   grammaticalFeatureRows,
   lexicalRows,
@@ -145,10 +149,16 @@ type Path =
   // a block is not reached through a feature, it *arranges* several of them.
   | { at: "l4root" }
   | { at: "l4category"; category: Tag }
-  | { at: "l4block"; category: Tag; index: number };
+  | { at: "l4block"; category: Tag; index: number }
+  // Layer 5 — the layouts as a list, then one category's paradigms. Editing a
+  // paradigm is not a level: it is a *different record*, so it opens its own
+  // dialog with its own publish footer rather than borrowing this one's.
+  | { at: "l5root" }
+  | { at: "l5category"; category: Tag };
 
 /** Which tab a path belongs to — the tab strip is derived, never stored. */
-function pathTab(path: Path): "primitives" | "combinations" | "axes" | "layout" {
+function pathTab(path: Path): "primitives" | "combinations" | "axes" | "layout" | "paradigms" {
+  if (path.at.startsWith("l5")) return "paradigms";
   if (path.at.startsWith("l4")) return "layout";
   if (path.at.startsWith("l3")) return "axes";
   return path.at.startsWith("l2") ? "combinations" : "primitives";
@@ -198,6 +208,19 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
   const [baseline, setBaseline] = useState<{ recordURI: string; cid: string } | null>(null);
   const [draft, setDraft] = useState<Grammar>({});
   const [path, setPath] = useState<Path>({ at: "root" });
+  /**
+   * The language's current paradigms, as pointers.
+   *
+   * Pointers and not records: this level lists and routes, and the rules
+   * themselves are resolved by the editor from their author's PDS. The `cid`
+   * riding along is what the editor's concurrency guard compares against.
+   */
+  const [paradigms, setParadigms] = useState<ParadigmPointer[]>([]);
+  /** The stacked editor: which selector, and the pointer when one is being rewritten. */
+  const [editing, setEditing] = useState<{
+    selector: Tag;
+    existing?: { paradigmKey: string; recordURI: string; cid: string };
+  } | null>(null);
   const [form, setForm] = useState<LabelDraft>(emptyLabel);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -450,6 +473,29 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
   // ---- navigation -------------------------------------------------------
 
   const tab = pathTab(path);
+
+  /**
+   * Load the paradigm pointers when the tab is first opened.
+   *
+   * A failure degrades to an empty list and no message. A paradigm has a total
+   * fallback — no rules means an entry shows the forms its author wrote, which
+   * is what entries did before this layer — so an unreachable list is an absence
+   * to work from, never an error to put in front of a contributor.
+   */
+  useEffect(() => {
+    if (tab !== "paradigms") return;
+    let live = true;
+    fetchLanguageParadigms(tag)
+      .then((rows) => {
+        if (live) setParadigms(rows);
+      })
+      .catch((err: unknown) => {
+        console.warn(`could not list the paradigms of "${tag}":`, err);
+      });
+    return () => {
+      live = false;
+    };
+  }, [tab, tag]);
   const crumbs: { label: string; go: Path }[] =
     tab === "combinations"
       ? [{ label: t("grammar.crumbL2Root"), go: { at: "l2root" } }]
@@ -457,7 +503,9 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
         ? [{ label: t("grammar.crumbL3Root"), go: { at: "l3root" } }]
         : tab === "layout"
           ? [{ label: t("grammar.crumbL4Root"), go: { at: "l4root" } }]
-          : [{ label: t("grammar.crumbRoot"), go: { at: "root" } }];
+          : tab === "paradigms"
+            ? [{ label: t("grammar.crumbL5Root"), go: { at: "l5root" } }]
+            : [{ label: t("grammar.crumbRoot"), go: { at: "root" } }];
   if (path.at === "pos" || path.at === "posForm") {
     crumbs.push({ label: t("grammar.posLevel"), go: { at: "pos" } });
     if (path.at === "posForm") crumbs.push({ label: path.value, go: path });
@@ -499,6 +547,8 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
         go: path,
       });
     }
+  } else if (path.at === "l5category") {
+    crumbs.push({ label: categoryText(path.category), go: path });
   } else if (path.at === "classes") {
     crumbs.push({ label: t("grammar.classesLevel"), go: { at: "classes" } });
   } else if (path.at === "lexical") {
@@ -510,7 +560,8 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
     path.at !== "root" &&
     path.at !== "l2root" &&
     path.at !== "l3root" &&
-    path.at !== "l4root"
+    path.at !== "l4root" &&
+    path.at !== "l5root"
   ) {
     // Which section a feature sits under is **derived from the row**, not
     // remembered: a lexicographic set says so on the row, a class is any other
@@ -1534,6 +1585,190 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
     );
   }
 
+  /**
+   * Which layout row a paradigm belongs under.
+   *
+   * A layout keys on a category; a selector is any bundle over the language's
+   * inherent vocabulary and reaches entries by **containment** — so a
+   * `{VERB, Conjugation=2}` paradigm fills the cells of the `{VERB}` layout and
+   * belongs beside it. Matching runs on **scheme-blind atom keys**, for the
+   * reason every form-to-cell join already does: a bot writes `Conjugation=2`
+   * bare where this editor writes it carrying the minting scheme, and filing a
+   * paradigm under only one of the two would hide the other from the person who
+   * has to fix it. Where several layouts are contained, the most specific wins.
+   */
+  function layoutFor(selector: Tag): Tag | undefined {
+    const atoms = new Set(tagAtomKeys(selector));
+    let best: Tag | undefined;
+    let bestSize = -1;
+    for (const row of draft.layout ?? []) {
+      const keys = tagAtomKeys(row.category);
+      if (!keys.every((key) => atoms.has(key))) continue;
+      if (keys.length > bestSize) {
+        best = row.category;
+        bestSize = keys.length;
+      }
+    }
+    return best;
+  }
+
+  function paradigmsUnder(category: Tag): ParadigmPointer[] {
+    const key = tagKey(category);
+    return paradigms.filter((row) => {
+      const under = layoutFor(row.selector);
+      return under !== undefined && tagKey(under) === key;
+    });
+  }
+
+  /** The layouts as a list — layer 5's door, one item per table a language draws. */
+  function renderL5Root() {
+    const declared = draft.layout ?? [];
+    // Paradigms no layout covers. Not a defect and not diagnosed here: a
+    // selector the language never declared is a disagreement *between two
+    // records*, which the AppView indexes and contests rather than refuses. It
+    // is listed because somebody has to be able to open and fix it.
+    const uncovered = paradigms.filter((row) => layoutFor(row.selector) === undefined);
+    return (
+      <>
+        <p className="mb-3 text-xs text-content-subtle">{t("grammar.l5RootHint")}</p>
+        {declared.length === 0 ? (
+          <p className="text-sm text-content-muted">{t("grammar.l5NoLayout")}</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {declared.map((row) => (
+              <li key={tagKey(row.category)}>
+                <button
+                  type="button"
+                  onClick={() => setPath({ at: "l5category", category: row.category })}
+                  className={levelButton}
+                >
+                  <span className="text-sm text-content">{categoryText(row.category)}</span>
+                  <span className="text-xs text-content-subtle">
+                    {t("grammar.l5ParadigmCount", { count: paradigmsUnder(row.category).length })}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {uncovered.length > 0 && (
+          <div className="mt-4 border-t pt-3">
+            <p className="text-xs font-medium text-content">{t("grammar.l5Uncovered")}</p>
+            <p className="mt-1 text-xs text-content-subtle">{t("grammar.l5UncoveredHint")}</p>
+            <ul className="mt-2 space-y-1.5">
+              {uncovered.map((row) => (
+                <li key={row.paradigmKey}>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEditing({
+                        selector: row.selector,
+                        existing: {
+                          paradigmKey: row.paradigmKey,
+                          recordURI: row.recordURI,
+                          cid: row.cid,
+                        },
+                      })
+                    }
+                    className={levelButton}
+                  >
+                    <span className="font-mono text-xs text-content">
+                      {formatTagVerbatim(row.selector)}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  /** One layout's paradigms, and the selectors a new one may take. */
+  function renderL5Category(category: Tag) {
+    const rows = paradigmsUnder(category);
+    const taken = new Set(rows.map((row) => tagKey(row.selector)));
+    // What a new paradigm may select: the layout's own category, and every
+    // combination the language has named that falls under it. The cascade
+    // supplies the narrower selectors; the manual field is the way out when it
+    // has not named the one this author needs.
+    const candidates: Tag[] = [category, ...combinationRows(draft).map((row) => row.tag)].filter(
+      (option) => {
+        const atoms = new Set(tagAtomKeys(option));
+        return (
+          !taken.has(tagKey(option)) &&
+          tagAtomKeys(category).every((key) => atoms.has(key))
+        );
+      },
+    );
+    const seen = new Set<string>();
+    const offered = candidates.filter((option) => {
+      const key = tagKey(option);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    return (
+      <>
+        <p className="mb-3 text-xs text-content-subtle">{t("grammar.l5CategoryHint")}</p>
+        {rows.length === 0 ? (
+          <p className="text-sm text-content-muted">{t("grammar.l5NoParadigms")}</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {rows.map((row) => (
+              <li key={row.paradigmKey}>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setEditing({
+                      selector: row.selector,
+                      existing: {
+                        paradigmKey: row.paradigmKey,
+                        recordURI: row.recordURI,
+                        cid: row.cid,
+                      },
+                    })
+                  }
+                  className={levelButton}
+                >
+                  <span className="text-sm text-content">{categoryText(row.selector)}</span>
+                  <span className="font-mono text-xs text-content-subtle">
+                    {formatTagVerbatim(row.selector)}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {offered.length > 0 && (
+          <div className="mt-4 border-t pt-3">
+            <p className="text-xs font-medium text-content">{t("grammar.l5AddTitle")}</p>
+            <ul className="mt-2 flex flex-wrap gap-1.5">
+              {offered.map((option) => (
+                <li key={tagKey(option)}>
+                  <button
+                    type="button"
+                    onClick={() => setEditing({ selector: option })}
+                    className="rounded-full border bg-surface-muted/60 px-2.5 py-1 text-xs text-content hover:border-primary hover:text-primary"
+                  >
+                    + {categoryText(option)}
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1 text-xs text-content-subtle">{t("grammar.l5AddHint")}</p>
+          </div>
+        )}
+        <ManualSelector
+          onPick={(selector) => setEditing({ selector })}
+          disabled={(selector) => taken.has(tagKey(selector))}
+        />
+      </>
+    );
+  }
+
   /** One category's blocks, in order, with a preview of what a reader will see. */
   function renderL4Category(category: Tag) {
     const row = layoutRow(draft, category);
@@ -1740,6 +1975,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
             </ol>
           )}
           <AddressPicker
+            id={`layout-manual-${index}`}
             axes={axes}
             onAdd={(coords) => setDraft(addListItem(draft, category, index, coords))}
           />
@@ -2181,6 +2417,10 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
         return renderL4Category(path.category);
       case "l4block":
         return renderL4Block(path.category, path.index);
+      case "l5root":
+        return renderL5Root();
+      case "l5category":
+        return renderL5Category(path.category);
       default:
         return renderForm();
     }
@@ -2253,6 +2493,19 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
               }
             >
               {t("grammar.tabLayout")}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "paradigms"}
+              onClick={() => setPath({ at: "l5root" })}
+              className={
+                tab === "paradigms"
+                  ? "rounded-full border border-primary bg-surface px-3 py-1 text-xs font-medium text-primary"
+                  : "rounded-full border px-3 py-1 text-xs text-content-subtle hover:border-primary hover:text-primary"
+              }
+            >
+              {t("grammar.tabParadigms")}
             </button>
           </div>
         </header>
@@ -2329,6 +2582,76 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
             </footer>
           </>
         )}
+      </div>
+
+      {/* A paradigm is a different record, so it gets a different dialog —
+          stacked above this one, publishing on its own. The grammar draft
+          behind it is untouched by anything that happens in there. */}
+      {editing !== null && (
+        <ParadigmEditorDialog
+          tag={tag}
+          grammar={draft}
+          lookup={grammarLookup(draft)}
+          selector={editing.selector}
+          existing={editing.existing}
+          onClose={() => setEditing(null)}
+          onPublished={() => {
+            setEditing(null);
+            // The write is on the author's PDS; the AppView learns of it from
+            // the firehose, so this list catches up on the next open rather
+            // than immediately. Re-asking costs one request and is right
+            // whenever it has.
+            void fetchLanguageParadigms(tag)
+              .then(setParadigms)
+              .catch(() => undefined);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Naming a selector the language has not combined — the degrade-to-manual path,
+ * as everywhere else in this dialog. Offered always, because a paradigm may key
+ * on a bundle nobody thought to name as a headword category.
+ */
+function ManualSelector({
+  onPick,
+  disabled,
+}: {
+  onPick: (selector: Tag) => void;
+  disabled: (selector: Tag) => boolean;
+}) {
+  const { t } = useTranslation();
+  const [value, setValue] = useState("");
+  const parsed = parseTagInput(value.trim());
+  const valid = parsed !== null && !disabled(parsed);
+  return (
+    <div className="mt-4 border-t pt-3">
+      <label className="block text-xs text-content-subtle" htmlFor="paradigm-selector-manual">
+        {t("grammar.l5ManualLabel")}
+      </label>
+      <div className="mt-1 flex gap-2">
+        <input
+          id="paradigm-selector-manual"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder={t("grammar.l5ManualPlaceholder")}
+          className={inputClass}
+        />
+        <button
+          type="button"
+          disabled={!valid}
+          onClick={() => {
+            if (parsed === null) return;
+            onPick(parsed);
+            setValue("");
+          }}
+          className="shrink-0 rounded-lg border px-3 py-2 text-sm text-content hover:border-primary disabled:opacity-50"
+        >
+          {t("grammar.add")}
+        </button>
       </div>
     </div>
   );
@@ -2408,104 +2731,6 @@ function LayoutBlockView({
         );
       }}
     />
-  );
-}
-
-/**
- * Pick one value per axis to name a form — the list block's "add an address".
- *
- * One selector per axis rather than a narrowing tree, for the reason the entry
- * editor's form tagger has: axes are orthogonal dimensions, and a cell address
- * takes one value from each independently. The manual field is the
- * degrade-to-manual path, so a language whose axes do not cover the form it
- * wants to print is never stuck.
- */
-function AddressPicker({
-  axes,
-  onAdd,
-}: {
-  axes: ResolvedAxis[];
-  onAdd: (coords: LayoutCoord[]) => void;
-}) {
-  const { t } = useTranslation();
-  const [picked, setPicked] = useState<Record<string, string>>({});
-  const [manual, setManual] = useState("");
-  const parsed = parseTagInput(manual);
-  const manualCoords: LayoutCoord[] = (parsed?.feats ?? []).map((feat) => ({
-    feature: feat.feature,
-    value: feat.value,
-  }));
-  const coords: LayoutCoord[] =
-    manualCoords.length > 0
-      ? manualCoords
-      : axes
-          .filter((axis) => picked[axis.feature.feature] !== undefined)
-          .map((axis) => ({
-            feature: axis.feature.feature,
-            value: picked[axis.feature.feature]!,
-          }));
-
-  return (
-    <div className="mt-4 border-t pt-3">
-      <p className="text-xs font-medium text-content">{t("grammar.l4AddItemTitle")}</p>
-      {axes.map((axis) => (
-        <div key={axis.feature.feature} className="mt-2">
-          <p className="text-xs text-content-subtle">{axis.feature.label.long}</p>
-          <ul className="mt-1 flex flex-wrap gap-1.5">
-            {axis.values.map((value) => {
-              const active = picked[axis.feature.feature] === value.value;
-              return (
-                <li key={value.value}>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setPicked((current) => {
-                        const next = { ...current };
-                        if (active) delete next[axis.feature.feature];
-                        else next[axis.feature.feature] = value.value;
-                        return next;
-                      })
-                    }
-                    title={value.label.long}
-                    className={
-                      active
-                        ? "rounded-full border border-primary bg-surface px-2.5 py-1 text-xs font-medium text-primary"
-                        : "rounded-full border border-dashed px-2.5 py-1 text-xs text-content-muted hover:border-primary hover:text-primary"
-                    }
-                  >
-                    {value.label.short ?? value.label.long}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      ))}
-      <label className="mt-3 block text-xs text-content-subtle" htmlFor="layout-manual">
-        {t("grammar.l4ManualLabel")}
-      </label>
-      <div className="mt-1 flex gap-2">
-        <input
-          id="layout-manual"
-          value={manual}
-          onChange={(e) => setManual(e.target.value)}
-          placeholder={t("grammar.l4ManualPlaceholder")}
-          className={inputClass}
-        />
-        <button
-          type="button"
-          disabled={coords.length === 0}
-          onClick={() => {
-            onAdd(coords);
-            setPicked({});
-            setManual("");
-          }}
-          className="shrink-0 rounded-lg border px-3 py-2 text-sm text-content hover:border-primary disabled:opacity-50"
-        >
-          {t("grammar.l4AddItem")}
-        </button>
-      </div>
-    </div>
   );
 }
 

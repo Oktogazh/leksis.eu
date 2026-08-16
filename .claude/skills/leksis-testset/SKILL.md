@@ -11,8 +11,8 @@ description: >
 Originally this skill specified a fixture *bot* to be built in another project.
 That bot was never built, and it turned out not to be needed: **the agent
 reading this skill is the test runner.** It publishes and maintains the fixture
-records itself (from the `leksis-testset` bot account, per §4), and it drives
-the browser against them.
+records itself — by running `scripts/publish-fixtures.ts` (§2.3), from the
+account §4.1 names — and it drives the browser against them.
 
 **When the protocol runs (decided 2026-08-14):**
 
@@ -67,7 +67,7 @@ fixture set lives entirely inside it. Three languages, each with a job:
 
 | tag | role | grammar |
 |---|---|---|
-| **`qtl`** | the **full** fixture language — everything that is supposed to work | layers 1–3 declared, `grammarIssues` **empty**, permanently |
+| **`qtl`** | the **full** fixture language — everything that is supposed to work | layers 1–5 declared (primitives, inherence, axes, layout, and five paradigms), `grammarIssues` **empty**, permanently |
 | **`qtm`** | the **bare** language — the degrade path the design promises | **no `grammar` at all**; its entries carry tags nobody bound |
 | **`qto`** | the **defective** language — the *refusal* test target | published coherent first, then rewritten with one row per `GrammarIssue` kind, on purpose |
 
@@ -142,11 +142,42 @@ whose *point* is that `references` is absent declares its purpose in `notes`
 instead; a fixture whose point is that **both** are absent is identified by its
 handle and the manifest alone — there should be exactly one such fixture.
 
-### 2.3 The manifest, in the bot's repo
+### 2.3 The manifest, in this repo
 
-`manifest.json`, **regenerated from the live API after every run** — because
-`entryKey` is minted by the AppView (`{lang}-{orthoSlug8}-{hash4+}`, hashed
-from the record URI) and the bot cannot know it before publishing:
+**`scripts/fixtures/manifest.json`**, written by **`scripts/publish-fixtures.ts`**
+and **regenerated from the live API after every run** — because `entryKey` is
+minted by the AppView (`{lang}-{orthoSlug8}-{hash4+}`, hashed from the record
+URI) and nothing can know it before publishing:
+
+```bash
+npx tsx scripts/publish-fixtures.ts --check      # validate the fixtures, write nothing
+npx tsx scripts/publish-fixtures.ts --manifest   # rebuild the manifest alone (no credentials)
+npx tsx scripts/publish-fixtures.ts --sweep-dry  # list what a test session left behind
+npx tsx scripts/publish-fixtures.ts --sweep      # delete it — RUN THIS WHEN A TEST THAT WROTE ENDS
+npx tsx scripts/publish-fixtures.ts              # publish everything, sweep, then rebuild it
+npx tsx scripts/fixtures/preview.ts              # what each entry page will render, offline
+```
+
+The fixture content lives beside it in `scripts/fixtures/*.ts` — one file per
+lexicon, each record carrying its own `covers` and `expect`, so the manifest is
+derived rather than maintained. Three properties are worth knowing before
+touching it:
+
+- **`--check` runs the AppView's own validators** (`grammarIssues`,
+  `validateDefinitions`, `validateSource`, `isValidParadigmRecord`,
+  `paradigmIssues`) over every record, and a full publish refuses to start
+  unless they all pass. That gate is not politeness: a language version archives
+  forever, and one whose grammar is incoherent is refused at ingest, leaving the
+  language silently on its previous version.
+- **`preview.ts` derives the `expect` lines** by running the shared generator
+  and `layoutView` exactly as the reader does. Writing them from the rules by
+  eye is how a fixture set starts lying.
+- **Entries are swept before republishing** — scoped to records carrying an
+  `lxt-` handle, never the whole collection, because the publishing account is
+  also the one a human logs the dev build in as. Languages, sources and
+  paradigms have derived record keys and simply overwrite.
+
+The manifest's shape:
 
 ```jsonc
 {
@@ -232,20 +263,28 @@ its rows here in the same loop.
 | L-39 | `layout-foreign-coordinate` | `qto`: an `exclude` coordinate outside the block's grid — the exclusion that silently removes nothing |
 | L-40 | `empty-layout-block` | `qto`: a table with no dimensions, **and** a list with no items |
 | L-41 | `layout-too-large` | `qto`: axes multiplying past `MAX_LAYOUT_CELLS` (4096) → the block draws nothing and says why |
+| L-42 | `lexicographic-in-grammar` | `qto`: a feature flagged `lexicographic` declared inherent to a category. "Archaic" is not something a word *is*, and the grammatical layers must never reach for that vocabulary (ADR-0010) |
+| L-43 | `duplicate-abbreviation` | `qto`: two `abbreviations` rows under one short form — two front-matter entries under one headword, keyed on the short form because that *is* the identity (ADR-0010) |
 
-All of L-30…L-41 land in **one** `qto` record — they are rows in one `grammar`
+All of L-30…L-43 land in **one** `qto` record — they are rows in one `grammar`
 object, and since ADR-0015 that record is **refused whole**, which is what these
 rows now assert: `GET /languages/qto/currentRecord` still points at the coherent
-version, and the ingest log names all twelve kinds. The place each kind is *read*
-is the binding editor's footer (U-16 below), because that is the surface a
+version, and the ingest log names all fourteen kinds. The place each kind is
+*read* is the binding editor's footer (U-16 below), because that is the surface a
 contributor repairs them in.
+
+**Verified 2026-08-16.** The rewrite was refused — `currentRecord` still serves
+the coherent version's cid — and opening the dialog on `qto` lists all fourteen
+with Publish disabled. The publisher asserts the refusal itself and fails the run
+if the defective version ever becomes current, so a regression in the ADR-0015
+gate cannot pass silently.
 
 Two of these are worth constructing deliberately rather than by accident. L-39
 is the only issue kind that reports something *harmless but useless*, so it is
 the one most likely to be dismissed as noise — the fixture exists to prove the
-worklist says it. L-41 needs four axes of sixteen values to trip the cap, which
-is more vocabulary than the rest of `qto` holds; bind it under a feature nothing
-else uses, so it cannot distort another row.
+worklist says it. L-41 needs a grid past the 4096 cap; 8 · 8 · 8 · 9 = 4608 does
+it with 33 value rows, bound under features nothing else uses so the oversize
+block cannot distort another row's diagnosis.
 
 ### 3.3 Entry records
 
@@ -314,27 +353,67 @@ what search matches and what every citing entry prints: put the handle in it
 | S-03 | the optional fields genuinely absent | a second described work with no `author`, no `year`, no `url` — "no author" must render as nothing, never as an empty row |
 | S-04 | a source of the **bare** language | `languages: ["qtm"]` — a work can be cited from a language that has declared no grammar at all |
 
-Publishing these is part of the testset protocol (from the fixture account,
-per §4), and the run is **owed**: this slice ships the entry-side field, and the fixtures
-for E-30/E-31 and S-01…S-04 have not been published. Until they are, the
-citation states have been exercised only against stubbed responses, never
-end-to-end through a PDS and the firehose.
+**Published 2026-08-16**, and the three citation states verified on one page:
+the resolved short form with its locator, the unsourced sentence alone, and the
+bare `OCLC …` styled unresolved beside its invitation to describe the work.
+
+### 3.5 Paradigm records — layer 5's rules
+
+The first fixture lexicon with **no searchable field**: the AppView indexes
+pointers, and a paradigm has no orthography to carry a handle. So for this
+lexicon **the manifest is the only index** (§6), the handles are `lxp-NN`, and
+the on-record purpose text goes in `notes` — prose for other contributors, which
+reaches no reader.
+
+Five records cover the layer. They are deliberately fewer than the entries they
+act on, because what varies is which *entry* a rule meets, not how many rules
+there are.
+
+| # | Covers | Fixture requirement |
+|---|---|---|
+| P-01 | generation from the lemma alone | a paradigm whose rules all start from `orthography[0]`, filling most of a laid-out grid. The arc's promise: a regular word carries nothing |
+| P-02 | several rows competing for one cell | two rules targeting one address with different `match` conditions, the narrower written FIRST — rule order is semantics, and the first matching row wins |
+| P-03 | a required principal part, **supplied** | a `requires` row the entry answers, so the paradigm runs |
+| P-04 | the same row, **missing** | a second entry of the same category lacking it → the paradigm is skipped ENTIRELY (never half-generated) and the entry lands on the dashboard's missing-forms queue carrying the rule's own message, unaltered |
+| P-05 | syncretism | a rule whose target carries a multivalue coordinate (`Person=1,2`), producing ONE form that spans two cells under a merged heading — never printed twice, and never confusable with a cell nobody filled |
+| P-06 | empty vs excluded, under generation | one cell of a filled grid that no rule reaches (a faint dot) beside one the layout excludes (an em dash). The distinction the whole layer is drawn to preserve |
+| P-07 | rules addressing a block's pinned constants | a category laid out as two tables told apart by a `fixed` tense, with rules carrying those constants in their target address |
+| P-08 | most-specific-selector precedence | a broad paradigm and a narrow one both reaching one entry and colliding on exactly one cell — the narrow one wins it |
+| P-09 | a base chain | a rule based on a `requires` form, and a second based on THAT rule's target: a stem built once and inflected from |
+| P-10 | a paradigm no layout row covers | a selector for a category with declared axes and no layout → listed under the Paradigms tab's own "no table covers" heading, LISTED and never diagnosed (design note §7.3), while its forms still reach the flat list |
+| P-11 | an asserted form overriding a generated cell | an entry whose own `otherForms` occupy a cell a rule would otherwise fill — the entry wins, and is styled asserted where the rest are styled derived |
+| P-12 | a block filled ENTIRELY by generation | a layout block no asserted form touches, drawn anyway — the layer-4 rule "a block no form fills is not drawn", revised exactly as ADR-0009 predicted layer 5 would revise it |
 
 ---
 
 ## 4. Publishing rules
 
-1. **Its own account.** The fixture bot has a dedicated PDS account (e.g.
-   `testbot.leksis.eu`), so a full reset never touches an ingestion bot's
-   records and so every fixture is attributable by DID.
-2. **Language records first**, then sources, then entries — same reason as any
+0. **Run it with the script**, `scripts/publish-fixtures.ts` (§2.3). The rules
+   below are what it implements; they are here so the next person can tell
+   whether it still implements them, not so anyone publishes by hand.
+1. **Its own account — not yet true, and recorded as a deviation.** The rule is
+   a dedicated PDS account, so a full reset never touches an ingestion bot's
+   records and every fixture is attributable by DID. **As built (2026-08-16) the
+   set is published from `testaccount.leksis.eu`**, the dev-session account: no
+   fixture bot existed, and an agent may not create PDS accounts. Two
+   consequences to live with until one exists. A human's own test entries share
+   the repo, which is why the sweep in rule 5 is scoped to the `lxt-` handle
+   rather than to the collection. And every fixture is attributable to the same
+   DID a human authors from, so "who wrote this" cannot be read off the record —
+   the handle and the manifest are the only identification. Creating
+   `testbot.leksis.eu` and re-running the publisher is all it would take to fix.
+2. **Language records first**, then sources, then entries, **then paradigms** —
+   same reason as any
    import: tags published before their bindings render verbatim until the
    language catches up, which would make half the fixtures temporarily wrong,
    and an example published before its source cites a number that resolves to
    nothing. Note the second case is *not* an error — a citation to an
    undescribed number is valid and is S-02's whole subject — but a fixture that
    is meant to show a resolved citation should not spend its first minutes
-   showing an unresolved one.
+   showing an unresolved one. Paradigms go **last** for a reason of their own:
+   the expansion job's cheap path is "the entries this selector reaches now", so
+   publishing rules after their entries exercises it instead of the sweep that
+   catches up later.
 3. **Publish in a deliberate order and record it.** The language dashboard's
    activity feed is ordered by index time; a run that publishes everything at
    once makes the feed a single burst. If a fixture needs to test the feed,
@@ -347,13 +426,18 @@ end-to-end through a PDS and the firehose.
    `cid` as a failed run.
 5. **Reset = delete then republish.** Entry deletions are mirrored by the
    AppView, so deleting the bot's `eu.leksis.entry` records genuinely cleans
-   the index. Language versions do **not** un-publish; a fixture language's
-   history accumulates, which is exactly why `qto` carries the deliberate
-   breakage and `qtl` never does.
-6. **Never `subject`-reference a record outside the fixture set**, and never
+   the index — and an entry's record key is a TID, which cannot be derived from
+   a handle, so a sweep is the *only* way a re-run replaces the set instead of
+   doubling it. The publisher does it automatically, **scoped to records
+   carrying an `lxt-` handle** (see rule 1). Languages, sources and paradigms
+   need no sweep: their keys are derived (the tag, the OCLC number, the selector
+   hash), so republishing overwrites in place. Language versions do **not**
+   un-publish; a fixture language's history accumulates, which is exactly why
+   `qto` carries the deliberate breakage and `qtl` never does.
+7. **Never `subject`-reference a record outside the fixture set**, and never
    publish a fixture entry under a real `languageID`. A `subject` pointing at a
    real entry would make the fixture a proposed edit to real content.
-7. **Regenerate `manifest.json` at the end of every run**, from the live API.
+8. **Regenerate `manifest.json` at the end of every run**, from the live API.
    A stale manifest is worse than none: it sends an agent to a 404 and the
    agent reports a regression that does not exist.
 
@@ -364,9 +448,12 @@ end-to-end through a PDS and the firehose.
 The protocol, in order — put this in the test session's prompt, not in the
 agent's guesswork:
 
-1. **Read `manifest.json` first.** If it is missing or stale, rebuild it live:
-   `GET https://leksis.eu/api/entries?q=lxt-` returns every fixture with its
-   `entryKey`.
+1. **Read `scripts/fixtures/manifest.json` first.** If it is missing or stale,
+   rebuild it with `npx tsx scripts/publish-fixtures.ts --manifest`, which needs
+   no credentials. (By hand, `GET https://leksis.eu/api/entries?q=lxt-` returns
+   every fixture with its `entryKey` — but note it does **not** return the
+   withdrawn ones, which are absent from search by design and are why the
+   rebuild reads the repo instead.)
 2. **Open the specific page** the test needs — `/entry/<entryKey>` or
    `/language/<tag>` — never a blind search, and never "the first result".
 3. **Assert against `expect`**, not against a screenshot from a previous
@@ -377,7 +464,22 @@ agent's guesswork:
    published a newer version of that entry, which is itself legal behaviour.
 5. **Do not edit fixtures from a test session.** A browsing test that
    publishes a new version changes the fixture for every later session. If a
-   test *needs* to write, it writes a new record and the bot cleans it up.
+   test *needs* to write, it writes a new record — and **cleans it up when the
+   test completes**, which is rule 6.
+6. **Sweep when a test that wrote anything ends.** `--sweep` deletes every
+   record inside the quarantine that the fixture set does not declare, and a
+   full publish runs it automatically, so a run always ends with the PDS holding
+   exactly the manifest. This is a **habit, not a judgement call**: leftovers sit
+   on the PDS *and* in the production index, and the next session cannot tell one
+   from a fixture it is supposed to be asserting against.
+   - **The boundary is the quarantine, not the account.** Only `qtl`/`qtm`/`qto`
+     records and 16-digit sources are touched, because this account is also the
+     one a human logs the dev build in as — their `br` work is never in scope.
+   - **It cannot un-publish a language version.** Deleting the record clears the
+     PDS, but `languages` versions archive forever in the index. Think before
+     publishing a language version; do not rely on this to undo one.
+   - `--sweep-dry` lists what would go, and both print the number of records
+     scanned, so "nothing left behind" cannot be confused with "scanned nothing".
 
 ---
 
@@ -394,6 +496,15 @@ because entry orthographies are indexed. A record type the AppView indexes
 differently (or not at all) has no equivalent, and for it **the manifest is the
 only index** — so it must be regenerated from whatever endpoint does serve it,
 and the fixture's on-record purpose text matters more, not less.
+
+**Layer 5 answered it first, and the answer was no** (2026-08-16).
+`eu.leksis.paradigm` has nothing searchable: the AppView serves pointers, and a
+paradigm has no orthography a handle could ride on. So its fixtures are addressed
+by `GET /languages/:tag/paradigms` plus the manifest, their handles (`lxp-NN`)
+live in `notes`, and the manifest carries the `paradigmKey` — which, being
+derived from the selector, is at least *predictable* where an `entryKey` is not.
+Expect that shape for every lexicon after this one: entries are the exception,
+not the rule.
 
 Add the new rows to the coverage matrix in §3 in the same loop that ships the
 layer. A shipped feature with no fixture row is the failure mode this whole
@@ -433,13 +544,18 @@ test account without reason to.
 > load. See the `verify` skill's *session wall* section and CLAUDE.md for the
 > mechanics. §7.1/§7.2 below are therefore workable by an agent.
 
-**One caveat that will otherwise waste a session.** Local OAuth builds its client
-id from `window.location`, so a **deep link on a cold load throws**
-(`Invalid loopback client ID: Value must not contain a path component`) and the
-login form never works. Load `http://127.0.0.1:5173/` first, log in, *then*
-navigate in-app — or fix `resolveClientId` in `apps/web/src/auth/client.ts` to
-pass the origin instead of the location, which is ADR-0007's carried-forward
-action item.
+~~**One caveat that will otherwise waste a session.** Local OAuth builds its
+client id from `window.location`, so a deep link on a cold load throws and the
+login form never works.~~ **Obsolete** — `resolveClientId` passes the origin now,
+and a cold load straight to `/entry/<key>` restores the session normally.
+Verified again 2026-08-16.
+
+**One caveat that will.** The page's side data — the language record, the
+paradigm records, the labels — is fetched after the first paint, and each hop
+goes out to a PDS. A screenshot or `get_page_text` taken immediately after
+`navigate` will show the **degraded** state (verbatim tags, a flat list, no
+generated forms) and read exactly like a regression. Wait, or read the page
+twice, before concluding anything is broken.
 
 ### 7.1 Grammar editor — layer 4, the Layout tab (unverified, shipped)
 
@@ -460,7 +576,7 @@ action item.
 | U-13 | publishing | the rewritten record round-trips: reopen the dialog and the layout is as authored, and the version is **indexed** (it appears in the dashboard's activity feed — a refused one never would) |
 | U-14 | the no-orphan guard | withdrawing an axis a layout uses is refused at publish, naming the layout row |
 | U-15 | mobile | the whole tab at 375px, including the grid's horizontal scroll |
-| U-16 | the defect list (ADR-0015) | open the dialog on **`qto`**, whose live record is the defective rewrite: Publish is disabled and the footer lists **every** kind L-30…L-41 with its own copy — not only the ones this edit would introduce. Then repair them (bind the missing atoms and feature names, declare the grounding inherence, remove the one-atom `bindings` row with its own × control) and confirm the publish succeeds and indexes |
+| U-16 | the defect list (ADR-0015) | open the dialog on **`qto`**, whose live record is the defective rewrite: Publish is disabled and the footer lists **every** kind L-30…L-43 with its own copy — not only the ones this edit would introduce. ✅ **2026-08-16**: all fourteen listed, Publish disabled. The *repair* half is still owed — bind the missing atoms and feature names, declare the grounding inherence, remove the one-atom `bindings` row with its own × control, and confirm the publish succeeds and indexes. Do it in a session that can afford to leave `qto` repaired, since publishing a coherent `qto` retires the fixture until the defective rewrite is republished |
 
 ### 7.2 Grammar editor — layer 4's sibling, the Inflection classes section
 
@@ -530,6 +646,27 @@ at.
 left here after it has been checked is worse than no list, for the reason a stale
 manifest is: it sends the next session to re-do work that is already done.
 
+### 7.5 The rule editor — layer 5 slice 5 (verified 2026-08-16)
+
+Driven against the fixtures on the session they were published. Kept rather than
+deleted because these are the rows a *regression* would show up in, and because
+each names the fixture that exercises it.
+
+| # | Flow | What must be true | |
+|---|---|---|---|
+| U-60 | the fifth tab | Paradigms sits **after** Layout and is the last tab; entering it lands on a list of the language's layout rows, each counting the rule sets filed under it | ✅ |
+| U-61 | filing, and the uncovered group | a paradigm files under the most specific layout category its selector contains; one containing none is listed under "Rules no table covers" — **listed, never diagnosed** (design note §7.3, still open) | ✅ `{ADJ}` / lxp-05 |
+| U-62 | the category level | that category's paradigms, **most specific selector first**, beside an "add" affordance offering the category, its named combinations, and a manual tag field | ✅ |
+| U-63 | the selector is locked | the editor shows it as text with no control, and says it cannot be changed afterwards: changing the category is publishing a different paradigm | ✅ |
+| U-64 | rule order is semantics | rows carry ↑/↓/×, and the level says the first matching row fills the cell. A collapsed row summarises address + condition + affix exchange, so order is legible without expanding anything | ✅ |
+| U-65 | the live preview | typing a sample headword renders the generated forms **through the reader's own component**, not a bespoke grid | ✅ `stella` → `stellae` |
+| U-66 | defects block the publish | a blank `requires` message and an uncompilable `match` each disable Publish and are named in the footer **with the row's own address** | ✅ both |
+| U-67 | stacking | Escape closes the paradigm editor and leaves the grammar dialog open behind it, on the level it was on | ✅ |
+| U-68 | the empty-cell door | an unfilled cell opens a popover holding both affordances — the entry's own irregular form, and the language's rules — with the cell's address printed. An **excluded** cell offers no door at all | ✅ 20 doors, 0 on excluded cells |
+| U-69 | the door lands on the right rules | "edit the language's rules" opens the **most specific paradigm reaching this entry** with the clicked cell seeded as a new rule target | ✅ opened lxp-01, seeded `Case=Gen\|Number=Sgv` |
+| U-70 | mobile | the whole tab and the editor at 375px, including the preview grid's horizontal scroll | |
+| U-71 | publishing from the editor | a real rewrite round-trips: reopen and the rules are as authored, the cid guard refuses a stale one, and the version indexes. The set was published by script, so the **editor's own** publish path is proven only up to the enabled button | |
+
 ---
 
 ## Canonical sources
@@ -543,8 +680,12 @@ manifest is: it sends the next session to re-do work that is already done.
 - `packages/types/src/grammar.ts` — `GrammarIssue` kinds, for §3.2
 - `packages/types/src/dashboard.ts`, `label.ts` — what the dashboard and labels
   endpoints serve, i.e. what a fixture is asserted against
-- `docs/design/grammatical-tagging.md` + `docs/adr/0006-*`, `0007-*`, `0008-*` —
-  the features the matrix must cover
+- `docs/design/grammatical-tagging.md` + `docs/adr/0006-*`, `0007-*`, `0008-*`,
+  `0009-*`, `0010-*` — the features the matrix must cover
+- `docs/design/paradigm-rules.md` + `docs/adr/0016-*` — layer 5, which §3.5 covers
+- `packages/types/src/paradigm.ts` — `generateForms`, `mergeParadigms`,
+  `paradigmIssues`, `paradigmRkey`: what a paradigm fixture is asserted against
+- `scripts/fixtures/` — the fixture content, the validator gate and the manifest
 - `packages/types/src/grammar.ts` — `resolveLayout`, `placeForms`,
   `MAX_LAYOUT_CELLS`: what a layout fixture is actually asserted against, since
   the viewer and the designer both draw from it

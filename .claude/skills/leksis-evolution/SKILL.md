@@ -94,7 +94,7 @@ the arc must not stall loops 5 and 6.
 | 2 | Inherent combinations — what a headword *is* | ✅ ADR-0007 |
 | 3 | Axes — what its forms *vary over* | ✅ ADR-0008 |
 | 4 | Layout — the shape of the tables | ✅ ADR-0009 |
-| 5 | Rules — generation filling the cells | ← next |
+| 5 | Rules — generation filling the cells | ✅ ADR-0016 |
 | 6 | Export — Hunspell, UniMorph, CoNLL-U | |
 
 > Confirm the actual current position from `CHANGELOG.md` + `git tag` at orient time (step 1) —
@@ -103,14 +103,16 @@ the arc must not stall loops 5 and 6.
 > surface are built (`docs/design/semantic-network.md` §5 slices 1–3), and the reader and writer
 > interfaces are what remain.
 >
-> **Two obligations trail the arc rather than blocking it.** No authoring surface of layers 3 or 4
-> has been driven in a browser — they sit behind a session. The test account now exists
-> (`testaccount.leksis.eu`, see `leksis-testset` §7 for credentials and scope) so this is no longer
-> blocked on account creation, only on doing the pass; the flows are enumerated as
-> **U-01…U-24 in the `leksis-testset` skill (§7)**, with the fixture rows that will assert the
-> reader's side. And the **published lexicons** lag the code: `grammar.layout` is live in the app but
-> `scripts/publish-lexicons.mjs` has not been run for it. Neither is a reason to hold layer 5; both
-> are reasons not to call layer 4 *verified*.
+> **Two obligations trail the arc rather than blocking it.** The authoring surfaces of layers 3 and 4
+> still have not been driven in a browser — **U-01…U-24 in `leksis-testset` §7**. What changed at
+> layer 5 (2026-08-16) is that the excuses are gone: the session wall is solved, the **fixture set is
+> published** (three quarantined languages with layers 1–5 declared, so the Layout tab finally has
+> something to lay out), and layer 5's own flows were driven and recorded as **U-60…U-71**. U-16 is
+> half done — `qto`'s defect list renders, nobody has walked the repairs. And the **published
+> lexicons** still lag the code: `scripts/publish-lexicons.mjs` has not been run since
+> `grammar.layout` shipped and now owes `eu.leksis.paradigm` too. Neither blocked layer 5; both are
+> reasons not to call layer 4 *verified*, and the first is now a morning's work rather than a
+> prerequisite hunt.
 
 > **Loop 1 was the hinge**: once the AppView consumes the firehose it must stay online and **real
 > data accumulates**. ADR-0001 action items #4 (deploy secrets) and #5 (off-box backups) were due
@@ -447,7 +449,7 @@ layer at its top; the scope says *what is in and out*, not *how*.
 | **2 — Inherent combinations** | which features are **inherent** to a category, then the labelled headword categories that follow: masculine noun, first-declension feminine noun, transitive imperfective verb | **shipped** — see **ADR-0007**, authoritative over the design note for this layer |
 | **3 — Axes** | per category, which features **vary across its forms**, over which values, **in order** — the option set of the `otherForms` editor | **shipped** — see **ADR-0008**, authoritative over the design note for this layer |
 | **4 — Layout** | the *shape* of the inflection tables: which axis sits where, one table or several, their order, what is shown by default, and the order of the flat `otherForms` list — **not** chip order | **shipped** — see **ADR-0009**, authoritative over the design note for this layer |
-| **5 — Rules** | Hunspell-shaped rules populating cells, overridden by the entry's own `otherForms`; its own lexicon | |
+| **5 — Rules** | Hunspell-shaped rules populating cells, overridden by the entry's own `otherForms`; its own lexicon | **shipped** — see **ADR-0016**, authoritative over `docs/design/paradigm-rules.md` for this layer |
 | **6 — Export** | Hunspell `.aff`/`.dic`, UniMorph TSV, CoNLL-U — and XPOS as a *derived* output | |
 
 **Layer 1 — Primitives.** *In:* the tag type in `packages/types` (per-item `scheme`, canonical key for
@@ -562,7 +564,7 @@ second is layer 5's to revisit, since generation is exactly what makes an empty 
 The API cost was **zero** for the third layer running, but note layer 5 breaks that streak by design: its
 rules get their own lexicon, and ingest-time index expansion for inflected-form search is its cost to price.
 
-**Layer 5 — Rules.** A new `eu.leksis.paradigm` lexicon (not fields on the language record): Hunspell-like
+**Layer 5 — Rules. ✅ shipped (ADR-0016).** A new `eu.leksis.paradigm` lexicon (not fields on the language record): Hunspell-like
 rules populating the cells layer 4 laid out. **The entry's own `otherForms` override any generated cell** —
 matched by canonical key on the cell address, which is why layer 3 must make a form's annotation a bundle. An
 `otherForm` matching no declared cell falls back to the flat list rather than being dropped; that is the safe
@@ -577,6 +579,23 @@ differently**, or a reader cannot tell a missing form from an incomplete entry �
 multivalue over the language's declared inventory (`Gender=Fem,Masc`, values alphabetical), never as a
 UniMorph `*`. Per-lexeme defectiveness is an entry-level exception here, not a property of any declaration.
 *Out:* export formats.
+
+**What layer 5 settled, and layer 6 inherits (ADR-0016), do not re-derive:** identity is the **rkey**,
+`{languageID}-{hash16(canonical selector key)}`, recomputed at ingest and refused on mismatch — so `selector`
+is immutable per identity, and an exporter reading a language's paradigms gets one per category by
+construction. A paradigm reaches an entry by containment on its **inherent bundle** (`inherentAtoms`, the
+UPOS plus the feats the language declares inherent), **never on all of `categories`** — an exporter walking
+entries must use the same test, and it lives in one place per side (`expand-forms.ts` in the AppView,
+`paradigmsReaching` in the browser). Several paradigms may reach one entry, **most specific selector wins per
+cell**. Display precedence is asserted → generated → the layer-4 states, which is also the precedence an
+export must flatten: a Hunspell `.dic` cannot carry "this one was derived". `generateForms` is **total** — a
+bad regex is a validation issue and never a throw, a base cycle yields nothing — because it runs inside the
+single sequential writer, and layer 6 will run it in bulk. `paradigmIssues` refuses a record whose rules
+contradict *themselves* and judges **nothing the language record says**, so an *inert* paradigm (a selector
+nobody declared) is an ordinary state an exporter will meet and must skip rather than error on. And the
+zero-API-cost streak **ended by design and only just**: one endpoint (`GET /languages/:tag/paradigms`,
+pointers only), one collection, two cached fields on `entries` — treat any further indexing at layer 6 as the
+same signal to re-check the design that it was at layers 2–4.
 
 **Layer 6 — Export.** Hunspell `.aff`/`.dic`, UniMorph TSV, CoNLL-U FEATS out of the graph: the annotation
 *becomes* the NLP resource the white paper promises. Losses are declared, not accidental. XPOS belongs here
