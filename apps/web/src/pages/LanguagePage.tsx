@@ -10,6 +10,7 @@ import {
   type SourceView,
 } from "@leksis/types";
 import { useSession } from "../auth/SessionProvider";
+import { useLoginPrompt } from "../auth/LoginPrompt";
 import { ActivityGrid } from "../components/ActivityGrid";
 import { endonym } from "../components/LanguageSelector";
 import { GrammarBindingDialog } from "../components/GrammarBindingDialog";
@@ -53,7 +54,24 @@ type LoadState = "loading" | "ready" | "not-found" | "failed";
  */
 export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps) {
   const { t, i18n } = useTranslation();
-  const { profile } = useSession();
+  const { profile, did } = useSession();
+  const { requestLogin } = useLoginPrompt();
+
+  /**
+   * Wrap a publishing action so a reader without an account is asked to connect
+   * instead of being shown a dialog they could not submit (ADR-0017).
+   *
+   * The dashboard's editing cards stay *visible* while logged out, deliberately:
+   * "this language's names, grammar and bibliography are things you could be
+   * editing" is the most informative thing this page says about what Leksis is,
+   * and it is only true if you can see it.
+   */
+  function guarded(reason: string, action: () => void): () => void {
+    return () => {
+      if (did === null) requestLogin(reason);
+      else action();
+    };
+  }
   const [dashboard, setDashboard] = useState<LanguageDashboardResponse | null>(null);
   const [labels, setLabels] = useState<LabelView[]>([]);
   const [namedIn, setNamedIn] = useState<LanguageView[]>([]);
@@ -253,7 +271,7 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
         <p className="text-sm text-content-muted">{t("languagePage.notFound")}</p>
       )}
       {state === "failed" && (
-        <p className="text-sm text-red-600">{t("languagePage.loadFailed")}</p>
+        <p className="text-sm text-danger">{t("languagePage.loadFailed")}</p>
       )}
 
       {state === "ready" && dashboard !== null && (
@@ -267,8 +285,14 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
             </span>
           </header>
 
-          {/* Counters + record-editing actions. */}
-          <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {/* Five counters — what this language is and what it still owes.
+              Separated from the record-editing actions below, which used to
+              share this grid: a number describing the dictionary and a button
+              that rewrites a record are not peers, and giving them one card
+              treatment made "Edit language record" read as a statistic with a
+              missing figure. Counters are five across on a wide screen because
+              they are one row of one kind of thing. */}
+          <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-5">
             <div className="rounded-lg border bg-surface p-4">
               <p className="text-2xl font-semibold text-content">{dashboard.entriesCount}</p>
               <p className="mt-1 text-xs text-content-muted">{t("languagePage.statsEntries")}</p>
@@ -321,9 +345,14 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
                 {t("languagePage.statsMissingForms")}
               </p>
             </button>
+          </div>
+
+          {/* What a contributor can do to this language's own record. Visible
+              logged out, and prompting — see `guarded`. */}
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <button
               type="button"
-              onClick={openEditRecord}
+              onClick={guarded(t("auth.reasonLanguage"), openEditRecord)}
               disabled={record === null}
               className="rounded-lg border bg-surface p-4 text-left hover:border-primary disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -363,7 +392,7 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
                   opens from here. */}
               <button
                 type="button"
-                onClick={() => setGrammarOpen(true)}
+                onClick={guarded(t("auth.reasonGrammar"), () => setGrammarOpen(true))}
                 disabled={record === null}
                 className="rounded-lg border px-3 py-1.5 text-xs text-content hover:border-primary disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -379,11 +408,11 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
               grammar={record?.grammar}
               labels={labels}
               languageTag={tag}
-              onEdit={() => setGrammarOpen(true)}
+              onEdit={guarded(t("auth.reasonGrammar"), () => setGrammarOpen(true))}
             />
 
             {unboundTags.length > 0 && (
-              <div className="mt-4 rounded-lg border border-dashed border-amber-500/60 p-3">
+              <div className="mt-4 rounded-lg border border-dashed border-warning/60 p-3">
                 <h3 className="text-sm font-semibold text-content">
                   {t("languagePage.unboundTagsTitle")}
                 </h3>
@@ -395,9 +424,9 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
                     <li key={i}>
                       <button
                         type="button"
-                        onClick={() => setGrammarOpen(true)}
+                        onClick={guarded(t("auth.reasonGrammar"), () => setGrammarOpen(true))}
                         disabled={record === null}
-                        className="rounded-full border border-dashed border-amber-500/70 px-2.5 py-1 font-mono text-xs text-amber-700 hover:border-primary hover:text-primary disabled:opacity-50 dark:text-amber-400"
+                        className="rounded-full border border-dashed border-warning/70 px-2.5 py-1 font-mono text-xs text-warning hover:border-primary hover:text-primary disabled:opacity-50 "
                       >
                         {formatTagVerbatim(row.tag!)}
                         <span className="ml-1 text-content-subtle">×{row.count}</span>
@@ -426,7 +455,7 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
               </h2>
               <button
                 type="button"
-                onClick={() => setSourceEditorOpen(true)}
+                onClick={guarded(t("auth.reasonSource"), () => setSourceEditorOpen(true))}
                 className="text-xs text-primary hover:text-primary-hover"
               >
                 {t("languagePage.sourcesAdd")}

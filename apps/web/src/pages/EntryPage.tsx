@@ -34,6 +34,7 @@ import {
   type RelationEditorLaunch,
 } from "../components/RelationEditorDialog";
 import { useSession } from "../auth/SessionProvider";
+import { useLoginPrompt } from "../auth/LoginPrompt";
 import { EntryParadigm } from "../components/ParadigmView";
 import { endonym } from "../components/LanguageSelector";
 import { SourceEditorDialog } from "../components/SourceEditorDialog";
@@ -116,6 +117,30 @@ export function EntryPage({
 }: EntryPageProps) {
   const { t } = useTranslation();
   const { did } = useSession();
+  const { requestLogin } = useLoginPrompt();
+
+  /**
+   * Wrap a publishing action so a reader without an account is asked to connect
+   * (ADR-0017).
+   *
+   * Applied to the entry page's **discovery** affordances — propose a change,
+   * add a translation, add a cognate, describe a cited work — and deliberately
+   * not to its repair queues, which stay hidden. The difference is who they are
+   * addressed to: "this word's definition can be improved by you" is the single
+   * clearest statement this project makes about what it is, and a reader who
+   * never sees it has been shown a website rather than a commons. A parked
+   * relation waiting to be re-anchored is addressed to somebody already
+   * contributing, and showing it to a passer-by explains nothing.
+   */
+  function guarded<A extends unknown[]>(
+    reason: string,
+    action: (...args: A) => void,
+  ): (...args: A) => void {
+    return (...args: A) => {
+      if (did === null) requestLogin(reason);
+      else action(...args);
+    };
+  }
   const [view, setView] = useState<EntryView | null>(null);
   const [record, setRecord] = useState<LeksisEntryRecord | null>(null);
   const [homonyms, setHomonyms] = useState<EntryView[]>([]);
@@ -468,16 +493,31 @@ export function EntryPage({
                 }
               />
             )}
-            {did !== null && (
-              <button
-                type="button"
-                title={t("relations.addHint")}
-                onClick={() => setRelationLaunch({ source: { view, record, place } })}
-                className="ml-2 text-xs text-primary hover:text-primary-hover"
+            {/* Quiet by default, and it has to be.
+                This repeats once per sense — eight times on a word like
+                *dour* — so at full strength eight accent-coloured calls to
+                action outweigh the eight definitions they hang off, on a page
+                whose entire job is the definitions. It stays in the DOM for
+                touch and for screen readers (the label is the accessible
+                name), shows as a bare + at rest, and spells itself out when the
+                sense is hovered or anything inside it takes focus. */}
+            <button
+              type="button"
+              title={t("relations.addHint")}
+              aria-label={t("relations.addLabel")}
+              onClick={guarded(t("auth.reasonTranslate"), () =>
+                setRelationLaunch({ source: { view, record, place } }),
+              )}
+              className="ml-2 align-baseline text-xs text-content-subtle hover:text-primary focus:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+            >
+              <span aria-hidden="true">＋</span>
+              <span
+                aria-hidden="true"
+                className="ml-1 hidden group-hover/sense:inline group-focus-within/sense:inline"
               >
                 {t("relations.addLabel")}
-              </button>
-            )}
+              </span>
+            </button>
           </>,
         );
       }
@@ -502,14 +542,14 @@ export function EntryPage({
         <p className="mt-6 text-sm text-content-muted">{t("entry.notFound")}</p>
       )}
       {state === "record-gone" && (
-        <p className="mt-6 text-sm text-red-600">{t("entry.recordGone")}</p>
+        <p className="mt-6 text-sm text-danger">{t("entry.recordGone")}</p>
       )}
       {state === "failed" && (
-        <p className="mt-6 text-sm text-red-600">{t("entry.loadFailed")}</p>
+        <p className="mt-6 text-sm text-danger">{t("entry.loadFailed")}</p>
       )}
 
       {state === "deleted" && view !== null && (
-        <section className="mt-6 rounded-lg border border-amber-400 bg-amber-400/10 p-4">
+        <section className="mt-6 rounded-lg border border-warning bg-warning/10 p-4">
           <h1 className="text-lg font-semibold text-content">{t("entry.deletedTitle")}</h1>
           {view.deletionReason !== undefined && view.deletionReason !== "" && (
             <p className="mt-2 text-sm text-content">
@@ -539,11 +579,19 @@ export function EntryPage({
             {/* The language sits top right and opens its dashboard. */}
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <h1 className="text-2xl font-semibold tracking-tight text-content sm:text-3xl">
+                {/* The headword is the page.
+                    It was set at the same size as "Search the dictionary" — a
+                    heading among headings. In a dictionary the headword is the
+                    typographic event everything else hangs off, and it is also
+                    the one thing a reader is looking for when the page loads,
+                    so it is sized to be found without reading. `break-words`
+                    because a headword is arbitrary text in an arbitrary script
+                    and some of them are long. */}
+                <h1 className="break-words text-4xl font-semibold leading-none tracking-tight text-content sm:text-5xl">
                   {record.orthography[0]}
                 </h1>
                 {record.orthography.length > 1 && (
-                  <p className="mt-1 text-sm text-content-muted">
+                  <p className="mt-2 text-sm text-content-muted">
                     {record.orthography.slice(1).join(", ")}
                   </p>
                 )}
@@ -693,7 +741,7 @@ export function EntryPage({
               labels={labels}
               senseExtras={senseExtras}
               showExamples
-              {...(did !== null ? { onDescribeSource: setDescribingSource } : {})}
+              onDescribeSource={guarded(t("auth.reasonSource"), setDescribingSource)}
             />
           </section>
           {sourceSyncing !== null && (
@@ -745,7 +793,7 @@ export function EntryPage({
                 languageID={view.languageID}
                 languages={languages}
                 onOpenEntry={onOpenEntry}
-                onAdd={did !== null ? () => setCognateLaunch({ source: view }) : undefined}
+                onAdd={guarded(t("auth.reasonCognate"), () => setCognateLaunch({ source: view }))}
               />
               <ParkedCognates
                 parked={cognates.parked}
@@ -847,7 +895,7 @@ export function EntryPage({
             ) : (
               <button
                 type="button"
-                onClick={() => setProposing(true)}
+                onClick={guarded(t("auth.reasonEditEntry"), () => setProposing(true))}
                 className="mt-3 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-fg hover:bg-primary-hover focus:outline-none focus:ring-2"
               >
                 {t("entry.propose")}

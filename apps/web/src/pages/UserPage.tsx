@@ -168,7 +168,7 @@ export function UserPage({
       {state === "not-found" && (
         <p className="text-sm text-content-muted">{t("userPage.notFound")}</p>
       )}
-      {state === "failed" && <p className="text-sm text-red-600">{t("userPage.loadFailed")}</p>}
+      {state === "failed" && <p className="text-sm text-danger">{t("userPage.loadFailed")}</p>}
 
       {state === "ready" && actor !== null && (
         <article>

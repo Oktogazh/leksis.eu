@@ -120,10 +120,10 @@ export function AddLanguageModal({ languages, onClose, onCreated }: AddLanguageM
         />
         <p className="mt-1 text-xs text-content-subtle">{t("addLanguage.tagHelp")}</p>
         {isMalformed && (
-          <p className="mt-1 text-xs text-red-600">{t("addLanguage.errors.invalidTag")}</p>
+          <p className="mt-1 text-xs text-danger">{t("addLanguage.errors.invalidTag")}</p>
         )}
         {isDuplicate && (
-          <p className="mt-1 text-xs text-red-600">{t("addLanguage.errors.duplicateTag")}</p>
+          <p className="mt-1 text-xs text-danger">{t("addLanguage.errors.duplicateTag")}</p>
         )}
 
         <label
@@ -193,7 +193,7 @@ export function AddLanguageModal({ languages, onClose, onCreated }: AddLanguageM
           </fieldset>
         )}
 
-        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+        {error && <p className="mt-3 text-sm text-danger">{error}</p>}
 
         <div className="mt-5 flex justify-end gap-3">
           <button

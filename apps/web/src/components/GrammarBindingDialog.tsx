@@ -729,7 +729,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
                   onClick={() => setDraft(removeAbbreviation(draft, row.short))}
                   aria-label={t("grammar.removeAbbreviation")}
                   title={t("grammar.removeAbbreviation")}
-                  className="text-content-subtle hover:text-red-600"
+                  className="text-content-subtle hover:text-danger"
                 >
                   ×
                 </button>
@@ -839,7 +839,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
               >
                 <span className="flex min-w-0 items-baseline gap-2">
                   <span className="font-mono text-sm text-content">{row.value}</span>
-                  <span className="text-xs text-amber-600">{t("grammar.mintedBadge")}</span>
+                  <span className="text-xs text-warning">{t("grammar.mintedBadge")}</span>
                 </span>
                 <span className="text-sm text-content">{row.label.short ?? row.label.long}</span>
               </button>
@@ -874,7 +874,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
                   <span className="flex min-w-0 items-baseline gap-2">
                     <span className="font-mono text-sm text-content">{row.feature}</span>
                     {row.scheme !== undefined && (
-                      <span className="text-xs text-amber-600">{t("grammar.mintedBadge")}</span>
+                      <span className="text-xs text-warning">{t("grammar.mintedBadge")}</span>
                     )}
                   </span>
                   <span className="text-xs text-content-subtle">
@@ -973,7 +973,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
                       : { at: "classes" },
                 );
               }}
-              className="text-sm text-red-600 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="text-sm text-danger hover:text-danger disabled:cursor-not-allowed disabled:opacity-50"
             >
               {bound.lexicographic === true
                 ? t("grammar.unbindLexical")
@@ -1023,7 +1023,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
                     {/* Under a minted feature every value is minted, so the
                         badge would be on every row and say nothing. */}
                     {row.scheme !== undefined && !minted && (
-                      <span className="text-xs text-amber-600">{t("grammar.mintedBadge")}</span>
+                      <span className="text-xs text-warning">{t("grammar.mintedBadge")}</span>
                     )}
                   </span>
                   <span className="text-sm text-content">{row.label.short ?? row.label.long}</span>
@@ -1115,7 +1115,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
                     onClick={() => setDraft(removeCombination(draft, row.tag))}
                     title={t("grammar.issue.single-item-binding", { key: tagKey(row.tag) })}
                     aria-label={t("grammar.unbind")}
-                    className="text-content-subtle hover:text-red-600"
+                    className="text-content-subtle hover:text-danger"
                   >
                     ×
                   </button>
@@ -1189,7 +1189,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
                     title={supported > 0 ? t("grammar.l2WithdrawBlocked") : undefined}
                     onClick={() => setDraft(removeInherent(draft, row))}
                     aria-label={t("grammar.l2Withdraw", { feature: row.feature })}
-                    className="text-content-subtle hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="text-content-subtle hover:text-danger disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     ×
                   </button>
@@ -1367,7 +1367,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
                   <span
                     className={
                       row.values.length === 0
-                        ? "text-xs text-red-600"
+                        ? "text-xs text-danger"
                         : "text-xs text-content-subtle"
                     }
                   >
@@ -1380,7 +1380,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
                   type="button"
                   onClick={() => setDraft(removeAxis(draft, category, row.feature))}
                   aria-label={t("grammar.l3Withdraw", { feature: row.feature })}
-                  className="text-content-subtle hover:text-red-600"
+                  className="text-content-subtle hover:text-danger"
                 >
                   ×
                 </button>
@@ -1475,7 +1475,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
                       type="button"
                       onClick={() => setDraft(toggleAxisValue(draft, category, feature, value))}
                       aria-label={t("grammar.l3Remove", { value })}
-                      className="px-1 text-content-subtle hover:text-red-600"
+                      className="px-1 text-content-subtle hover:text-danger"
                     >
                       ×
                     </button>
@@ -1859,7 +1859,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
               setDraft(removeLayout(draft, category));
               setPath({ at: "l4root" });
             }}
-            className="text-sm text-red-600 hover:text-red-700"
+            className="text-sm text-danger hover:text-danger"
           >
             {t("grammar.l4WithdrawLayout")}
           </button>
@@ -1915,7 +1915,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
             setDraft(removeBlock(draft, category, index));
             setPath(row.blocks.length === 1 ? { at: "l4root" } : { at: "l4category", category });
           }}
-          className="text-sm text-red-600 hover:text-red-700"
+          className="text-sm text-danger hover:text-danger"
         >
           {t("grammar.l4RemoveBlock")}
         </button>
@@ -1966,7 +1966,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
                     type="button"
                     onClick={() => setDraft(removeListItem(draft, category, index, i))}
                     aria-label={t("grammar.l4RemoveItem")}
-                    className="px-1 text-content-subtle hover:text-red-600"
+                    className="px-1 text-content-subtle hover:text-danger"
                   >
                     ×
                   </button>
@@ -2040,7 +2040,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
                         setDraft(toggleBlockAxis(draft, category, index, dimension, feature))
                       }
                       aria-label={t("grammar.l4RemoveItem")}
-                      className="text-content-subtle hover:text-red-600"
+                      className="text-content-subtle hover:text-danger"
                     >
                       ×
                     </button>
@@ -2181,7 +2181,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
                 setDraft(removeAbbreviation(draft, short));
                 setPath({ at: "abbreviations" });
               }}
-              className="text-sm text-red-600 hover:text-red-700"
+              className="text-sm text-danger hover:text-danger"
             >
               {t("grammar.removeAbbreviation")}
             </button>
@@ -2359,7 +2359,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
                   setPath({ at: "l2feature", category: path.category, feature: path.feature });
                 }
               }}
-              className="text-sm text-red-600 hover:text-red-700"
+              className="text-sm text-danger hover:text-danger"
             >
               {t("grammar.unbind")}
             </button>
@@ -2542,7 +2542,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
 
             <footer className="border-t px-4 py-3 sm:px-5">
               {defects.length > 0 && (
-                <div className="mb-2 text-sm text-red-600">
+                <div className="mb-2 text-sm text-danger">
                   <p>{t("grammar.errors.defects")}</p>
                   <ul className="mt-1 space-y-0.5">
                     {defects.map((issue, i) => (
@@ -2560,7 +2560,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
                   </ul>
                 </div>
               )}
-              {error !== null && <p className="mb-2 text-sm text-red-600">{error}</p>}
+              {error !== null && <p className="mb-2 text-sm text-danger">{error}</p>}
               <div className="flex justify-end gap-3">
                 <button
                   type="button"

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { placePrefixMatches, type LanguageView, type RelationView } from "@leksis/types";
 import { AddLanguageModal } from "../components/AddLanguageModal";
 import { endonym, LanguageSelector } from "../components/LanguageSelector";
+import { LandingPitch } from "../components/LandingPitch";
 import { LanguageResults } from "../components/LanguageResults";
 import { OnboardingFlow } from "../components/OnboardingFlow";
 import { SearchResults } from "../components/SearchResults";
@@ -102,14 +103,16 @@ function searchPath(search: SubmittedSearch | null): string {
 // query string.
 export function HomePage() {
   const { t, i18n } = useTranslation();
-  const { profile, did } = useSession();
+  const { profile, did, status } = useSession();
   // Locale for language-name localization; the API falls back to endonyms
   // when no names exist for it.
   const locale = i18n.language;
   const [languages, setLanguages] = useState<LanguageView[]>([]);
-  // The search-bar shortlist is the profile's languages of interest (most
-  // relevant first); the profile record is the single source of truth now that
-  // onboarding gathers it. Empty until the profile loads / for a fresh profile.
+  // The search-bar shortlist is this reader's languages of interest, most
+  // relevant first. `profile` is whichever store holds them — the PDS record
+  // for a contributor, this browser for a visitor with no account (ADR-0017) —
+  // so the shortlist reads the same line in both cases. Empty until it loads,
+  // and for a reader who has not chosen any.
   const shortlist = profile?.languages ?? [];
   const initialSearch = () => searchFromLocation();
   const [language, setLanguage] = useState(() => initialSearch()?.languageTag ?? "");
@@ -346,10 +349,30 @@ export function HomePage() {
   const translating = submitted !== null && submitted.targetTag !== "";
   const missingSource = translating && scopeLanguage === null;
 
-  // A connected user with no profile record yet is onboarded here, inside the
+  /**
+   * Whether the page under the bar is something to *read* rather than a set of
+   * results — an entry, a language, a work, a contributor.
+   *
+   * The bar means a different thing in each case, and used to look identical in
+   * both. On the results surface it is the control panel for the question being
+   * asked, so scope, target and kind all belong. On a reading page it is a way
+   * to look something else up: 110px of controls stood between the top of the
+   * window and the headword, which on a dictionary is the one thing that should
+   * be there. So the refinements stand down while reading and come back the
+   * moment a search is submitted — which is also the moment they can act on
+   * anything.
+   */
+  const reading = route.kind !== "search";
+
+  // A CONNECTED user with no profile record yet is onboarded here, inside the
   // homepage: the search surface is replaced by the onboarding flow until the
   // profile is written. `undefined` = still loading, so nothing flashes.
-  if (profile === null) {
+  //
+  // The connection check is load-bearing since ADR-0017: a visitor with no
+  // account also has a null profile until they set a preference, and onboarding
+  // them would demand two decisions from somebody who came to look up a word —
+  // and then write the answers nowhere they asked for.
+  if (status === "connected" && profile === null) {
     return (
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 py-10 sm:px-6 sm:py-16">
         <OnboardingFlow languages={languages} onLanguageCreated={onLanguageCreated} />
@@ -365,7 +388,16 @@ export function HomePage() {
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 py-10 sm:px-6 sm:py-16">
+    <main
+      id="main-content"
+      tabIndex={-1}
+      // Airy on the search surface, where the space is the composition; tighter
+      // while reading, where 64px above the lookup box pushed the headword
+      // toward the fold for no gain.
+      className={`mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 pb-10 sm:px-6 sm:pb-16 ${
+        reading ? "pt-5 sm:pt-6" : "pt-10 sm:pt-16"
+      }`}
+    >
       {route.kind === "search" && (
         <h1 className="text-2xl font-semibold tracking-tight text-content sm:text-3xl">
           {t("search.title")}
@@ -407,7 +439,7 @@ export function HomePage() {
             Hidden outside the words kind rather than disabled: a language and
             a book cannot be translated into anything, so offering the control
             would promise something the other tabs cannot do. */}
-        {kind === "words" && (
+        {kind === "words" && !reading && (
           <>
             <label htmlFor="search-target" className="sr-only">
               {t("search.targetLabel")}
@@ -436,8 +468,14 @@ export function HomePage() {
         </button>
       </form>
 
-      {/* One query, three things it can name. */}
-      <div className="mt-3 flex flex-wrap gap-2" role="tablist" aria-label={t("search.kindLabel")}>
+      {/* One query, three things it can name. Absent while reading — see
+          `reading`: switching kind re-runs the search, which on an entry page
+          would throw away the page you are on. */}
+      <div
+        className={`mt-3 flex-wrap gap-2 ${reading ? "hidden" : "flex"}`}
+        role="tablist"
+        aria-label={t("search.kindLabel")}
+      >
         {SEARCH_KINDS.map((value) => (
           <button
             key={value}
@@ -544,6 +582,14 @@ export function HomePage() {
             onOpenEntry={openEntry}
           />
         ))
+      )}
+
+      {/* What this site is — under the search bar, for a visitor who has not
+          logged in and has not searched yet. Both conditions matter: it is not
+          shown to a contributor, who knows, and it stands down the moment there
+          is a result on screen, because an answer outranks a pitch. */}
+      {status === "disconnected" && route.kind === "search" && submitted === null && (
+        <LandingPitch />
       )}
 
       {adding && (

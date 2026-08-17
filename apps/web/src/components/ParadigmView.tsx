@@ -542,12 +542,18 @@ export function EntryParadigm({
   return (
     <div aria-label={t("entry.paradigmLabel")}>
       <div className="space-y-3">{inline.map(block)}</div>
+      {/* A legend per group of blocks, each beside the blocks it explains.
+          One legend for the whole paradigm would sit outside the disclosure and
+          describe an em dash the reader cannot see until they open it — which is
+          the same mistake as explaining a convention the paradigm never uses. */}
+      <ParadigmLegend blocks={inline} held={held} />
       {behind.length > 0 && (
         <details className="mt-2">
           <summary className="cursor-pointer text-xs text-primary hover:text-primary-hover">
             {t("entry.fullParadigm")}
           </summary>
           <div className="mt-2 space-y-3">{behind.map(block)}</div>
+          <ParadigmLegend blocks={behind} held={held} />
         </details>
       )}
       {/* Addressing no declared cell is not a reason to disappear. */}
@@ -557,5 +563,79 @@ export function EntryParadigm({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * What the table's three conventions mean, printed under it.
+ *
+ * The distinctions this layer exists to preserve — derived from a rule vs
+ * written by the author, a cell nobody has filled vs one the language says
+ * cannot exist — were carried entirely by an italic and two punctuation marks,
+ * explained only in `title` tooltips. A tooltip is invisible on a phone, absent
+ * to most assistive technology, and undiscoverable to the reader most likely to
+ * need it: the whole point of the empty/excluded distinction is lost on anyone
+ * who does not already know the notation.
+ *
+ * **It names only what is on screen.** A paradigm with no derived form should
+ * not explain italics, and one with no exclusions should not teach an em dash
+ * the reader will never meet — a legend for absent things is how a legend
+ * becomes noise people learn to skip.
+ */
+function ParadigmLegend({
+  blocks,
+  held,
+}: {
+  blocks: readonly ResolvedLayoutBlock[];
+  held: (address: LayoutAddress) => readonly DisplayForm[] | undefined;
+}): ReactNode {
+  const { t } = useTranslation();
+
+  let derived = false;
+  let asserted = false;
+  let empty = false;
+  let excluded = false;
+  for (const block of blocks) {
+    for (const cell of blockCells(block)) {
+      for (const form of held(cell) ?? []) {
+        if (form.generated) derived = true;
+        else asserted = true;
+      }
+    }
+    // Only a table draws the two absent states — a list simply omits them — and
+    // in a table an *excluded* address is `undefined` in the grid while an
+    // unfilled one is an address nothing is placed at. Read off `cells` rather
+    // than `blockCells`, which drops the exclusions before we could count them.
+    if (block.kind !== "table") continue;
+    for (const line of block.cells) {
+      for (const address of line) {
+        if (address === undefined) excluded = true;
+        else if (held(address) === undefined) empty = true;
+      }
+    }
+  }
+
+  // One convention on its own explains nothing — "italic means derived" is only
+  // information when something non-italic is beside it.
+  const rows: { mark: ReactNode; text: string }[] = [];
+  if (derived && asserted) {
+    rows.push({ mark: <span className="italic">abc</span>, text: t("entry.legendDerived") });
+    rows.push({ mark: <span>abc</span>, text: t("entry.legendAsserted") });
+  }
+  if (empty) rows.push({ mark: <span>·</span>, text: t("entry.legendEmpty") });
+  if (excluded) rows.push({ mark: <span>—</span>, text: t("entry.legendExcluded") });
+  if (rows.length === 0) return null;
+
+  return (
+    <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-content-subtle">
+      {rows.map((row, i) => (
+        <li key={i} className="flex items-baseline gap-1.5">
+          <span aria-hidden="true" className="text-content-muted">
+            {row.mark}
+          </span>
+          <span>{row.text}</span>
+        </li>
+      ))}
+    </ul>
   );
 }

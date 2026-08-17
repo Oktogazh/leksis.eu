@@ -15,9 +15,18 @@ export interface ThemeDef {
   labelKey: string;
 }
 
-export const THEMES = [{ id: "light", labelKey: "themes.light" }] as const satisfies readonly ThemeDef[];
+export const THEMES = [
+  { id: "light", labelKey: "themes.light" },
+  { id: "dark", labelKey: "themes.dark" },
+] as const satisfies readonly ThemeDef[];
 
 export type ThemeId = (typeof THEMES)[number]["id"];
 
+/**
+ * The theme used when this browser has never chosen one *and* states no
+ * preference of its own. `prefers-color-scheme` is consulted first (see
+ * ThemeProvider) — a reader whose whole system is dark should not be handed a
+ * white page before they can object to it.
+ */
 export const DEFAULT_THEME: ThemeId = "light";
 export const THEME_STORAGE_KEY = "leksis.theme";

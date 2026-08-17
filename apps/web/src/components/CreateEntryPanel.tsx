@@ -128,7 +128,7 @@ function FormTagEditor({
             onClick={() => onChange(null)}
             aria-label={t("createEntry.formTagClear")}
             title={t("createEntry.formTagClear")}
-            className="text-content-subtle hover:text-red-600"
+            className="text-content-subtle hover:text-danger"
           >
             ×
           </button>
@@ -343,7 +343,7 @@ function DuplicateWarning({ duplicates }: { duplicates: EntryView[] }) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   return (
-    <div className="mt-3 rounded-lg border border-amber-400 bg-amber-400/10 p-3">
+    <div className="mt-3 rounded-lg border border-warning bg-warning/10 p-3">
       <p className="text-sm text-content">
         {t("createEntry.duplicateWarning", { count: duplicates.length })}
       </p>
@@ -517,7 +517,7 @@ function PickedSource({
         </span>
       )}
       {state.status === "undescribed" && (
-        <span className="ml-2 text-xs text-amber-700 dark:text-amber-400">
+        <span className="ml-2 text-xs text-warning">
           {justPublished
             ? t("createEntry.exampleSourceIndexing")
             : t("createEntry.exampleSourceUndescribed")}
@@ -641,7 +641,7 @@ function ExampleRow({
               onClick={() => onChange({ ...row, oclc: "", locator: "" })}
               aria-label={t("createEntry.exampleSourceClear")}
               title={t("createEntry.exampleSourceClear")}
-              className="shrink-0 text-content-subtle hover:text-red-600"
+              className="shrink-0 text-content-subtle hover:text-danger"
             >
               ×
             </button>
@@ -723,7 +723,7 @@ function ExampleRow({
             </button>
           </div>
           {numberInput.trim() !== "" && typedNumber === null && (
-            <p className="mt-1 text-xs text-red-600">{t("createEntry.exampleOclcInvalid")}</p>
+            <p className="mt-1 text-xs text-danger">{t("createEntry.exampleOclcInvalid")}</p>
           )}
           <p className="mt-1 text-xs text-content-subtle">{t("createEntry.exampleOclcHelp")}</p>
 
@@ -889,7 +889,7 @@ function CategoryEditor({
                 onClick={() => onChange(tags.filter((_, j) => j !== i))}
                 aria-label={t("createEntry.removeCategory")}
                 title={t("createEntry.removeCategory")}
-                className="text-content-subtle hover:text-red-600"
+                className="text-content-subtle hover:text-danger"
               >
                 ×
               </button>
@@ -933,7 +933,7 @@ function CategoryEditor({
               onClick={() => setPath(null)}
               aria-label={t("createEntry.categoryAbandon")}
               title={t("createEntry.categoryAbandon")}
-              className="text-content-subtle hover:text-red-600"
+              className="text-content-subtle hover:text-danger"
             >
               ×
             </button>
@@ -1613,7 +1613,7 @@ export function EntryEditorDialog({
               {t("createEntry.addDefinition")}
             </button>
             {definitionsError !== "ok" && definitionsError !== "empty" && (
-              <p className="mt-2 text-xs text-red-600">{t("createEntry.definitionsInvalid")}</p>
+              <p className="mt-2 text-xs text-danger">{t("createEntry.definitionsInvalid")}</p>
             )}
           </fieldset>
 
@@ -1705,13 +1705,13 @@ export function EntryEditorDialog({
           <p className="mt-4 text-xs text-content-subtle">{t("createEntry.laterFields")}</p>
 
           <div className="mt-4 flex flex-col gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
-            {error !== null && <p className="text-sm text-red-600">{error}</p>}
+            {error !== null && <p className="text-sm text-danger">{error}</p>}
             <div className="flex items-center gap-3 sm:mr-auto">
               {entryView && onDeleted && (
                 <button
                   type="button"
                   onClick={() => setDeleting(true)}
-                  className="text-sm text-red-600 hover:text-red-700"
+                  className="text-sm text-danger hover:text-danger"
                 >
                   {t("entry.deleteAction")}
                 </button>

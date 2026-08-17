@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { normalizeOclc, type LanguageView } from "@leksis/types";
+import { useSession } from "../auth/SessionProvider";
+import { useLoginPrompt } from "../auth/LoginPrompt";
 import { AddLanguageModal } from "./AddLanguageModal";
 import { EntryEditorDialog } from "./CreateEntryPanel";
 import { SourceEditorDialog } from "./SourceEditorDialog";
@@ -57,6 +59,8 @@ export function CreatePanel({
   onSourcePublished,
 }: CreatePanelProps) {
   const { t } = useTranslation();
+  const { did } = useSession();
+  const { requestLogin } = useLoginPrompt();
   const [choosing, setChoosing] = useState(false);
   const [opened, setOpened] = useState<Opened>(null);
 
@@ -78,6 +82,32 @@ export function CreatePanel({
 
   const preselected: Exclude<Opened, null> =
     kind === "languages" ? "language" : kind === "sources" ? "source" : "entry";
+
+  /**
+   * The offer stays visible to a reader with no account and asks them to
+   * connect (ADR-0017). Hiding it would have been less code and a worse
+   * dictionary: the moment somebody searches for a word that is not here is
+   * exactly the moment "you could add it" means something, and a reader who
+   * never sees that offer has no reason to think this is a project rather than
+   * a website.
+   *
+   * The reason given matches the active tab, so one click reaches a prompt that
+   * names what they were about to do — rather than a chooser that turns out to
+   * be a dead end.
+   */
+  const reasonForKind = {
+    entry: t("auth.reasonEntry"),
+    language: t("auth.reasonLanguage"),
+    source: t("auth.reasonSource"),
+  }[preselected];
+
+  function onOffer() {
+    if (did === null) {
+      requestLogin(reasonForKind);
+      return;
+    }
+    setChoosing(true);
+  }
 
   const option = (value: Exclude<Opened, null>, label: string, hint: string) => (
     <button
@@ -122,7 +152,7 @@ export function CreatePanel({
       ) : (
         <button
           type="button"
-          onClick={() => setChoosing(true)}
+          onClick={onOffer}
           className="mt-4 flex w-full items-center gap-3 rounded-lg border bg-surface px-4 py-3 text-left shadow-sm hover:border-primary/50 hover:bg-surface-muted/60"
         >
           <span

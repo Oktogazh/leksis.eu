@@ -1,5 +1,7 @@
 import {
   RESOLVE_URI_LIMIT,
+  SEARCH_RATE_LIMIT_MS,
+  type RateLimitedResponse,
   type LabelsResponse,
   type LabelView,
   type CognateNetworkResponse,
@@ -34,6 +36,59 @@ import {
  * CORS per source IP via ALLOWED_IPS).
  */
 const API_BASE = import.meta.env.VITE_API_URL ?? "/api";
+
+/**
+ * The AppView refused a search for pacing (HTTP 429, ADR-0017) and waiting it
+ * out did not help — so the reader is sharing an address with something else
+ * that is searching, and deserves to be told that rather than shown a generic
+ * failure.
+ */
+export class RateLimitedError extends Error {
+  readonly retryAfterMs: number;
+  constructor(retryAfterMs: number) {
+    super(`search rate limited; retry in ${retryAfterMs}ms`);
+    this.name = "RateLimitedError";
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
+/**
+ * Call a rate-limited search endpoint, absorbing **one** refusal.
+ *
+ * The server's limit is what protects the VPS; this is only about what a person
+ * sees. Someone who hits Back and re-runs a search inside the window has done
+ * nothing wrong, so the honest response is a pause and not an error — the
+ * request is retried once, after exactly as long as the server said to wait.
+ * Throughput is unaffected: the retry cannot produce a second answer inside the
+ * window, it can only move this one to the far side of it.
+ *
+ * A second refusal is a different situation — something else on this address is
+ * searching continuously — and that one surfaces, because a UI that quietly
+ * retried forever would look broken rather than busy.
+ */
+async function fetchSearch(url: string): Promise<Response> {
+  const res = await fetch(url);
+  if (res.status !== 429) return res;
+
+  const retryAfterMs = await readRetryAfterMs(res);
+  await new Promise((resolve) => setTimeout(resolve, retryAfterMs));
+  const retried = await fetch(url);
+  if (retried.status === 429) throw new RateLimitedError(await readRetryAfterMs(retried));
+  return retried;
+}
+
+/**
+ * How long the server asked us to wait. Read from the body, which carries
+ * milliseconds; `Retry-After` is whole seconds and would round a 300 ms wait up
+ * to a full one. Falls back to the shared window when neither parses, and never
+ * waits longer than it — a malformed refusal must not strand the reader.
+ */
+async function readRetryAfterMs(res: Response): Promise<number> {
+  const fallback = SEARCH_RATE_LIMIT_MS;
+  const body = (await res.json().catch(() => null)) as RateLimitedResponse | null;
+  const declared = typeof body?.retryAfterMs === "number" ? body.retryAfterMs : fallback;
+  return Math.min(Math.max(declared, 0), fallback);
+}
 
 
 /**
@@ -77,7 +132,7 @@ export async function resolveEntryKeys(uris: string[]): Promise<Record<string, s
 export async function searchEntries(query: string, languageTag: string): Promise<EntryView[]> {
   const params = new URLSearchParams({ q: query });
   if (languageTag !== "") params.set("l", languageTag);
-  const res = await fetch(`${API_BASE}/entries?${params.toString()}`);
+  const res = await fetchSearch(`${API_BASE}/entries?${params.toString()}`);
   if (!res.ok) throw new Error(`GET /entries failed: ${res.status}`);
   const body = (await res.json()) as EntriesResponse;
   return body.entries;
@@ -163,7 +218,7 @@ export async function fetchTranslations(
   to: string,
 ): Promise<TranslateResponse> {
   const params = new URLSearchParams({ q: query, from, to });
-  const res = await fetch(`${API_BASE}/translate?${params.toString()}`);
+  const res = await fetchSearch(`${API_BASE}/translate?${params.toString()}`);
   if (!res.ok) throw new Error(`GET /translate failed: ${res.status}`);
   return (await res.json()) as TranslateResponse;
 }
@@ -218,7 +273,7 @@ export async function fetchEntry(key: string): Promise<EntryView | null> {
 export async function searchSources(query: string, languageTag: string): Promise<SourceView[]> {
   const params = new URLSearchParams({ q: query });
   if (languageTag !== "") params.set("l", languageTag);
-  const res = await fetch(`${API_BASE}/sources?${params.toString()}`);
+  const res = await fetchSearch(`${API_BASE}/sources?${params.toString()}`);
   if (!res.ok) throw new Error(`GET /sources failed: ${res.status}`);
   const body = (await res.json()) as SourcesResponse;
   return body.sources;

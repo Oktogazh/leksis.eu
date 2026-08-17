@@ -1,14 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { labelLookup, type EntryView, type LabelView, type LanguageView } from "@leksis/types";
-import { fetchLabels, searchEntries } from "../lib/api";
+import {
+  labelLookup,
+  SEARCH_RATE_LIMIT_MS,
+  type EntryView,
+  type LabelView,
+  type LanguageView,
+} from "@leksis/types";
+import { fetchLabels, RateLimitedError, searchEntries } from "../lib/api";
 import { CreatePanel, type CreateActions } from "./CreatePanel";
 import { TagLabel } from "./EntryPreview";
 import { endonym } from "./LanguageSelector";
 import type { SearchKind } from "../lib/search-kind";
 
-const SYNC_POLL_MS = 3_000;
-const SYNC_POLL_MAX_TRIES = 20; // ~60s of PDS → Jetstream → ArangoDB latency
+// Paced just outside the AppView's search window (ADR-0017) rather than at the
+// 3s this used to poll: a poll that lands inside the window is answered with a
+// refusal, and one that is *refused* is one that did not look. Same ~60s of
+// PDS → Jetstream → ArangoDB latency covered, in half the requests, all of
+// which are answers.
+const SYNC_POLL_MS = SEARCH_RATE_LIMIT_MS + 1_000;
+const SYNC_POLL_MAX_TRIES = 10;
 
 /**
  * Which half of the index the reader wants to see. A search over a language
@@ -66,7 +77,14 @@ export function SearchResults({
 }: SearchResultsProps) {
   const { t } = useTranslation();
   const [entries, setEntries] = useState<EntryView[] | null>(null);
-  const [failed, setFailed] = useState(false);
+  /**
+   * Why there are no results, when there are none for a reason other than the
+   * dictionary being empty. `rateLimited` is separated from `unreachable`
+   * because they ask opposite things of the reader: one is "try again shortly",
+   * the other is "this address is already searching" — and a pacing refusal
+   * shown as a failure reads as a broken dictionary.
+   */
+  const [failure, setFailure] = useState<"unreachable" | "rateLimited" | null>(null);
   /** Record URI written to the PDS but not yet seen back from the AppView. */
   const [syncingURI, setSyncingURI] = useState<string | null>(null);
   const [filter, setFilter] = useState<MatchFilter>("all");
@@ -78,7 +96,7 @@ export function SearchResults({
   useEffect(() => {
     let cancelled = false;
     setEntries(null);
-    setFailed(false);
+    setFailure(null);
     // A filter narrowed to one half of the previous results would silently hide
     // the new ones: the counts it was chosen against are gone.
     setFilter("all");
@@ -88,7 +106,9 @@ export function SearchResults({
       })
       .catch((err) => {
         console.error("entry search failed:", err);
-        if (!cancelled) setFailed(true);
+        if (!cancelled) {
+          setFailure(err instanceof RateLimitedError ? "rateLimited" : "unreachable");
+        }
       });
     return () => {
       cancelled = true;
@@ -202,8 +222,10 @@ export function SearchResults({
         onSourcePublished={create.onSourcePublished}
       />
 
-      {failed ? (
-        <p className="mt-4 text-sm text-red-600">{t("search.loadFailed")}</p>
+      {failure !== null ? (
+        <p className="mt-4 text-sm text-danger">
+          {t(failure === "rateLimited" ? "search.rateLimited" : "search.loadFailed")}
+        </p>
       ) : entries !== null && entries.length > 0 ? (
         <>
           {filterable && (

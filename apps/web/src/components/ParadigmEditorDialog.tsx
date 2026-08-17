@@ -270,7 +270,7 @@ export function ParadigmEditorDialog({
                           type="button"
                           onClick={() => setDraft(removeRequirement(draft, i))}
                           aria-label={t("paradigmEditor.removeRequirement")}
-                          className="px-1 text-content-subtle hover:text-red-600"
+                          className="px-1 text-content-subtle hover:text-danger"
                         >
                           ×
                         </button>
@@ -342,7 +342,7 @@ export function ParadigmEditorDialog({
                             setOpen(null);
                           }}
                           aria-label={t("paradigmEditor.removeRule")}
-                          className="px-1 text-content-subtle hover:text-red-600"
+                          className="px-1 text-content-subtle hover:text-danger"
                         >
                           ×
                         </button>
@@ -500,7 +500,7 @@ export function ParadigmEditorDialog({
                     type="button"
                     onClick={() => setDraft(removeNote(draft, i))}
                     aria-label={t("paradigmEditor.removeNote")}
-                    className="px-1 text-content-subtle hover:text-red-600"
+                    className="px-1 text-content-subtle hover:text-danger"
                   >
                     ×
                   </button>
@@ -535,7 +535,7 @@ export function ParadigmEditorDialog({
                     type="button"
                     onClick={() => setDraft(removeReference(draft, i))}
                     aria-label={t("paradigmEditor.removeReference")}
-                    className="px-1 text-content-subtle hover:text-red-600"
+                    className="px-1 text-content-subtle hover:text-danger"
                   >
                     ×
                   </button>
@@ -557,7 +557,7 @@ export function ParadigmEditorDialog({
           {defects.length > 0 && (
             <ul className="mb-2 space-y-0.5">
               {defects.map((defect, i) => (
-                <li key={i} className="text-xs text-red-600">
+                <li key={i} className="text-xs text-danger">
                   {t(`paradigmEditor.issue.${defect.kind}`)}
                   {defect.address !== undefined && (
                     <span className="ml-1 font-mono text-content-muted">{defect.address}</span>
@@ -569,7 +569,7 @@ export function ParadigmEditorDialog({
               ))}
             </ul>
           )}
-          {error !== null && <p className="mb-2 text-xs text-red-600">{error}</p>}
+          {error !== null && <p className="mb-2 text-xs text-danger">{error}</p>}
           <div className="flex justify-end gap-2">
             <button
               type="button"

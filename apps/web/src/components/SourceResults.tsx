@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { LanguageView, SourceView } from "@leksis/types";
-import { searchSources } from "../lib/api";
+import { SEARCH_RATE_LIMIT_MS, type LanguageView, type SourceView } from "@leksis/types";
+import { RateLimitedError, searchSources } from "../lib/api";
 import { CreatePanel, type CreateActions } from "./CreatePanel";
 import type { SearchKind } from "../lib/search-kind";
 
-const SYNC_POLL_MS = 3_000;
-const SYNC_POLL_MAX_TRIES = 20; // ~60s of PDS → Jetstream → ArangoDB latency
+// Paced outside the AppView's search window, as in SearchResults — see the note
+// there. Same ~60s of PDS → Jetstream → ArangoDB latency covered.
+const SYNC_POLL_MS = SEARCH_RATE_LIMIT_MS + 1_000;
+const SYNC_POLL_MAX_TRIES = 10;
 
 interface SourceResultsProps {
   /** The submitted search term. */
@@ -38,7 +40,8 @@ export function SourceResults({
 }: SourceResultsProps) {
   const { t } = useTranslation();
   const [sources, setSources] = useState<SourceView[] | null>(null);
-  const [failed, setFailed] = useState(false);
+  /** Why there are no results — see the note in SearchResults. */
+  const [failure, setFailure] = useState<"unreachable" | "rateLimited" | null>(null);
   /** A number published to the PDS but not yet seen back from the AppView. */
   const [syncingOclc, setSyncingOclc] = useState<string | null>(null);
 
@@ -47,14 +50,16 @@ export function SourceResults({
   useEffect(() => {
     let cancelled = false;
     setSources(null);
-    setFailed(false);
+    setFailure(null);
     searchSources(query, languageTag)
       .then((found) => {
         if (!cancelled) setSources(found);
       })
       .catch((err: unknown) => {
         console.error("source search failed:", err);
-        if (!cancelled) setFailed(true);
+        if (!cancelled) {
+          setFailure(err instanceof RateLimitedError ? "rateLimited" : "unreachable");
+        }
       });
     return () => {
       cancelled = true;
@@ -103,8 +108,10 @@ export function SourceResults({
         }}
       />
 
-      {failed ? (
-        <p className="mt-4 text-sm text-red-600">{t("search.sourcesLoadFailed")}</p>
+      {failure !== null ? (
+        <p className="mt-4 text-sm text-danger">
+          {t(failure === "rateLimited" ? "search.rateLimited" : "search.sourcesLoadFailed")}
+        </p>
       ) : sources !== null && sources.length > 0 ? (
         <ul className="mt-4 divide-y rounded-lg border bg-surface shadow-sm">
           {sources.map((source) => (

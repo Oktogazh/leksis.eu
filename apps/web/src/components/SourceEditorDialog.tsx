@@ -306,7 +306,7 @@ export function SourceEditorDialog({
               {isEditing ? t("sourceEditor.oclcLocked") : t("sourceEditor.oclcHint")}
             </p>
             {oclcInput.trim() !== "" && normalized === null && (
-              <p className="mt-1 text-xs text-red-600">{t("sourceEditor.errors.oclc")}</p>
+              <p className="mt-1 text-xs text-danger">{t("sourceEditor.errors.oclc")}</p>
             )}
             {normalized !== null && (
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -500,7 +500,7 @@ export function SourceEditorDialog({
           </>
         )}
 
-        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+        {error && <p className="mt-3 text-sm text-danger">{error}</p>}
 
         <div className="mt-5 flex justify-end gap-3">
           <button

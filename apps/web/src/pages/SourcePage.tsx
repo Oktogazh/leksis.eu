@@ -113,7 +113,7 @@ export function SourcePage({ oclc, languages, onOpenLanguage }: SourcePageProps)
         <p className="text-sm text-content-muted">{t("sourcePage.loading")}</p>
       )}
       {state === "failed" && (
-        <p className="text-sm text-red-600">{t("sourcePage.loadFailed")}</p>
+        <p className="text-sm text-danger">{t("sourcePage.loadFailed")}</p>
       )}
 
       {state === "ready" && (

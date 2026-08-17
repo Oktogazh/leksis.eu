@@ -143,7 +143,7 @@ export function LabelShelf({ grammar, labels, languageTag, onEdit }: LabelShelfP
                   <span className="font-mono">{one.feature}</span>
                   <span className="text-content-subtle">{one.row.short ?? one.row.long}</span>
                   {one.minted && (
-                    <span className="text-amber-600">{t("grammar.mintedBadge")}</span>
+                    <span className="text-warning">{t("grammar.mintedBadge")}</span>
                   )}
                   <span className="text-content-subtle">
                     {t("grammar.l3ValueCount", { count: one.values.length })}
@@ -208,7 +208,7 @@ function Conflicts({ row }: { row: ShelfRow }): ReactNode {
   const { t } = useTranslation();
   if (row.conflictsWith.length === 0) return null;
   return (
-    <span className="text-xs text-red-600">
+    <span className="text-xs text-danger">
       <span aria-hidden="true">⚠ </span>
       {t("languagePage.abbreviationsConflict", {
         pairs: row.conflictsWith.map(formatLabelRef).join(", "),
@@ -345,7 +345,7 @@ function FlatLabels({ labels }: { labels: LabelView[] }) {
             )}
             <span className="text-xs text-content-subtle">×{row.count}</span>
             {conflicted && (
-              <span className="text-xs text-red-600">
+              <span className="text-xs text-danger">
                 {t("languagePage.abbreviationsConflict", {
                   pairs: row.conflictsWith.map(formatLabelRef).join(", "),
                 })}

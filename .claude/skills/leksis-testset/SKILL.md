@@ -30,14 +30,36 @@ account §4.1 names — and it drives the browser against them.
 
 Every ingestion bot exists to grow the dictionary. This record set exists to be
 **looked at**. It is a fixed, small set of `eu.leksis.*` records whose only
-purpose is to give a browsing agent — in any session, on the live site —
-a page it can open and assert against for every feature the design has
-shipped.
+purpose is to give a browsing agent a page it can open and assert against for
+every feature the design has shipped.
 
 The records are **live and public**. They go through the same PDS, the same
 firehose and the same AppView as real content, and they appear in the real
 language list. That is deliberate: a fixture that does not travel the whole
 path proves nothing. It is also the reason for every rule below.
+
+**And they are ephemeral.** The set is **published for a test run and torn down
+when it ends** — it does not sit in the production index between sessions. The
+lifecycle is one line:
+
+```bash
+npx tsx scripts/publish-fixtures.ts            # publish, sweep, write the manifest
+#   … drive the flows in the browser against that manifest …
+npx tsx scripts/publish-fixtures.ts --teardown # remove it all, blank the manifest
+```
+
+Three consequences, all load-bearing:
+
+- **`entryKey`s are minted per run and never repeat** (they hash the creating
+  record's URI), so **no URL in this skill is stable** and none is written down.
+  The manifest the run writes is the only address book, and it is valid only
+  until the teardown.
+- **A session that wants to test must publish first.** There is nothing standing
+  to open. That costs a couple of minutes and buys a production index that
+  carries no fake dictionary between runs.
+- **A committed manifest with `tornDownAt` is the correct resting state.** If you
+  find one with entries in it, either a run is in progress or a session forgot to
+  tear down — treat it as stale, not as an address book.
 
 > Read **`leksis-ingest`** first. It holds the PDS mechanics (account, auth,
 > rate limits, `applyWrites`), the exact lexicon shapes, the grammatical
@@ -153,7 +175,8 @@ URI) and nothing can know it before publishing:
 npx tsx scripts/publish-fixtures.ts --check      # validate the fixtures, write nothing
 npx tsx scripts/publish-fixtures.ts --manifest   # rebuild the manifest alone (no credentials)
 npx tsx scripts/publish-fixtures.ts --sweep-dry  # list what a test session left behind
-npx tsx scripts/publish-fixtures.ts --sweep      # delete it — RUN THIS WHEN A TEST THAT WROTE ENDS
+npx tsx scripts/publish-fixtures.ts --sweep      # delete it, sparing the declared set
+npx tsx scripts/publish-fixtures.ts --teardown   # remove EVERYTHING — RUN THIS WHEN THE TEST ENDS
 npx tsx scripts/publish-fixtures.ts              # publish everything, sweep, then rebuild it
 npx tsx scripts/fixtures/preview.ts              # what each entry page will render, offline
 ```
@@ -273,9 +296,11 @@ version, and the ingest log names all fourteen kinds. The place each kind is
 *read* is the binding editor's footer (U-16 below), because that is the surface a
 contributor repairs them in.
 
-**Verified 2026-08-16.** The rewrite was refused — `currentRecord` still serves
-the coherent version's cid — and opening the dialog on `qto` lists all fourteen
-with Publish disabled. The publisher asserts the refusal itself and fails the run
+**Verified 2026-08-16**, on a run since torn down. The rewrite was refused —
+`currentRecord` still served the coherent version's cid — and opening the dialog
+on `qto` listed all fourteen with Publish disabled. Note `qto`'s *history*
+survives the teardown even though its record does not, so republishing the set
+re-creates this state rather than starting it over. The publisher asserts the refusal itself and fails the run
 if the defective version ever becomes current, so a regression in the ADR-0015
 gate cannot pass silently.
 
@@ -353,7 +378,7 @@ what search matches and what every citing entry prints: put the handle in it
 | S-03 | the optional fields genuinely absent | a second described work with no `author`, no `year`, no `url` — "no author" must render as nothing, never as an empty row |
 | S-04 | a source of the **bare** language | `languages: ["qtm"]` — a work can be cited from a language that has declared no grammar at all |
 
-**Published 2026-08-16**, and the three citation states verified on one page:
+**Published and verified 2026-08-16** (then torn down, per §4.6 — the set is ephemeral). The three citation states rendered distinctly on one page:
 the resolved short form with its locator, the unsourced sentence alone, and the
 bare `OCLC …` styled unresolved beside its invitation to describe the work.
 
@@ -424,16 +449,16 @@ there are.
    `GET /languages/qtl/currentRecord` returns the `cid` you just wrote (and watch
    the ingest log, which names the offending rows when it refuses). Treat a stale
    `cid` as a failed run.
-5. **Reset = delete then republish.** Entry deletions are mirrored by the
-   AppView, so deleting the bot's `eu.leksis.entry` records genuinely cleans
-   the index — and an entry's record key is a TID, which cannot be derived from
-   a handle, so a sweep is the *only* way a re-run replaces the set instead of
-   doubling it. The publisher does it automatically, **scoped to records
-   carrying an `lxt-` handle** (see rule 1). Languages, sources and paradigms
-   need no sweep: their keys are derived (the tag, the OCLC number, the selector
-   hash), so republishing overwrites in place. Language versions do **not**
-   un-publish; a fixture language's history accumulates, which is exactly why
-   `qto` carries the deliberate breakage and `qtl` never does.
+5. **A re-run replaces, it never doubles.** An entry's record key is a TID and
+   cannot be derived from its handle, so the publisher sweeps the previous run's
+   entries before writing new ones — **scoped to records carrying an `lxt-`
+   handle** (see rule 1), never the whole collection. Languages, sources and
+   paradigms need no sweep: their keys are derived (the tag, the OCLC number, the
+   selector hash), so republishing overwrites in place. Note this means a normal
+   publish is safe to run twice; it is `--teardown` that ends a run, not a
+   republish. And a fixture language's *history* accumulates whatever you do,
+   which is exactly why `qto` carries the deliberate breakage and `qtl` never
+   does.
 7. **Never `subject`-reference a record outside the fixture set**, and never
    publish a fixture entry under a real `languageID`. A `subject` pointing at a
    real entry would make the fixture a proposed edit to real content.
@@ -448,12 +473,14 @@ there are.
 The protocol, in order — put this in the test session's prompt, not in the
 agent's guesswork:
 
-1. **Read `scripts/fixtures/manifest.json` first.** If it is missing or stale,
-   rebuild it with `npx tsx scripts/publish-fixtures.ts --manifest`, which needs
-   no credentials. (By hand, `GET https://leksis.eu/api/entries?q=lxt-` returns
-   every fixture with its `entryKey` — but note it does **not** return the
-   withdrawn ones, which are absent from search by design and are why the
-   rebuild reads the repo instead.)
+1. **Publish the set, then read the manifest it writes.** The set is ephemeral,
+   so at rest there is nothing to open and `scripts/fixtures/manifest.json`
+   carries `tornDownAt` with empty arrays. Run
+   `npx tsx scripts/publish-fixtures.ts`; it validates, publishes, sweeps and
+   writes the manifest with this run's `entryKey`s — which are minted fresh
+   every time and cannot be predicted. (`--manifest` rebuilds it without
+   publishing, for a run already in progress; it reads the *repo* rather than
+   search, because a withdrawn entry is absent from search by design.)
 2. **Open the specific page** the test needs — `/entry/<entryKey>` or
    `/language/<tag>` — never a blind search, and never "the first result".
 3. **Assert against `expect`**, not against a screenshot from a previous
@@ -462,16 +489,29 @@ agent's guesswork:
    authorship, not ownership). If a page contradicts the manifest, re-read the
    record from the PDS before concluding the app regressed — someone may have
    published a newer version of that entry, which is itself legal behaviour.
-5. **Do not edit fixtures from a test session.** A browsing test that
-   publishes a new version changes the fixture for every later session. If a
-   test *needs* to write, it writes a new record — and **cleans it up when the
-   test completes**, which is rule 6.
-6. **Sweep when a test that wrote anything ends.** `--sweep` deletes every
-   record inside the quarantine that the fixture set does not declare, and a
-   full publish runs it automatically, so a run always ends with the PDS holding
-   exactly the manifest. This is a **habit, not a judgement call**: leftovers sit
-   on the PDS *and* in the production index, and the next session cannot tell one
-   from a fixture it is supposed to be asserting against.
+5. **Editing a fixture mid-run invalidates the rest of the run.** The set is
+   torn down afterwards, so a stray edit no longer haunts *later* sessions — but
+   it does desynchronise the manifest you are still asserting against. If a test
+   needs to write, write a **new** record and let rule 6 remove it; if you must
+   overwrite a fixture, regenerate the manifest (`--manifest`) before trusting
+   another `expect` line.
+6. **Tear the set down when the test ends. Always.** `--teardown` removes every
+   record inside the quarantine — the declared set included — and blanks the
+   manifest. This is a **habit, not a judgement call**: the set is ephemeral by
+   design (see "What the fixture set is"), and anything left standing sits in the
+   *production* index as a fake dictionary that real users can search.
+   `--sweep` is the narrower form, sparing what the set declares, and a full
+   publish runs it automatically so a run's own leftovers never survive it.
+   - **Confirm it landed**, the same way a publish is confirmed: `GET
+     /entries?q=lxt-` returns `{"entries":[]}` and
+     `GET /languages/qtl/paradigms` returns none. Deletions travel the firehose
+     like anything else and take a few seconds.
+   - **The languages do not go.** `eu.leksis.language` versions **archive rather
+     than un-publish** — language references are structural to the app — so
+     `qtl`/`qtm`/`qto` stay on `GET /languages` and in the picker **permanently**,
+     whatever you delete. That is the real cost of publishing a fixture language
+     and the reason to think hard before adding a fourth. Everything else (entries,
+     sources, paradigms) genuinely leaves the index.
    - **The boundary is the quarantine, not the account.** Only `qtl`/`qtm`/`qto`
      records and 16-digit sources are touched, because this account is also the
      one a human logs the dev build in as — their `br` work is never in scope.
@@ -515,9 +555,20 @@ skill exists to prevent.
 ## 7. Pending UI verification — the debt this set cannot pay
 
 Every fixture above is a **record**, so it proves what a *reader* sees. It proves
-nothing about the **authoring surfaces**, because those sit behind a session:
-`App.tsx` sends a logged-out visitor to `/`, so the grammar editor and the entry
-editor are unreachable without one. A fixture cannot log in.
+nothing about the **authoring surfaces**, because those need a repository to
+write to. A fixture cannot log in.
+
+> **The reader half no longer needs a session at all (ADR-0017, 2026-08-17).**
+> This section used to open "`App.tsx` sends a logged-out visitor to `/`, so the
+> grammar editor and the entry editor are unreachable without one" — the routing
+> half of that is now false. Every fixture page (`/entry/<key>`,
+> `/language/<tag>`, `/source/<oclc>`) is **public**, so a browsing agent can
+> assert every record-level row above without logging in, and a run against a
+> stale or missing dev session can no longer be mistaken for a regression. What
+> still needs the session is what always did: publishing. Note also that the
+> scripted dev session logs in on *every* load, so to check a reader-facing
+> fixture as a stranger sees it, open it with **`?anon=1`** (sticky; `?anon=0`
+> undoes it).
 
 So the list below is verification **debt**, not a test plan for this bot. It is
 recorded here because this is where "what a later browsing session must do"

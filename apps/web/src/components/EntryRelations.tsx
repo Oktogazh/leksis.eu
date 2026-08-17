@@ -111,7 +111,7 @@ function RelationLine({
         <span className="font-mono text-xs text-content-subtle">{placeText(other.place)}</span>
       )}
       {kindLabel !== null && (
-        <span className="rounded-full border border-amber-500/60 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-400">
+        <span className="rounded-full border border-warning/60 px-2 py-0.5 text-xs text-warning">
           {kindLabel}
         </span>
       )}

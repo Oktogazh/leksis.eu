@@ -4,6 +4,109 @@ All notable changes to Leksis. Each section is one loop — a unit of work, not 
 unit of time: the content loops grow the dictionary outward, the grammar loops
 (the morphology arc) grow the entry deeper, and the two interleave.
 
+## Content loop — the dictionary opens to everyone
+
+Until now a stranger who followed a link to an entry got a login form, and the
+link they clicked was thrown away on the way. Leksis is a reference work: it has
+to be readable and it has to be citable. Both are now true. See **ADR-0017**.
+
+> **Nothing about who may write changed.** Contributions still go browser → the
+> author's own PDS, so having no session is not a permission check that could be
+> bypassed — there is simply no repository to write to.
+
+### Reading without an account
+
+- **Every read surface is public**: entries, languages, works, contributor pages
+  and the search behind them. `App.tsx` no longer branches on the session, and it
+  no longer rewrites a resource URL to `/` for a logged-out visitor — the bug
+  that made every shared link land a stranger on a login form with their
+  destination discarded.
+- **The homepage leads with the search bar**, with the pitch beneath it and only
+  for visitors who have not searched yet. The fastest way to explain a dictionary
+  is to let someone look a word up in it.
+- **Contribution affordances stay visible and ask.** Propose a change, add a
+  translation, add a cognate, describe a cited work — each raises a prompt
+  carrying *the reason it was asked for*, which explains the version model
+  better than a landing page can. Account-scoped and repair controls stay hidden:
+  they are meaningless without an account rather than an invitation to get one.
+- **Fixed on the way**: "Propose changes" was gated by nothing at all, so opening
+  the app would have handed logged-out readers an editor that could not publish.
+
+### The rate limit that pays for it
+
+- **One search per 5 seconds per address**, shared across `GET /entries`,
+  `GET /sources` and `GET /translate` — one bucket, because they are three ways
+  of asking one question. In-memory in the Hono process, swept on a timer; no
+  Redis, no dependency, no new container.
+- **Keyed reads are never limited.** An entry page issues five of them, and a
+  reader opening a word must not spend their search on it.
+- **It applies to everybody, and that is forced**: ADR-0002 keeps the API out of
+  the auth path, so there is no session to exempt. The window is wide enough
+  that no human meets it.
+- **The browser absorbs one refusal** — it waits exactly as long as the server
+  said, once. Throughput is unchanged; a reader who hits Back sees a pause
+  instead of an error.
+- Two details worth keeping: the address is the **rightmost** `X-Forwarded-For`
+  entry (Caddy appends the real peer, so the leftmost is forgeable), and the
+  timestamp is written **before** the handler, so a slow query cannot buy itself
+  a longer allowance than a fast one.
+
+### Preferences without a PDS
+
+- **`leksis.prefs` holds a `LeksisProfileRecord`** — the same shape the profile
+  record carries — so the session serves it under the same `profile` field and
+  the search bar, the preferences dialog and the dashboard were not touched.
+  Signing up **promotes** the object rather than translating it, and onboarding
+  seeds itself from it so nobody answers the same question twice.
+- **Preferences only, never contributions.** An entry in localStorage would be a
+  contribution the network never sees, owned by a browser rather than an author.
+- Logging out does not clear them: the same reader, the same languages.
+
+### A dark theme, at last
+
+- One `[data-theme="dark"]` block and one registry entry — the token system built
+  in v0.8 held, and no component changed. First visit follows
+  `prefers-color-scheme`; an explicit choice wins forever after.
+- The accent gets **lighter** in the dark theme while the text on it goes to
+  near-black, and surfaces **lift** rather than the canvas dropping — so a button
+  reads as a button and elevation reads the same way in both themes.
+- **`darkMode` was unset**, so `dark:` variants keyed off the operating system
+  while the palette keyed off `data-theme`. Now one authority for one question.
+- **~100 hardcoded palette colours swept to tokens** (`text-red-600` on every
+  error string, an amber pair on every warning) — none of them followed the theme
+  and all failed AA on dark surfaces. The light theme's `content-subtle` was
+  darkened from 2.5:1, which is not a placeholder colour, it is unreadable text.
+
+### The reading surfaces, redesigned
+
+- **The headword is the page.** It was set at the same size as a section
+  heading; it is now the typographic event a dictionary entry hangs off.
+- **Senses set as a dictionary column**: closer together, numbers in the body
+  face with tabular figures right-aligned into a hanging indent, instead of
+  monospace at 16px intervals. Comparing senses is the reading a dictionary is
+  for, and that wants them takeable-in together.
+- **Reading mode for the search bar.** On an entry, language, work or contributor
+  page the kind tabs and the translation target stand down — 110px of controls
+  used to sit between the top of the window and the word you opened.
+- **The paradigm tables have a legend.** Derived vs written, "not entered yet"
+  vs "no such form" — the distinctions layer 5 exists to preserve were carried
+  entirely by an italic and two punctuation marks, explained only in tooltips
+  that are invisible on a phone. It names only the conventions actually on
+  screen, and sits inside the disclosure with the tables it explains.
+- **The per-sense "relate" action is quiet by default** — it repeats once per
+  sense, and at full strength eight accent-coloured buttons outweighed the eight
+  definitions they hung off.
+- **The language dashboard separates counters from actions.** They shared one
+  grid, which made "Edit language record" read as a statistic with a missing
+  number.
+- **A skip link**, because every page begins with the same search controls.
+
+### Dev
+
+- **`?anon=1`** opts the dev-session build out of its scripted login, stickily.
+  The scripted session logs in on every load, so the logged-out half of the
+  product was the half a dev build could not see.
+
 ## Grammar layer — layer 5: the rules that fill the cells
 
 Four layers had built a cell space and left it empty. A language can now say
@@ -119,10 +222,15 @@ entry stores only what cannot be derived. See **ADR-0016**.
 
 ### The testset
 
-- **The fixture set exists, and is published.** `scripts/fixtures/` plus
+- **The fixture set exists, and is ephemeral.** `scripts/fixtures/` plus
   `scripts/publish-fixtures.ts`: three quarantined languages (`qtl` full, `qtm`
-  bare, `qto` defective), 25 entries, three sources and five paradigms, live on
-  the production index under private-use tags.
+  bare, `qto` defective), 25 entries, three sources and five paradigms. A run
+  **publishes them, tests against the manifest it writes, and tears them down**
+  (`--teardown`), so the production index carries no fake dictionary between
+  sessions and no fixture URL is ever stable — `entryKey`s hash the creating
+  record's URI and are minted fresh each time. The one thing teardown cannot
+  undo: `eu.leksis.language` versions archive rather than un-publish, so
+  `qtl`/`qtm`/`qto` stay in the language picker permanently.
 - **The publish is gated on the AppView's own validators.** `--check` runs
   `grammarIssues`, `validateDefinitions`, `validateSource`,
   `isValidParadigmRecord` and `paradigmIssues` over every record and refuses to

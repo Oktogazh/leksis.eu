@@ -24,6 +24,7 @@ import { getEntryRelations, getTranslations } from "./relations";
 import { getCurrentLanguageRecord, listLanguages } from "./languages";
 import { getLanguageParadigms } from "./paradigms";
 import { getCurrentSourceRecord, getLanguageSources, searchSources } from "./sources";
+import { searchRateLimit } from "./rate-limit";
 import { startJetstream } from "./firehose/jetstream";
 
 const app = new Hono();
@@ -139,7 +140,7 @@ app.get("/languages/:tag/sources", async (c) => {
   }
 });
 
-app.get("/sources", async (c) => {
+app.get("/sources", searchRateLimit, async (c) => {
   const q = c.req.query("q") ?? "";
   // An invalid language scope degrades to searching all languages, as on
   // /entries: a mistyped scope should narrow nothing, not answer nothing.
@@ -174,7 +175,13 @@ app.get("/sources/:oclc/currentRecord", async (c) => {
   }
 });
 
-app.get("/entries", async (c) => {
+// The three search endpoints below carry `searchRateLimit` — the corpus-wide
+// queries, and the only routes a crawler can point at something unbounded.
+// Everything else is addressed by a key the caller had to learn first (an
+// entryKey, a tag, an OCLC number), which makes it a read of one known thing
+// rather than a question asked of the whole index, so none of them is limited:
+// an entry page issuing five keyed reads must not spend a reader's search.
+app.get("/entries", searchRateLimit, async (c) => {
   const q = c.req.query("q") ?? "";
   // An invalid language scope degrades to searching all languages.
   const requested = normalizeLanguageTag(c.req.query("l") ?? "");
@@ -193,7 +200,7 @@ app.get("/entries", async (c) => {
 // no target the search is monolingual, which is GET /entries. Invalid tags are
 // refused rather than degraded, because a translation search silently answering
 // about the wrong language is worse than an error.
-app.get("/translate", async (c) => {
+app.get("/translate", searchRateLimit, async (c) => {
   const from = normalizeLanguageTag(c.req.query("from") ?? "");
   const to = normalizeLanguageTag(c.req.query("to") ?? "");
   if (!isValidLanguageTag(from) || !isValidLanguageTag(to)) {

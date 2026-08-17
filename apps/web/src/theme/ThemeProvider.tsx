@@ -13,12 +13,25 @@ function isThemeId(value: string | null): value is ThemeId {
   return value != null && THEMES.some((t) => t.id === value);
 }
 
+/**
+ * The theme to open on: what this browser last chose, else what the operating
+ * system asks for, else the default.
+ *
+ * The stored value wins over `prefers-color-scheme` because it was *stated* —
+ * someone who switched to light on a dark system meant it, and re-imposing the
+ * system preference on the next visit would make the control look broken.
+ */
 function readInitialTheme(): ThemeId {
   try {
     const stored = localStorage.getItem(THEME_STORAGE_KEY);
     if (isThemeId(stored)) return stored;
   } catch {
-    // localStorage may be unavailable (private mode); fall back to default.
+    // localStorage may be unavailable (private mode); fall through.
+  }
+  try {
+    if (window.matchMedia("(prefers-color-scheme: dark)").matches) return "dark";
+  } catch {
+    // matchMedia is absent in some embedded webviews.
   }
   return DEFAULT_THEME;
 }

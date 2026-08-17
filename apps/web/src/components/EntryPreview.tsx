@@ -54,7 +54,7 @@ export function TagChips({
             <li
               key={`${i}-${j}`}
               title={t("entry.unboundTag")}
-              className={`rounded-full border border-dashed border-amber-500/70 px-2.5 py-1 font-mono text-xs text-amber-700 dark:text-amber-400 ${className}`}
+              className={`rounded-full border border-dashed border-warning/70 px-2.5 py-1 font-mono text-xs text-warning ${className}`}
             >
               {part.verbatim}
             </li>
@@ -96,7 +96,7 @@ export function TagLabel({
           <span
             key={i}
             title={t("entry.unboundTag")}
-            className="text-amber-700 dark:text-amber-400"
+            className="text-warning"
           >
             {part.verbatim}
           </span>
@@ -157,15 +157,30 @@ export function DefinitionList({
     place.filter((n, i) => n !== 0 || i === place.length - 1).filter((n) => n !== 0).length;
 
   return (
-    <ol className="space-y-4">
+    // Set as a dictionary column, not as a list of cards.
+    //
+    // Two changes from the original, both in the service of the same task.
+    // Senses used to sit 16px apart, which reads as a feed of separate items;
+    // the reading a dictionary is actually for is *comparing* senses, and that
+    // wants them close enough to take in together. And the sense number used to
+    // be monospaced, which made the structure look like code — it is now set in
+    // the body face with tabular figures and right-aligned into a fixed column,
+    // so the numbers align down the page and the definitions hang off a common
+    // edge. That is the printed convention, and it is a convention because it
+    // works.
+    <ol className="space-y-2.5">
       {definitions.map((def, i) => {
         const notes = def.notes ?? [];
         return (
           <li
             key={i}
-            className={`flex gap-3 ${DEPTH_INDENT[Math.max(displayedDepth(def.place), 1) - 1]}`}
+            // The named group the per-sense actions reveal themselves against —
+            // named, because the entry page nests groups and an unnamed
+            // `group-hover` would fire on whichever ancestor happened to be
+            // closest.
+            className={`group/sense flex gap-2.5 ${DEPTH_INDENT[Math.max(displayedDepth(def.place), 1) - 1]}`}
           >
-            <span className="mt-0.5 shrink-0 font-mono text-sm text-content-subtle">
+            <span className="shrink-0 basis-12 text-right text-sm font-medium tabular-nums text-content-subtle">
               {placeLabel(depth, def.place)}
             </span>
             <div className="min-w-0">
@@ -257,7 +272,7 @@ export function EntryPreview({ entry, onOpen }: EntryPreviewProps) {
         <p className="text-sm text-content-muted">{t("entry.loading")}</p>
       )}
       {state === "failed" && (
-        <p className="text-sm text-red-600">{t("entry.recordGone")}</p>
+        <p className="text-sm text-danger">{t("entry.recordGone")}</p>
       )}
       {state === "ready" && record !== null && (
         <>

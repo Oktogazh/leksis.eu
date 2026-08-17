@@ -7,6 +7,7 @@ import {
 } from "@leksis/types";
 import { useSession } from "../auth/SessionProvider";
 import { SUPPORTED_LANGUAGES, DEFAULT_LANGUAGE, type LanguageCode } from "../i18n";
+import { readLocalPrefs } from "../lib/local-prefs";
 import { LanguageInterestPicker } from "./LanguageInterestPicker";
 
 interface OnboardingFlowProps {
@@ -15,9 +16,17 @@ interface OnboardingFlowProps {
   onLanguageCreated: (created: LanguageView) => void;
 }
 
-/** The interface language the browser prefers, if Leksis supports it. */
+/**
+ * The interface language to start on: whatever this browser already chose while
+ * reading logged out, else what it asks for, else the default.
+ *
+ * The local answer wins because it is the only one that was *stated* — the
+ * others are inferred (ADR-0017).
+ */
 function preferredInterfaceLanguage(): LanguageCode {
   const supported = new Set<string>(SUPPORTED_LANGUAGES.map((l) => l.code));
+  const stored = readLocalPrefs()?.interfaceLanguage ?? "";
+  if (supported.has(stored)) return stored as LanguageCode;
   for (const tag of navigator.languages ?? []) {
     const primary = tag.toLowerCase().split("-")[0] ?? "";
     if (supported.has(primary)) return primary as LanguageCode;
@@ -38,7 +47,10 @@ export function OnboardingFlow({ languages, onLanguageCreated }: OnboardingFlowP
   const [interfaceLanguage, setInterfaceLanguage] = useState<LanguageCode>(
     preferredInterfaceLanguage,
   );
-  const [selected, setSelected] = useState<string[]>([]);
+  // Seeded from what this browser collected while logged out: somebody who
+  // picked their languages as a reader and then signed up should find them
+  // already chosen, not be asked the same question twice (ADR-0017).
+  const [selected, setSelected] = useState<string[]>(() => readLocalPrefs()?.languages ?? []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -122,7 +134,7 @@ export function OnboardingFlow({ languages, onLanguageCreated }: OnboardingFlowP
         </div>
       )}
 
-      {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-3 text-sm text-danger">{error}</p>}
 
       <div className="mt-6 flex justify-end gap-3">
         {step === 2 && (

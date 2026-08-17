@@ -13,9 +13,34 @@ import { AtpAgent, type AtpSessionData } from "@atproto/api";
 // resumed on reload, so in-app navigation and reloads keep it.
 
 const STORAGE_KEY = "leksis-dev-session";
+/** Sticky opt-out of the scripted session — see `anonymousRequested`. */
+const ANON_KEY = "leksis-dev-anonymous";
+
+/**
+ * Whether this dev browser has asked to stay logged out.
+ *
+ * Needed since search opened to visitors without accounts (ADR-0017): the
+ * scripted session logs in on *every* load, so before this there was no way to
+ * look at the logged-out app at all — the half of the product this dev
+ * convenience exists to help build was the one half it hid.
+ *
+ * Toggled by `?anon=1` / `?anon=0` and remembered, so it survives the
+ * navigation that follows. Dev-only, like everything else in this module.
+ */
+function anonymousRequested(): boolean {
+  const requested = new URLSearchParams(window.location.search).get("anon");
+  try {
+    if (requested === "1") localStorage.setItem(ANON_KEY, "1");
+    if (requested === "0") localStorage.removeItem(ANON_KEY);
+    return localStorage.getItem(ANON_KEY) === "1";
+  } catch {
+    return requested === "1";
+  }
+}
 
 export async function initDevSession(): Promise<AtpAgent | null> {
   if (!import.meta.env.DEV) return null;
+  if (anonymousRequested()) return null;
   const service = import.meta.env.VITE_DEV_PDS as string | undefined;
   const identifier = import.meta.env.VITE_DEV_HANDLE as string | undefined;
   const password = import.meta.env.VITE_DEV_PASSWORD as string | undefined || import.meta.env.VITE_DEV_HANDLE as string | undefined;

@@ -90,7 +90,7 @@ export function ExampleCitation({
             ? // Not yet unresolved — only not yet resolved. Styling it as
               // unresolved would flash a warning at every reader on every load.
               "text-content-subtle hover:underline"
-            : "text-amber-700 hover:underline dark:text-amber-400"
+            : "text-warning hover:underline "
       }
     >
       {state.status === "resolved" ? (

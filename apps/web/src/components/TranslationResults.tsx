@@ -9,7 +9,7 @@ import type {
   TranslationSense,
   TranslationTarget,
 } from "@leksis/types";
-import { fetchTranslations } from "../lib/api";
+import { fetchTranslations, RateLimitedError } from "../lib/api";
 import { fetchEntryRecord } from "../lib/atproto-record";
 import { definitionsDepth, placeLabel } from "../lib/definition-tree";
 import { endonym } from "./LanguageSelector";
@@ -119,7 +119,7 @@ function TargetSense({
           covered every sense of the word, which is exactly the assumption a
           reader would want to check. */}
       {sense.coarse && (
-        <span className="text-xs text-amber-700 dark:text-amber-400">
+        <span className="text-xs text-warning">
           {t("translate.allSenses")}
         </span>
       )}
@@ -178,7 +178,7 @@ function TargetSense({
                   word on an all-senses claim is exactly as unchecked as one
                   that arrives on it. */}
               {hop.coarse && (
-                <span className="ml-1 text-amber-700 dark:text-amber-400">
+                <span className="ml-1 text-warning">
                   {t("translate.allSenses")}
                 </span>
               )}
@@ -329,13 +329,14 @@ export function TranslationResults({
   const { t } = useTranslation();
   const [response, setResponse] = useState<TranslateResponse | null>(null);
   const [records, setRecords] = useState<SourceRecords>(new Map());
-  const [failed, setFailed] = useState(false);
+  /** Why there are no results — see the note in SearchResults. */
+  const [failure, setFailure] = useState<"unreachable" | "rateLimited" | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setResponse(null);
     setRecords(new Map());
-    setFailed(false);
+    setFailure(null);
     fetchTranslations(query, from.tag, to.tag)
       .then((body) => {
         if (cancelled) return;
@@ -353,7 +354,9 @@ export function TranslationResults({
       })
       .catch((err) => {
         console.error("translation search failed:", err);
-        if (!cancelled) setFailed(true);
+        if (!cancelled) {
+          setFailure(err instanceof RateLimitedError ? "rateLimited" : "unreachable");
+        }
       });
     return () => {
       cancelled = true;
@@ -380,8 +383,10 @@ export function TranslationResults({
         {t("translate.scope", { from: endonym(from), to: endonym(to) })}
       </p>
 
-      {failed ? (
-        <p className="mt-4 text-sm text-red-600">{t("translate.loadFailed")}</p>
+      {failure !== null ? (
+        <p className="mt-4 text-sm text-danger">
+          {t(failure === "rateLimited" ? "search.rateLimited" : "translate.loadFailed")}
+        </p>
       ) : response === null ? (
         <p className="mt-4 text-sm text-content-muted">{t("translate.loading")}</p>
       ) : response.entries.length === 0 ? (

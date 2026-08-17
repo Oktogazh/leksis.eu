@@ -22,6 +22,7 @@ export * from "./tag.js";
 export * from "./upos.js";
 export * from "./grammar.js";
 export * from "./paradigm.js";
+export * from "./rate-limit.js";
 
 /** Response shape for the API health-check endpoint. */
 export interface HealthResponse {

@@ -305,7 +305,7 @@ export function EntryCognates({
         <>
           <p className="mt-1 text-xs text-content-subtle">{t("cognates.hint")}</p>
           {network.truncated && (
-            <p className="mt-2 rounded border border-amber-500/60 px-2 py-1 text-xs text-amber-700 dark:text-amber-400">
+            <p className="mt-2 rounded border border-warning/60 px-2 py-1 text-xs text-warning">
               {t("cognates.truncated")}
             </p>
           )}

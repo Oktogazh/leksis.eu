@@ -5,13 +5,18 @@
   },
   "common": {
     "loading": "Loading…",
-    "poweredBy": "Built on the AT Protocol — your words, your server."
+    "poweredBy": "Built on the AT Protocol — your words, your server.",
+    "skipToContent": "Skip to content"
   },
   "languages": {
     "en": "English"
   },
   "themes": {
-    "light": "Light"
+    "label": "Appearance",
+    "light": "Light",
+    "dark": "Dark",
+    "toLight": "Switch to the light theme",
+    "toDark": "Switch to the dark theme"
   },
   "auth": {
     "handleLabel": "Your handle",
@@ -19,6 +24,17 @@
     "logIn": "Log in",
     "connecting": "Redirecting to your PDS…",
     "disconnect": "Log out",
+    "promptTitle": "Connect your account",
+    "promptDefault": "Reading Leksis needs no account. Contributing to it does — so that what you write lives on your own server, under your name.",
+    "promptReassurance": "Any AT Protocol account works, including a Bluesky one. Your password is only ever typed on your own server.",
+    "promptDismiss": "Keep reading without an account",
+    "reasonEntry": "Adding a word publishes a record to your own server, so the entry stays yours. Connect an account to write it.",
+    "reasonEditEntry": "Proposing a change publishes your version alongside the existing one — nothing is overwritten and nothing is lost. Connect an account to propose it.",
+    "reasonLanguage": "Registering a language publishes a record under your name. Connect an account to add it.",
+    "reasonSource": "Describing a work publishes a record every citation of it will render from. Connect an account to describe it.",
+    "reasonGrammar": "A language's grammar is declared in a record you author. Connect an account to edit it.",
+    "reasonTranslate": "A translation is an assertion you publish and stand behind. Connect an account to add or correct one.",
+    "reasonCognate": "A cognate is an assertion you publish and stand behind. Connect an account to add one.",
     "errors": {
       "handleRequired": "Enter your handle to continue.",
       "signInFailed": "We couldn't reach that handle's server. Check the handle and try again."
@@ -170,6 +186,7 @@
     "formMatch_one": "matching form:",
     "formGenerated": "Generated from this language’s inflection rules.",
     "loadFailed": "The search could not reach the dictionary. Try again shortly.",
+    "rateLimited": "Searches from your network are arriving faster than the dictionary answers them. Wait a few seconds and search again.",
     "syncingEntry": "Publishing your entry — it appears here once the network has indexed it (usually under a minute).",
     "targetLabel": "Translate into",
     "targetNone": "No translation",
@@ -663,6 +680,10 @@
     "formGenerated": "Generated from this language’s inflection rules, not written in the entry.",
     "formUnknown": "Not entered yet",
     "formNone": "No such form in this language",
+    "legendDerived": "built from this language’s rules",
+    "legendAsserted": "written in the entry",
+    "legendEmpty": "not entered yet",
+    "legendExcluded": "no such form",
     "definitionsLabel": "Definitions",
     "notesLabel": "Notes",
     "referencesLabel": "References",

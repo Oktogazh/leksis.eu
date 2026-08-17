@@ -228,9 +228,12 @@ an edit.
 - [x] The rule editor, the Paradigms tab and the empty-cell door (slice 5).
 - [x] The fixture set (slice 6): `scripts/fixtures/` and
       `scripts/publish-fixtures.ts`, three quarantined languages, 25 entries,
-      three sources and five paradigms, published live and gated on the AppView's
-      own validators. Coverage-matrix rows P-01…P-12, L-42, L-43 and U-60…U-71
-      added to `leksis-testset`.
+      three sources and five paradigms, gated on the AppView's own validators.
+      Published, verified, and **torn down again** — the set is ephemeral, so a
+      run publishes it, asserts against the manifest it writes, and removes it
+      (`--teardown`) rather than leaving a fake dictionary in the production
+      index. Coverage-matrix rows P-01…P-12, L-42, L-43 and U-60…U-71 added to
+      `leksis-testset`.
 - [x] Browser pass against the published fixtures: generation, override, empty
       vs excluded, nested and generation-only blocks, syncretism spanning, named
       vs decomposed block captions, the flat-list fallback, the missing-forms

@@ -183,9 +183,20 @@ const FIXTURE_TAGS = new Set(languageFixtures.map((f) => f.record.tag));
  * never does, and it is the reason to think before publishing a language
  * version rather than to rely on this.
  */
-async function sweepScratch(agent: AtpAgent, did: string, dryRun: boolean): Promise<void> {
-  const declared = declaredKeys();
-  const fixtureHandles = new Set(entryFixtures.map((f) => f.handle));
+async function sweepScratch(
+  agent: AtpAgent,
+  did: string,
+  dryRun: boolean,
+  /**
+   * `"scratch"` spares what the fixture set declares — the sweep a test run
+   * ends with. `"all"` spares nothing inside the quarantine: the **teardown**,
+   * which is how a session that published the set removes it again, so the
+   * production index does not carry fake entries between runs.
+   */
+  mode: "scratch" | "all" = "scratch",
+): Promise<void> {
+  const declared = mode === "all" ? new Map<string, Set<string>>() : declaredKeys();
+  const fixtureHandles = mode === "all" ? new Set<string>() : new Set(entryFixtures.map((f) => f.handle));
   const doomed: { collection: string; rkey: string; why: string }[] = [];
   // Counted so that "nothing left behind" is distinguishable from "scanned
   // nothing" — a sweep that silently walked an empty repo would report success.
@@ -217,15 +228,21 @@ async function sweepScratch(agent: AtpAgent, did: string, dryRun: boolean): Prom
           const claims = orthography.some(
             (item) => typeof item === "string" && fixtureHandles.has(item),
           );
-          if (!claims) doomed.push({ collection, rkey, why: "a fixture-language entry with no declared handle" });
+          if (!claims) {
+            doomed.push({
+              collection,
+              rkey,
+              why: mode === "all" ? "a fixture-language entry" : "a fixture-language entry with no declared handle",
+            });
+          }
           continue;
         }
 
         if (collection === LEKSIS_SOURCE_COLLECTION) {
           // The 16-digit range is the source quarantine; a real number is not ours.
           if (typeof value.oclc !== "string" || value.oclc.length !== 16) continue;
-          if (!declared.get(collection)!.has(rkey)) {
-            doomed.push({ collection, rkey, why: "an undeclared source in the fixture number range" });
+          if (!(declared.get(collection)?.has(rkey) ?? false)) {
+            doomed.push({ collection, rkey, why: "a source in the fixture number range" });
           }
           continue;
         }
@@ -233,8 +250,8 @@ async function sweepScratch(agent: AtpAgent, did: string, dryRun: boolean): Prom
         // Languages and paradigms: keyed on the tag / the selector hash.
         const tag = collection === LEKSIS_LANGUAGE_COLLECTION ? rkey : value.languageID;
         if (typeof tag !== "string" || !FIXTURE_TAGS.has(tag)) continue;
-        if (!declared.get(collection)!.has(rkey)) {
-          doomed.push({ collection, rkey, why: "undeclared, inside the quarantine" });
+        if (!(declared.get(collection)?.has(rkey) ?? false)) {
+          doomed.push({ collection, rkey, why: "inside the quarantine" });
         }
       }
       cursor = page.data.cursor;
@@ -619,13 +636,45 @@ async function main(): Promise<void> {
     await rebuildManifest();
     return;
   }
-  if (process.argv.includes("--sweep") || process.argv.includes("--sweep-dry")) {
+  const teardown = process.argv.includes("--teardown") || process.argv.includes("--teardown-dry");
+  const sweep = process.argv.includes("--sweep") || process.argv.includes("--sweep-dry");
+  if (teardown || sweep) {
     const { service, identifier, password } = credentials();
     const agent = new AtpAgent({ service });
     await agent.login({ identifier, password });
     const did = agent.session?.did;
     if (did === undefined) throw new Error("logged in but no DID on the session");
-    await sweepScratch(agent, did, process.argv.includes("--sweep-dry"));
+    const dry = process.argv.includes("--sweep-dry") || process.argv.includes("--teardown-dry");
+    await sweepScratch(agent, did, dry, teardown ? "all" : "scratch");
+    if (teardown && !dry) {
+      // A manifest naming records that no longer exist is worse than none: it
+      // sends the next session to a 404 and it reports a regression that does
+      // not exist. So the teardown blanks it rather than leaving it standing.
+      writeFileSync(
+        MANIFEST,
+        `${JSON.stringify(
+          {
+            tornDownAt: new Date().toISOString(),
+            botDID: did,
+            site: SITE,
+            note: "The fixture set is NOT published. It is ephemeral: publish it (npx tsx scripts/publish-fixtures.ts), test against the manifest that run writes, then tear it down again. entryKeys are minted per run and never repeat, so nothing here can be predicted in advance.",
+            languages: [],
+            sources: [],
+            entries: [],
+            paradigms: [],
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      );
+      console.log(`manifest blanked: ${MANIFEST}`);
+      console.log(
+        "\nNOTE: the three fixture LANGUAGES stay listed. `languages` versions archive rather than\n" +
+          "un-publish (language references are structural to the app), so qtl/qtm/qto remain in the\n" +
+          "picker and on GET /languages permanently. Their entries, sources and paradigms are gone.",
+      );
+    }
     return;
   }
   await publishAll();

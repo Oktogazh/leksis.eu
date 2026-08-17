@@ -374,7 +374,7 @@ export function CognateEditorDialog({
             />
           </div>
 
-          {error !== null && <p className="text-sm text-red-600">{error}</p>}
+          {error !== null && <p className="text-sm text-danger">{error}</p>}
 
           <div className="flex flex-col gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
             {canDelete ? (
@@ -382,7 +382,7 @@ export function CognateEditorDialog({
                 type="button"
                 onClick={onDelete}
                 title={t("cognateEditor.deleteHint")}
-                className="self-start text-sm text-red-600 hover:text-red-700"
+                className="self-start text-sm text-danger hover:text-danger"
               >
                 {deleting ? t("cognateEditor.deleting") : t("cognateEditor.delete")}
               </button>

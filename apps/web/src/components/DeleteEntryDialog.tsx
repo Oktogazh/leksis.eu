@@ -240,7 +240,7 @@ export function DeleteEntryDialog({ view, record, onClose, onDeleted }: DeleteEn
           <p className="mt-4 text-xs text-content-subtle">{t("deleteEntry.legacyNote")}</p>
 
           <div className="mt-4 flex flex-col gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
-            {error !== null && <p className="text-sm text-red-600">{error}</p>}
+            {error !== null && <p className="text-sm text-danger">{error}</p>}
             <div className="ml-auto flex shrink-0 items-center justify-end gap-3">
               <button
                 type="button"
@@ -253,7 +253,7 @@ export function DeleteEntryDialog({ view, record, onClose, onDeleted }: DeleteEn
                 type="button"
                 onClick={onSubmit}
                 disabled={!canSubmit}
-                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                className="rounded-lg bg-danger px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
               >
                 {submitting ? t("deleteEntry.submitting") : t("deleteEntry.submit")}
               </button>

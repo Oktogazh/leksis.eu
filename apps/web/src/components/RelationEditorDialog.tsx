@@ -157,7 +157,7 @@ function SensePicker({
           re-affirm looks like it is ready to publish when it would assert
           nothing at all. */}
       {leafCount === 0 && (
-        <p className="mt-1 rounded border border-amber-500/60 px-2 py-1 text-xs text-amber-700 dark:text-amber-400">
+        <p className="mt-1 rounded border border-warning/60 px-2 py-1 text-xs text-warning">
           {t("relationEditor.staleSideWarning")}
         </p>
       )}
@@ -651,7 +651,7 @@ export function RelationEditorDialog({
             />
           </div>
 
-          {error !== null && <p className="text-sm text-red-600">{error}</p>}
+          {error !== null && <p className="text-sm text-danger">{error}</p>}
 
           <div className="flex flex-col gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
             {canDelete ? (
@@ -659,7 +659,7 @@ export function RelationEditorDialog({
                 type="button"
                 onClick={onDelete}
                 title={t("relationEditor.deleteHint")}
-                className="self-start text-sm text-red-600 hover:text-red-700"
+                className="self-start text-sm text-danger hover:text-danger"
               >
                 {deleting ? t("relationEditor.deleting") : t("relationEditor.delete")}
               </button>

@@ -15,6 +15,7 @@ import i18n, { applyInterfaceLanguage } from "../i18n";
 import { getOAuthClient } from "./client";
 import { clearDevSession, initDevSession } from "./dev-session";
 import { fetchProfile, putProfile } from "../lib/profile";
+import { readLocalPrefs, writeLocalPrefs } from "../lib/local-prefs";
 
 // The live OAuth session type, derived from the client API so we don't depend
 // on the name being re-exported.
@@ -120,14 +121,31 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             setProfile(null);
           }
         } else {
-          setStatus("disconnected");
+          disconnect();
         }
       } catch (err) {
         console.error("OAuth init failed", err);
-        setStatus("disconnected");
+        disconnect();
       }
     })();
   }, []);
+
+  /**
+   * Enter the disconnected state, serving the visitor's *local* preferences as
+   * their profile.
+   *
+   * This is what let public search ship without touching a single consumer:
+   * `profile` means "this reader's settings", and where they are stored is the
+   * session's business, not the search bar's (ADR-0017). The interface language
+   * is applied here too, so a returning visitor's chosen locale survives having
+   * no account at all.
+   */
+  function disconnect() {
+    const local = readLocalPrefs();
+    if (local !== null) applyInterfaceLanguage(local.interfaceLanguage);
+    setProfile(local);
+    setStatus("disconnected");
+  }
 
   const signIn = useCallback(async (input: string) => {
     const client = await getOAuthClient();
@@ -137,10 +155,21 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await client.signIn(cleaned, { ui_locales: i18n.language });
   }, []);
 
+  /**
+   * Save the reader's settings wherever this reader keeps them: their PDS when
+   * they have one, this browser when they do not (ADR-0017).
+   *
+   * The branch lives here rather than in the profile dialog on purpose — a
+   * caller asking to save a preference should not have to know whether the
+   * reader has an account, and there is exactly one place that knows.
+   */
   const saveProfile = useCallback(
     async (record: LeksisProfileRecord) => {
-      if (!agent || !did) throw new Error("cannot save profile while disconnected");
-      await putProfile(agent, did, record);
+      if (agent && did) {
+        await putProfile(agent, did, record);
+      } else {
+        writeLocalPrefs(record);
+      }
       applyInterfaceLanguage(record.interfaceLanguage);
       setProfile(record);
     },
@@ -158,8 +187,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setAgent(null);
     setDid(null);
     setHandle(null);
-    setProfile(undefined);
-    setStatus("disconnected");
+    // Falls back to this browser's stored preferences, which are deliberately
+    // NOT cleared: the person logging out is the same reader, reading the same
+    // languages — see the note on `clearLocalPrefs`.
+    disconnect();
   }, []);
 
   const value = useMemo<SessionContextValue>(
