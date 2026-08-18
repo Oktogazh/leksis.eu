@@ -700,18 +700,27 @@ compatibility claim honest.
 - **Whether a PDS validates a third-party NSID against our lexicon before accepting a write.** The
   data-validation guide does not say. Nothing depends on it — the AppView validates regardless — but do not
   assume either way.
-- **Language-specific UD pages** (`/{lang}/feat/Gender.html`). Checked during the layer-1 build and
-  *not* used: they are a **subset** of the universal inventory (Czech documents three of UD's four genders)
-  and 404 for low-resource languages (`br/feat/index.html` does not exist), so they narrow rather than
-  extend. Note this also removes the "implied small piece of work" in §4.1: those pages are keyed by
-  **language code, not treebank code**, so no BCP 47 → `br_keb` mapping is needed for them.
+- ~~**Language-specific UD pages** (`/{lang}/feat/Gender.html`).~~ **Closed 2026-08-18, and the rule
+  generalised.** They were checked during the layer-1 build and *not* used: they are a **subset** of the
+  universal inventory (Czech documents three of UD's four genders) and 404 for low-resource languages
+  (neither `br/feat/index.html` nor `cy/feat/index.html` exists), so they narrow rather than extend. What
+  went unnoticed then is that the source actually chosen — the **universal features index** — narrows too,
+  by a whole tier: it is a glossary of the universal features alone, so `Subcat`, `AdpType`, `NumForm`,
+  `VerbType`, `Style` and every layered name were withheld from every contributor. The candidate list is
+  now read off **`u/feat/all.html`**, the whole documented inventory (66 names against the index's 27, a
+  strict superset), and the rule is stated rather than left implicit: **a candidate list widens the
+  contributor's options, never narrows them** — no scoping by language, tier or treebank, because a
+  language's grammar is what its speakers declare, not what a corpus attested. The only filter is the
+  editor's: an already-bound row is not offered twice. Note this also removes the "implied small piece of
+  work" in §4.1: those pages are keyed by **language code, not treebank code**, so no BCP 47 → `br_keb`
+  mapping is needed for them.
 
 ---
 
 ## Sources
 
 **UD:** [POS](https://universaldependencies.org/u/pos/) ·
-[features index](https://universaldependencies.org/u/feat/index.html) ·
+[all features](https://universaldependencies.org/u/feat/all.html) (the candidate source) · [features index](https://universaldependencies.org/u/feat/index.html) (universal tier only) ·
 [CoNLL-U format](https://universaldependencies.org/format.html) ·
 [Gender](https://universaldependencies.org/u/feat/Gender.html) ·
 [Case](https://universaldependencies.org/u/feat/Case.html) ·

@@ -4,6 +4,56 @@ All notable changes to Leksis. Each section is one loop — a unit of work, not 
 unit of time: the content loops grow the dictionary outward, the grammar loops
 (the morphology arc) grow the entry deeper, and the two interleave.
 
+## The feature picker offers everything UD documents
+
+Content loop 6 (polish), and a correction of the same shape as the one below it:
+a narrowing that was never decided on, only inherited.
+
+The binding editor's **Features** level read its candidates off UD's *universal
+features index* — a glossary of the universal tier alone. That made the list a
+**filter on the inventory rather than a way into it**. `Subcat`, which is how UD
+expresses transitivity and which has its own global page, was simply never
+offered: a Welsh editor binding *transitive / intransitive* had to already know
+the name and type it by hand. The same held for `AdpType`, `NumForm`, `VerbType`,
+`NameType`, `Style`, and for every layered name (`Number[psor]`, `Gender[subj]`).
+
+### The candidate list widens the search, it never narrows it
+
+- **Read off `u/feat/all.html`** — the whole documented inventory on one page,
+  each feature under the same `<h2><code>Subcat</code>: subcategorization</h2>`
+  header a single feature page uses, so one pattern serves both it and
+  `parseFeatureGloss`. **66 names instead of 27, and a strict superset**: nothing
+  the index offered is lost.
+- **Nothing is scoped to a language, a tier or a treebank.** A language's grammar
+  is what its speakers declare, not what a corpus happened to attest — and a
+  low-resource language is exactly the case where a corpus-derived list is
+  emptiest. This closes the design doc's open item on language-specific UD pages
+  (`/{lang}/feat/`, a subset that 404s for low-resource languages) by taking its
+  reasoning one step further: the universal index narrowed too.
+- **The only filter left is the editor's own**, and it is not about the
+  inventory: a row this language has already bound is not offered twice.
+- **Each candidate carries UD's gloss** as its tooltip (`Subcat` →
+  "subcategorization"), which is what keeps a list that size navigable. It fills
+  in `UdFeature`, an interface the package declared and never returned.
+
+### Unchanged
+
+- The lexicon, the record, the AppView, the labels model. This is a suggestion
+  list; a tag was never validated against it.
+- **It is still an enhancement, never a dependency.** The fetch fails soft to
+  "no suggestions" on any error, the manual field stays the real path, and it is
+  still made only when the Features level is opened — once per editor session,
+  74 KB gzipped.
+
+### Verified
+
+- `npm run verify:features -w @leksis/ud` — 15/15. Pure parse assertions against
+  page fixtures (a non-universal feature, a layered name, a repeated heading, an
+  unreadable page), then the live documentation.
+- In the browser, on **Welsh**: `Subcat` is among 65 offered candidates, binds
+  with a homolingual label, and its values come up — `Intr`, `Indir`, `Tran`,
+  `Ditr`.
+
 ## A language is deletable, like everything else
 
 Content loop 6 (polish), and a correction rather than a feature — it retires the
@@ -56,7 +106,18 @@ language list and the language page gave two different answers. See **ADR-0018**
   Breton goes.
 - Verified against the local ArangoDB by a harness driving the real ingest
   functions over two authors and two versions — 18/18 across the
-  archived-version, promotion and last-version branches.
+  archived-version, promotion and last-version branches — and then **in
+  production**, against the testset fixtures: all three fixture languages left
+  the language list, where they had been sitting since the set was first
+  published, each already pointing at a deleted record. `qtl`'s labels went from
+  57 rows to 21 — every declared-and-unused row removed, every declared-and-used
+  one keeping its count and losing its name — while its 20 entries and 5
+  paradigms carried on rendering, with verbatim unbound chips where its own
+  labels had been.
+- **The delete button had never actually been pressed.** ADR-0012 shipped whole-
+  repo and per-record deletion in October and deliberately never fired it at a
+  real record; this pass fired it, which is how the copy above got checked in
+  place rather than in a JSON file.
 
 ## Content loop — the dictionary opens to everyone
 

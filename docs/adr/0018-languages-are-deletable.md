@@ -74,6 +74,19 @@ number, by strangers**, so leaving the number without a current version degrades
 other people's entries. A language is not resolved that way by anything, so the
 simpler rule — a removed doc cannot be promoted — buys the same safety for free.
 
+**And one property of the rkey scheme makes that safety much stronger than it
+first looks.** A language record's rkey is its **tag**, so every version one
+author ever published for a language shares a single `recordURI`. The delete
+filter is on `recordURI`, so deleting the record removes **all** of that author's
+versions in one pass — there is one record, and it is gone. Promotion therefore
+can only ever land on **another author's** version, exactly as a source's
+promotion does. The `recordDeleted` flag a source needs has no counterpart here
+because the case it guards against — resurrecting a version whose own record was
+already withdrawn — cannot be reached by same-author history at all. This was
+worth discovering rather than assuming: it was the one way the rule could have
+produced a language pointing at a record that no longer existed, and it does
+not.
+
 ### 2. `translations` is cached on the version doc, and that is what makes this possible
 
 Promotion needs the promoted version's content, and the consumer is a sequential
@@ -141,12 +154,26 @@ are not.
    a harness driving the real ingest functions over two authors and two versions:
    18/18, covering the archived-version, promotion and last-version branches, the
    labels hand-off, and the entries left behind.
-2. **Drive it in the browser as the feature's testset slice** — publish a
-   throwaway fixture language, delete its record from the contributor page, and
-   watch it leave the language list. The destructive click has never been fired
-   against a real record (ADR-0012's action item, still open); this is the
-   cheapest occasion to fire it.
-3. **Decide whether "entries in a language nothing names" deserves its own
+2. ~~Drive it in production as the feature's testset slice~~ — **done 2026-08-18**.
+   The fixture set was republished, then `qtm` and `qtl` were deleted from the
+   contributor page and the rest by `--teardown`. All three left `GET /languages`,
+   which had been carrying them since the set was first published, each already
+   pointing at a record that no longer existed — the broken state this ADR
+   describes, found in production rather than argued for. `qtl`'s labels went from
+   57 rows (43 declared) to 21, all unbound, every survivor carrying usage: the 36
+   declared-and-unused rows were removed and the 7 declared-and-used kept their
+   counts and lost their names. Its 20 entries and 5 paradigms were untouched and
+   still rendered, with verbatim unbound chips where the language's own labels had
+   been. **This also discharges ADR-0012's open "exercise the delete path" action
+   item** — the destructive click had never been fired before, and both its
+   batching and its per-collection confirmation now have.
+3. **The promotion branch is verified locally only.** It needs two authors, and
+   the fixture set has one PDS account (the testset skill's §4 rule 1 deviation:
+   no fixture bot exists yet). Creating `testbot.leksis.eu` would let a production
+   run cover it; until then the 18/18 harness is the only proof, and it is a
+   genuine one.
+4. **Decide whether "entries in a language nothing names" deserves its own
    surface state.** Today `/language/<tag>` says not-found while its words remain
-   searchable, which is accurate but says less than it knows. Trigger: it happens
-   to a language somebody cares about.
+   searchable — the entry page renders them with unbound chips and a bare tag
+   where the language name goes, which is accurate but says less than it knows.
+   Trigger: it happens to a language somebody cares about.

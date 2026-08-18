@@ -6,6 +6,15 @@
 // Nothing here is transcribed into code, so no inventory in this repo can go
 // stale, and the AppView never rejects a tag for being absent from a snapshot.
 //
+// **The candidate list widens the search, it never narrows it.** A contributor
+// binding their language's grammar is served by seeing everything UD has a term
+// for and choosing; they are not served by a shorter list that decided for them.
+// So nothing here is scoped to a language, a tier or a treebank — a language's
+// grammar is what its speakers declare, not what a corpus happened to attest,
+// and a low-resource language is exactly the case where a corpus-derived list
+// would be emptiest. Filtering happens once, in the editor, and on one ground
+// only: a row this language has already bound is not offered twice.
+//
 // **This is an enhancement, never a dependency.** Every function fails soft:
 // on a network error, a 404 or an unparseable page it returns nothing, and the
 // editor's manual entry path is untouched. UD's uptime must never become a
@@ -16,10 +25,17 @@
 // in a component: if UD restructures, one file changes, and it can move behind
 // an AppView cache without touching a caller.
 //
-// Verified at source 2026-08-02: universaldependencies.org sends
+// Verified at source 2026-08-18: universaldependencies.org sends
 // `access-control-allow-origin: *`, so a browser may fetch it directly.
 
 export const UD_BASE_URL = "https://universaldependencies.org";
+
+/**
+ * The page carrying every feature UD documents globally, rendered one after
+ * another. 74 KB over the wire (gzipped), fetched once per editor session and
+ * only when the features level is opened.
+ */
+export const UD_FEATURES_URL = `${UD_BASE_URL}/u/feat/all.html`;
 
 /** A feature name UD documents, with its English gloss. */
 export interface UdFeature {
@@ -35,20 +51,34 @@ export interface UdValue {
 }
 
 /**
- * Feature names linked from the universal features index.
+ * Every feature the UD documentation defines, sorted by name.
  *
- * The index is an alphabetical glossary of *value* glosses ("abessive" →
- * `Case.html`), so the feature names come from deduplicating the link targets
- * rather than from the link text. Only the universal tier appears here;
- * non-universal features with a global page (`Subcat`) and language-specific
- * ones do not, which is precisely why manual entry stays available.
+ * Read off `u/feat/all.html`, which concatenates the whole documented
+ * inventory, each feature opening on the same header a single feature page
+ * does — `<h2><code>Subcat</code>: subcategorization</h2>` — so one pattern
+ * serves both this and `parseFeatureGloss`.
+ *
+ * Deliberately **not** `u/feat/index.html`, which was the source until
+ * 2026-08-18. That index is a glossary of the *universal tier* alone, and
+ * reading candidates off it silently withheld two whole classes of feature
+ * from every contributor: the non-universal ones that nonetheless have a
+ * global page (`Subcat`, `AdpType`, `NumForm`, `VerbType`, `NameType`,
+ * `Style`…) and every layered name (`Number[psor]`, `Gender[subj]`). 66 names
+ * instead of 27, and a strict superset — nothing the index offered is lost.
+ *
+ * Names repeat on the page, since a base feature's page cross-references its
+ * own layered variants; the first header for a name wins, so a repeat is
+ * dropped rather than shown twice.
  */
-export function parseFeatureIndex(html: string): string[] {
-  const names = new Set<string>();
-  for (const match of html.matchAll(/href="([A-Z][A-Za-z0-9]*)\.html"/g)) {
-    names.add(match[1]!);
+export function parseFeatureList(html: string): UdFeature[] {
+  const features = new Map<string, UdFeature>();
+  for (const match of html.matchAll(/<h2><code>([A-Za-z0-9[\]]+)<\/code>:\s*([^<]*)<\/h2>/g)) {
+    const feature = match[1]!;
+    if (features.has(feature)) continue;
+    const gloss = match[2]!.trim();
+    features.set(feature, gloss === "" ? { feature } : { feature, gloss });
   }
-  return [...names].sort((a, b) => a.localeCompare(b, "en"));
+  return [...features.values()].sort((a, b) => a.feature.localeCompare(b.feature, "en"));
 }
 
 /**
@@ -98,19 +128,19 @@ async function fetchText(url: string, signal?: AbortSignal): Promise<string | nu
 }
 
 /**
- * The universal feature names UD currently documents, or an empty list when
- * the fetch fails. An empty result is not an error state to report — it means
- * "no suggestions", and the editor simply shows its manual field.
+ * Every feature UD documents, with its gloss, or an empty list when the fetch
+ * fails. An empty result is not an error state to report — it means "no
+ * suggestions", and the editor simply shows its manual field.
  */
-export async function fetchFeatureNames(signal?: AbortSignal): Promise<string[]> {
-  const html = await fetchText(`${UD_BASE_URL}/u/feat/index.html`, signal);
-  return html === null ? [] : parseFeatureIndex(html);
+export async function fetchFeatures(signal?: AbortSignal): Promise<UdFeature[]> {
+  const html = await fetchText(UD_FEATURES_URL, signal);
+  return html === null ? [] : parseFeatureList(html);
 }
 
 /**
  * The values one feature documents, plus the feature's own gloss. Works for
- * any feature with a page, including the non-universal ones absent from the
- * index — so a contributor who typed `Subcat` manually still gets its values.
+ * any feature with a page, including a layered name (which documents on its
+ * base page) and one a contributor typed by hand that no listing carries.
  */
 export async function fetchFeatureValues(
   feature: string,

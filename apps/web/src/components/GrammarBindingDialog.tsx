@@ -36,7 +36,7 @@ import {
 import { AddressPicker } from "./AddressPicker";
 import { ParadigmEditorDialog } from "./ParadigmEditorDialog";
 import { BlockCaption, ParadigmList, ParadigmTable } from "./ParadigmView";
-import { fetchFeatureNames, fetchFeatureValues, type UdValue } from "@leksis/ud";
+import { fetchFeatureValues, fetchFeatures, type UdFeature, type UdValue } from "@leksis/ud";
 import { useSession } from "../auth/SessionProvider";
 import { fetchCurrentLanguageRecord, fetchLanguageParadigms } from "../lib/api";
 import { fetchLanguageRecord } from "../lib/atproto-record";
@@ -230,7 +230,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
    * — never an error to report, because the manual field below stays the real
    * path. UD's uptime is not allowed to gate authoring.
    */
-  const [udFeatures, setUdFeatures] = useState<string[]>([]);
+  const [udFeatures, setUdFeatures] = useState<UdFeature[]>([]);
   const [udValues, setUdValues] = useState<UdValue[]>([]);
   const [udLoading, setUdLoading] = useState(false);
 
@@ -261,7 +261,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
     if (path.at !== "features" || udFeatures.length > 0) return;
     const controller = new AbortController();
     setUdLoading(true);
-    fetchFeatureNames(controller.signal)
+    fetchFeatures(controller.signal)
       .then(setUdFeatures)
       .finally(() => setUdLoading(false));
     return () => controller.abort();
@@ -889,8 +889,8 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
           title={t("grammar.udFeatures")}
           loading={udLoading}
           items={udFeatures
-            .filter((name) => findFeature(draft, name) === undefined)
-            .map((name) => ({ key: name, label: name }))}
+            .filter((row) => findFeature(draft, row.feature) === undefined)
+            .map((row) => ({ key: row.feature, label: row.feature, hint: row.gloss }))}
           onPick={(feature) => openForm({ at: "featureForm", feature })}
         />
         <AddRow

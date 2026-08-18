@@ -177,11 +177,18 @@ const FIXTURE_TAGS = new Set(languageFixtures.map((f) => f.record.tag));
  * 16-digit fixture range) are touched — anything in a real language is left
  * exactly where it is.
  *
- * **It cannot un-publish a language version.** Deleting the record removes it
- * from the PDS, but `languages` versions archive forever in the index by
- * design. That asymmetry is why `qto` carries the deliberate breakage and `qtl`
- * never does, and it is the reason to think before publishing a language
- * version rather than to rely on this.
+ * **A fixture language now leaves the index too (ADR-0018).** Deleting the
+ * record removes it from the PDS, and since 2026-08-18 the AppView mirrors
+ * that: the version docs go, and with the last one the language leaves
+ * `GET /languages` and the picker. This paragraph used to say the opposite —
+ * that `languages` versions archive forever, so a fixture language was a
+ * permanent addition to the production language list.
+ *
+ * What has NOT changed is why `qto` carries the deliberate breakage and `qtl`
+ * never does: a language's *version history* still accumulates while the record
+ * exists, so a broken grammar published on `qtl` sits in its history for as long
+ * as `qtl` does. Deletion is not an undo for a bad version — it is an undo for
+ * the whole language.
  */
 async function sweepScratch(
   agent: AtpAgent,
@@ -670,9 +677,10 @@ async function main(): Promise<void> {
       );
       console.log(`manifest blanked: ${MANIFEST}`);
       console.log(
-        "\nNOTE: the three fixture LANGUAGES stay listed. `languages` versions archive rather than\n" +
-          "un-publish (language references are structural to the app), so qtl/qtm/qto remain in the\n" +
-          "picker and on GET /languages permanently. Their entries, sources and paradigms are gone.",
+        "\nNOTE: the fixture LANGUAGES go too, since ADR-0018 — deleting the last version of a\n" +
+          "language record removes it from GET /languages and the picker, where it used to archive\n" +
+          "and stay listed forever. Give the firehose a few seconds, then confirm with\n" +
+          "`curl -s https://leksis.eu/api/languages` that no qt* tag is left.",
       );
     }
     return;

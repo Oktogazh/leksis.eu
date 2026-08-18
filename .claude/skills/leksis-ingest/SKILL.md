@@ -452,8 +452,9 @@ Run these **in order** before minting anything:
 2. **Which altitude?** Lexeme / sense / form. Transitivity is sense-level in
    most dictionaries.
 3. **Does UD already express it?** Check across all three tiers of UD
-   documentation (universal index; non-universal features with a global page;
-   language-specific features in treebank docs) and via UD's own routing
+   documentation — the first two are one fetch, `u/feat/all.html` (universal
+   *and* non-universal-with-a-global-page, `Subcat` included, layered names
+   included); the third is the treebank docs — and via UD's own routing
    rules — articles → `DET` + `PronType=Art`; participles → `VerbForm=`;
    "spans the axis" → multivalue. **Check at source.** The assumption that UD
    lacks something is often wrong: `Animacy=Hum` already covers "noun denoting

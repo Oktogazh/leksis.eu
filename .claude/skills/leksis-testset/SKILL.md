@@ -96,10 +96,18 @@ fixture set lives entirely inside it. Three languages, each with a job:
 Why three and not one: `qtm` proves the fallbacks (verbatim tag rendering, the
 flat `otherForms` list, the flat picker) which are load-bearing promises of the
 design and which a fully-declared language can never exercise. `qto` exists so
-that a *deliberately broken* grammar never has to live on `qtl` —
-**a language version cannot be un-published**: `eu.leksis.language` versions
-archive forever, so a broken grammar published on `qtl` stays in its history
-and its dashboard permanently. Think before you publish a language version.
+that a *deliberately broken* grammar never has to live on `qtl` — a bad version
+still **cannot be un-published**, because a language's version *history*
+accumulates for as long as the language exists, so a broken grammar published on
+`qtl` sits in its history and its dashboard for the life of `qtl`. Think before
+you publish a language version.
+
+**What changed (ADR-0018, 2026-08-18): the language itself is no longer
+permanent.** Deleting the last version of its record removes it from the index
+entirely — `GET /languages`, the picker, `localLanguages`, its declared labels.
+So a fourth fixture language is no longer a permanent addition to the production
+language list, and the teardown genuinely empties the quarantine. Deletion is an
+undo for the *language*, never for one bad *version* of it.
 
 **`qto`'s job changed with ADR-0015 and its shape changed with it.** An
 incoherent grammar is no longer indexed-and-flagged, so there is no repair
@@ -506,17 +514,22 @@ agent's guesswork:
      /entries?q=lxt-` returns `{"entries":[]}` and
      `GET /languages/qtl/paradigms` returns none. Deletions travel the firehose
      like anything else and take a few seconds.
-   - **The languages do not go.** `eu.leksis.language` versions **archive rather
-     than un-publish** — language references are structural to the app — so
-     `qtl`/`qtm`/`qto` stay on `GET /languages` and in the picker **permanently**,
-     whatever you delete. That is the real cost of publishing a fixture language
-     and the reason to think hard before adding a fourth. Everything else (entries,
-     sources, paradigms) genuinely leaves the index.
+   - **The languages go too, since ADR-0018** (2026-08-18). This bullet used to
+     read "the languages do not go" — `eu.leksis.language` versions archived
+     rather than un-publishing, so `qtl`/`qtm`/`qto` stayed on `GET /languages`
+     and in the picker permanently, whatever you deleted. They no longer do:
+     deleting the last version of a language record removes it from the index,
+     and a teardown now empties the quarantine completely. **Confirm it**, the
+     same way as the rest — `GET /languages` must carry no `qt*` tag. Verified
+     end to end on 2026-08-18; before that run, three fixture languages had been
+     sitting in the production language list since the set was first published,
+     each pointing at a record that no longer existed.
    - **The boundary is the quarantine, not the account.** Only `qtl`/`qtm`/`qto`
      records and 16-digit sources are touched, because this account is also the
      one a human logs the dev build in as — their `br` work is never in scope.
-   - **It cannot un-publish a language version.** Deleting the record clears the
-     PDS, but `languages` versions archive forever in the index. Think before
+   - **It still cannot un-publish one *version* of a language.** Deleting the
+     record takes the whole language with it; there is no operation that removes
+     a single bad version and leaves the language standing. Think before
      publishing a language version; do not rely on this to undo one.
    - `--sweep-dry` lists what would go, and both print the number of records
      scanned, so "nothing left behind" cannot be confused with "scanned nothing".

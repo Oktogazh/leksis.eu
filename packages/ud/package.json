@@ -11,6 +11,7 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "verify:features": "tsx src/scripts/verify-features.ts"
   }
 }

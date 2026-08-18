@@ -1,5 +1,5 @@
 {
-  "tornDownAt": "2026-08-17T18:08:04.898Z",
+  "tornDownAt": "2026-08-18T08:41:29.687Z",
   "botDID": "did:plc:sskf5uopmzotqtmq4banq6e5",
   "site": "https://leksis.eu",
   "note": "The fixture set is NOT published. It is ephemeral: publish it (npx tsx scripts/publish-fixtures.ts), test against the manifest that run writes, then tear it down again. entryKeys are minted per run and never repeat, so nothing here can be predicted in advance.",
