@@ -301,8 +301,12 @@ of the import.
   grammar?: {
     // ---- layer 1: the atoms this language uses ----
     pos?:      { value, scheme?, label, references? }[],
-    features?: { feature, scheme?, label, references? }[],
-    values?:   { feature, value, scheme?, label, references? }[],
+    features?: { feature, scheme?, label, references?, note? }[],
+    values?:   { feature, value, scheme?, label, references?, note? }[],
+    //         `note` = free PROSE in this language about what the item covers — the sentence a
+    //         dictionary's front matter puts under the heading. Feature and value rows only.
+    //         Optional, and when present must be NON-EMPTY: `note: ""` fails isValidGrammar and
+    //         the whole record is dropped. Content — indexed nowhere.
 
     // ---- layer 2: what those atoms combine into ----
     inherent?: { category: Tag, feature: string }[],

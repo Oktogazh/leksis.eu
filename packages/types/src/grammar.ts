@@ -130,6 +130,15 @@ export interface GrammarFeature {
   label: GrammarLabel;
   references?: GrammarReference[];
   /**
+   * Free homolingual prose about the nature of this item — see
+   * {@link GrammarValue.note}, which it shares its reasoning with. On a feature
+   * it covers all three of the shapes a feature can be: a grammatical feature,
+   * an inflection class and a lexicographic label set are one row type
+   * distinguished by `scheme` and `lexicographic`, so they need one field, not
+   * three.
+   */
+  note?: string;
+  /**
    * True when this is a **lexicographic** label set rather than a grammatical
    * feature: register, domain, editorial usage — `arch.`, `neol.`, "by
    * extension". Its values are ordinary tags an entry or a sense may carry, and
@@ -165,6 +174,29 @@ export interface GrammarValue {
   scheme?: string;
   label: GrammarLabel;
   references?: GrammarReference[];
+  /**
+   * Free prose about the nature of this item, written in the language being
+   * described, for a reader of it — what it covers here, where its border with
+   * a sibling falls, when a contributor should reach for it.
+   *
+   * **It is the third thing a row can say, and the other two cannot say it.**
+   * `label` *names* the item and is a display string, sized for a chip;
+   * `references` say where the claim comes from and are a citation, not an
+   * explanation. Neither carries "this language's Number=Sgv is the singulative,
+   * a form derived from a collective — not the plural", which is the sentence a
+   * printed dictionary puts under the heading in its front matter and the one a
+   * contributor needs before choosing between two values.
+   *
+   * A single string rather than a list: an entry's `notes[]` is a list of
+   * independent remarks about a word, where this is one remark about one row.
+   * Paragraphs are newlines.
+   *
+   * **Content, indexed nowhere** — the precedent is `layout` (ADR-0009) and an
+   * example sentence (ADR-0014). It rides to a reader on the language record
+   * the dashboard already resolves from its author's PDS, so it cost no
+   * collection, no endpoint and no ingest logic beyond being accepted.
+   */
+  note?: string;
 }
 
 /**
@@ -2242,6 +2274,19 @@ function isValidScheme(value: unknown): boolean {
 }
 
 /**
+ * A row's free-prose note: absent, or a non-empty string. Blank is refused on
+ * the same terms a blank `references[].text` is — the editor trims and omits an
+ * empty note, so a record carrying `note: ""` is one the interface could not
+ * have published (ADR-0015). The declared length caps are deliberately not
+ * checked here, with every other string cap in the lexicons: an over-long note
+ * renders, wraps and edits fine, so refusing the whole grammar over one would
+ * lose a contribution to make a point about counting.
+ */
+function isValidNote(value: unknown): boolean {
+  return value === undefined || (typeof value === "string" && value.trim() !== "");
+}
+
+/**
  * A layout coordinate is shape-checked as the feature item it stands for, so a
  * multivalue coordinate ("Gender=Fem,Masc" for an épicène cell) is accepted on
  * exactly the terms layer 1 accepts one. A `scheme` is not read: coordinates are
@@ -2316,7 +2361,7 @@ export function isValidGrammar(value: unknown): value is Grammar {
       if (!isPlainObject(row)) return false;
       if (typeof row.feature !== "string" || !FEATURE_NAME_PATTERN.test(row.feature)) return false;
       if (!isValidLabel(row.label) || !isValidScheme(row.scheme)) return false;
-      if (!isValidReferences(row.references)) return false;
+      if (!isValidReferences(row.references) || !isValidNote(row.note)) return false;
       if (row.lexicographic !== undefined && typeof row.lexicographic !== "boolean") return false;
     }
   }
@@ -2347,7 +2392,7 @@ export function isValidGrammar(value: unknown): value is Grammar {
         return false;
       }
       if (!isValidLabel(row.label) || !isValidScheme(row.scheme)) return false;
-      if (!isValidReferences(row.references)) return false;
+      if (!isValidReferences(row.references) || !isValidNote(row.note)) return false;
     }
   }
 

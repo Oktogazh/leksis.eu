@@ -180,8 +180,10 @@ sorted alphabetically, `upos` in its own slot, scheme included — or matching s
 eu.leksis.language.grammar = {
   // ---- layer 1, AS SHIPPED (ADR-0006) ----
   pos:      [ { value, scheme?, label: {long, short?}, references?: [{text, url}] } ],
-  features: [ { feature, scheme?, label: {long, short?}, references?: [{text, url}] } ],
-  values:   [ { feature, value, scheme?, label: {long, short?}, references?: [{text, url}] } ],
+  features: [ { feature, scheme?, label: {long, short?}, references?: [{text, url}], note? } ],
+  values:   [ { feature, value, scheme?, label: {long, short?}, references?: [{text, url}], note? } ],
+  //          `note` = free homolingual PROSE about what the item covers (§4.6). Feature and value
+  //          only — a part of speech explains itself and a combination's meaning is its parts'.
 
   // ---- layer 2, AS SHIPPED (ADR-0007) ----
   inherent: [ { category: Tag, feature: string } ],                                // L2 — one row per (category, feature)
@@ -624,6 +626,28 @@ unrotted. For a **minted** item and for a **plain abbreviation** the source is n
 carries `references: [{text, url}]`, reusing the entry lexicon's existing shape. On a minted item this is not
 decoration: UD's licence is conditional on being "properly documented", so the reference is what makes the
 compatibility claim honest.
+
+### 4.6 The third thing a row can say
+
+A `label` **names** an item and is a display string sized for a chip; `references` say **where the claim
+comes from** and are a citation. Neither can hold *"this language's `Number=Sgv` is the singulative, a form
+derived from a collective — not the plural"* — which is the sentence a printed dictionary puts under the
+heading in its front matter, and the one a contributor needs before choosing between two values. So a
+feature row and a value row each carry an optional **`note`**: free prose, homolingual like the label,
+written for a reader of the language being described.
+
+Three things fix its shape. It is a **single string**, not a list: an entry's `notes[]` is a list of
+independent remarks about a word, where this is one remark about one row, so paragraphs are newlines. It
+sits on **feature and value only** — those two shapes are what grammatical features, inflection classes and
+lexicographic label sets are all made of, while `NOUN` explains itself, a named combination's meaning is its
+parts', and an abbreviation's expansion *is* its explanation. And it is **outside the minting gate**, where
+`references` is not: UD's extension licence is what makes a source obligatory on a minted row, but explaining
+what a feature covers here is wanted whether or not the name was borrowed — a borrowed name is often exactly
+the case that needs it, since a language's `Case` is never quite UD's.
+
+It is **content**, so it is indexed nowhere — the precedent is `layout` (ADR-0009) and an example sentence
+(ADR-0014). It reaches a reader on the language record the dashboard already resolves from its author's PDS
+for the shelf's shape, so it cost no collection, no endpoint and no ingest logic beyond `isValidNote`.
 
 ---
 

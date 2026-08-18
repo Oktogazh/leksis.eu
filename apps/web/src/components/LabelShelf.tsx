@@ -168,6 +168,7 @@ export function LabelShelf({ grammar, labels, languageTag, onEdit }: LabelShelfP
                 )}
                 <Conflicts row={group.row} />
               </div>
+              <Note row={group.row} />
               {group.values.length === 0 ? (
                 <p className="mt-2 text-sm text-content-muted">
                   {t("languagePage.labels.noValues")}
@@ -200,6 +201,22 @@ export function LabelShelf({ grammar, labels, languageTag, onEdit }: LabelShelfP
         {t("languagePage.labels.edit")}
       </button>
     </div>
+  );
+}
+
+/**
+ * A row's free-prose note, where its declaration carries one.
+ *
+ * Printed in full rather than truncated or hidden behind a hover: this is the
+ * front matter, the one place in the dictionary whose job is to explain what
+ * the labels mean, and a sentence a reader has to reach for explains nothing.
+ * `whitespace-pre-line` keeps the contributor's own paragraph breaks, since the
+ * field is a single string and newlines are how it holds more than one.
+ */
+function Note({ row }: { row: ShelfRow }): ReactNode {
+  if (row.note === undefined) return null;
+  return (
+    <p className="mt-0.5 max-w-prose whitespace-pre-line text-xs text-content-subtle">{row.note}</p>
   );
 }
 
@@ -288,6 +305,7 @@ function LabelTable({ rows, sort, onSort, withTag }: LabelTableProps) {
               <td className="py-1.5 pr-3 align-baseline text-content">
                 {row.long}
                 <Conflicts row={row} />
+                <Note row={row} />
               </td>
               {withTag && (
                 <td className="py-1.5 pr-3 align-baseline font-mono text-xs text-content-subtle">

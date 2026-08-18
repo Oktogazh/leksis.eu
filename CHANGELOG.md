@@ -4,6 +4,63 @@ All notable changes to Leksis. Each section is one loop — a unit of work, not 
 unit of time: the content loops grow the dictionary outward, the grammar loops
 (the morphology arc) grow the entry deeper, and the two interleave.
 
+## A declared primitive can explain itself
+
+Content loop 6 (polish). A language's front matter could **name** its grammatical
+vocabulary and **cite** it, and could say nothing about what any of it *means*.
+
+A `label` is a display string sized for a chip; `references` are a citation.
+Neither holds *"this language's `Number=Sgv` is the singulative — one item drawn
+from a collective, not the plural"*, which is the sentence a printed dictionary
+puts under the heading in its front matter, and the one a contributor needs
+before choosing between two values.
+
+### The `note`
+
+- **On a feature row and on a value row** — which is all three of the categories
+  a contributor sees, since *grammatical features*, *inflection classes* and
+  *lexicographic label sets* are one row shape told apart by `scheme` and
+  `lexicographic`. One field, not three.
+- **Free prose, homolingual** like the label beside it: written in the language
+  being described, for a reader of it.
+- **A single string, not a list.** An entry's `notes[]` is a list of independent
+  remarks about a word; this is one remark about one row, so paragraphs are
+  newlines — and the shelf prints them as written.
+- **Outside the minting gate**, where `references` sits inside it. UD's extension
+  licence is what makes a source obligatory on a minted row; explaining what a
+  feature covers *here* is wanted whether or not the name was borrowed — and a
+  borrowed name is often exactly the case that needs it, since a language's
+  `Case` is never quite UD's.
+- **Not on a part of speech, a named combination or a plain abbreviation.**
+  `NOUN` explains itself, a combination's meaning is its parts', and an
+  abbreviation's expansion *is* its explanation.
+
+### It costs the AppView nothing
+
+- **Content, indexed nowhere** — the precedent is `layout` (ADR-0009) and an
+  example sentence (ADR-0014). No collection, no endpoint, no ingest logic beyond
+  `isValidNote`, and nothing added to the labels model.
+- **The reading surface was already paid for.** The dashboard's label shelf reads
+  its *shape* from the language record resolved off its author's PDS — which
+  features exist, which are minted, which are lexicographic — because none of
+  that survives into the read model. The note rides in on that same record.
+- **Blank is refused, not stored.** The editor trims and omits an empty note, so
+  `note: ""` is a record the interface could not have published and
+  `isValidGrammar` drops it (ADR-0015), on the same terms as a blank
+  `references[].text`. The declared length caps stay unenforced, with every other
+  string cap in the lexicons.
+
+### Verified
+
+- 16/16 on a harness driving `isValidGrammar` and `labelShelf`: notes reach the
+  shelf row for a feature, an inflection class and a lexicographic set and for
+  the values of all three; newlines survive; a row without one carries none; a
+  part of speech has no such field; blank, whitespace and non-string notes are
+  refused.
+- In the browser, on **Welsh**: the field is present on the feature form and the
+  value form and absent from the part-of-speech form, and a two-paragraph note
+  survives bind → reopen with its break intact.
+
 ## The feature picker offers everything UD documents
 
 Content loop 6 (polish), and a correction of the same shape as the one below it:

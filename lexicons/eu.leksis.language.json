@@ -281,6 +281,12 @@
           "description": "Provenance. Absent means documented by Universal Dependencies; otherwise the BCP 47 tag of the minting language."
         },
         "label": { "type": "ref", "ref": "#label" },
+        "note": {
+          "type": "string",
+          "maxLength": 10240,
+          "maxGraphemes": 1024,
+          "description": "Free prose about the nature of this item, written in this language for a reader of it — what it covers here, how it differs from a neighbouring one, when a contributor should reach for it. Distinct from the fields beside it: `label` NAMES the item, `references` say where the claim comes from, and this explains the thing itself — what the front matter of a printed dictionary says in a sentence under each heading. Offered here and on a value because those two shapes carry the meaning a label cannot fit, and they are what grammatical features, inflection classes and lexicographic label sets are all made of. Record-only content: the AppView indexes nothing of it, exactly as it indexes nothing of a layout."
+        },
         "lexicographic": {
           "type": "boolean",
           "description": "True when this is a lexicographic label set rather than a grammatical feature: register, domain, editorial usage (\"archaic\", \"neologism\", \"by extension\"). Its values are ordinary tags an entry or a sense may carry, rendering and binding exactly like any other; the flag withholds only participation in the grammatical layers, so such a feature is never inherent to a category, never an axis of one, never a layout dimension and never part of a named combination — none of those describe it. A record saying otherwise is incoherent rather than invalid: the AppView reports it and indexes it anyway."
@@ -312,6 +318,12 @@
           "description": "Provenance of the feature/value pair as a whole. Absent means documented by Universal Dependencies; otherwise the BCP 47 tag of the minting language — which is how a value minted on a UD feature is expressed (\"Number=Sgv\", scheme \"br\")."
         },
         "label": { "type": "ref", "ref": "#label" },
+        "note": {
+          "type": "string",
+          "maxLength": 10240,
+          "maxGraphemes": 1024,
+          "description": "Free prose about the nature of this value, written in this language for a reader of it — what it covers, where its border with a sibling value falls, which words or forms take it. Distinct from `label`, which names it, and from `references`, which say where the claim comes from. Record-only content, indexed nowhere."
+        },
         "references": {
           "type": "array",
           "maxLength": 16,

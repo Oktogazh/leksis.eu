@@ -69,6 +69,13 @@ export interface ShelfRow {
   count: number;
   /** Same-language rows a reader could not tell apart. */
   conflictsWith: LabelRef[];
+  /**
+   * The row's free-prose note, when its declaration carries one. Read off the
+   * **record**, like the rest of the shelf's shape and for the same reason: a
+   * note is content and the read model has never held any. Only a feature and a
+   * value can have one, so the flat tabs never set it.
+   */
+  note?: string;
 }
 
 /** A feature and the values it declares — the shelf's second layer. */
@@ -139,6 +146,7 @@ function shelfRow(
   key: string,
   label: GrammarLabel,
   tag?: Tag,
+  note?: string,
 ): ShelfRow {
   const found = usage.get(key);
   return {
@@ -148,6 +156,7 @@ function shelfRow(
     ...(tag !== undefined ? { tag } : {}),
     count: found?.count ?? 0,
     conflictsWith: found?.conflictsWith ?? [],
+    ...(note !== undefined ? { note } : {}),
   };
 }
 
@@ -159,11 +168,11 @@ function groupsOf(
   return features.map((feature) => {
     const values = valueRows(grammar, feature.feature).map((row) => {
       const tag = valueTag(row);
-      return shelfRow(usage, tagKey(tag), row.label, tag);
+      return shelfRow(usage, tagKey(tag), row.label, tag, row.note);
     });
     return {
       feature: feature.feature,
-      row: shelfRow(usage, featureLabelKey(feature.label), feature.label),
+      row: shelfRow(usage, featureLabelKey(feature.label), feature.label, undefined, feature.note),
       minted: feature.scheme !== undefined,
       values,
       uses: values.reduce((total, value) => total + value.count, 0),

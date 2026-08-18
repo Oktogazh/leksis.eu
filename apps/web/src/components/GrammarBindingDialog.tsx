@@ -177,9 +177,22 @@ interface LabelDraft {
   short: string;
   minted: boolean;
   references: GrammarReference[];
+  /**
+   * Free prose about what the item covers — carried on every form because the
+   * draft is one shape, and written back only by the two branches whose rows
+   * have the field. A part of speech, a named combination and a plain
+   * abbreviation take no note: `NOUN` explains itself, a combination's meaning
+   * is its parts', and an abbreviation's expansion IS its explanation.
+   */
+  note: string;
 }
 
-const emptyLabel: LabelDraft = { long: "", short: "", minted: false, references: [] };
+const emptyLabel: LabelDraft = { long: "", short: "", minted: false, references: [], note: "" };
+
+/** The two levels whose rows carry a note — features and their values. */
+function notable(path: Path): boolean {
+  return path.at === "featureForm" || path.at === "valueForm";
+}
 
 const inputClass =
   "w-full rounded-lg border bg-surface px-3 py-2 text-sm text-content outline-none placeholder:text-content-subtle focus:ring-2";
@@ -318,6 +331,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
         short: next.short,
         minted: false,
         references: row?.references ?? [],
+        note: "",
       });
       setPath(next);
       return;
@@ -338,6 +352,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
             short: existing.label.short ?? "",
             minted: "scheme" in existing && existing.scheme !== undefined,
             references: existing.references ?? [],
+            note: ("note" in existing ? existing.note : undefined) ?? "",
           },
     );
     setPath(next);
@@ -352,6 +367,11 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
       ...(scheme !== undefined ? { scheme } : {}),
       ...(references.length > 0 ? { references } : {}),
     };
+    // A blank note is an absent one, never a stored empty string: the lexicon
+    // says absent-or-something, and `isValidNote` refuses the empty case at
+    // ingest, so writing one here would publish a record the AppView drops.
+    const note = form.note.trim();
+    const noted = note === "" ? {} : { note };
 
     if (path.at === "abbreviationForm") {
       // The short form is the identity and came in with the path, so it is not
@@ -378,12 +398,15 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
           feature: path.feature,
           label,
           ...extra,
+          ...noted,
           ...(lexicographic ? { lexicographic: true } : {}),
         }),
       );
       setPath({ at: "feature", feature: path.feature });
     } else if (path.at === "valueForm") {
-      setDraft(upsertValue(draft, { feature: path.feature, value: path.value, label, ...extra }));
+      setDraft(
+        upsertValue(draft, { feature: path.feature, value: path.value, label, ...extra, ...noted }),
+      );
       setPath({ at: "values", feature: path.feature });
     } else if (path.at === "l2combinationForm") {
       // A combination is never minted: provenance rides on its items, which
@@ -2274,6 +2297,30 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
           placeholder={t("grammar.shortPlaceholder")}
           className={`${inputClass} mt-1`}
         />
+
+        {/* The note sits with the two label fields and OUTSIDE the mint box,
+            because it answers a different question from both. A reference is
+            gated on minting since UD's extension licence is what makes a source
+            obligatory there; explaining what a feature covers in this language
+            is wanted whether or not the name was minted — and the borrowed name
+            is often exactly the case that needs it, since a language's Case is
+            never quite UD's. */}
+        {notable(path) && (
+          <>
+            <label className="mt-3 block text-sm font-medium text-content" htmlFor="grammar-note">
+              {t("grammar.noteLabel")}
+            </label>
+            <p className="mt-0.5 text-xs text-content-subtle">{t("grammar.noteHint")}</p>
+            <textarea
+              id="grammar-note"
+              value={form.note}
+              onChange={(e) => setForm({ ...form, note: e.target.value })}
+              placeholder={t("grammar.notePlaceholder")}
+              rows={3}
+              className={`${inputClass} mt-1 resize-y`}
+            />
+          </>
+        )}
 
         {/* Minting is a deliberate act, not a fallback: it is offered only
             where a contributor can see that nothing in UD fits, and it asks
