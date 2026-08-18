@@ -46,5 +46,5 @@ publish outside the fixture rules in `leksis-testset`.
 ## Hard stops — never without explicit user approval
 
 - `git commit`, `git push`, and above all **`git tag` / `git push --tags`**: pushing a tag triggers the GitHub Actions deploy to the production VPS. Treat tagging as a production deploy, because it is one.
-- Deleting or migrating data in ArangoDB (superseded versions are archived with `current: false`; the only sanctioned removal is an `entries` version whose record was deleted from its author's PDS — see the reviewer agent's guardrails).
+- Deleting or migrating data in ArangoDB (superseded versions are archived with `current: false`; the only sanctioned removal is a version whose record was deleted from its author's PDS — an `entries` one since loop 2, a `languages` one since ADR-0018 — see the reviewer agent's guardrails).
 - Editing production/infra files: `docker-compose.yml`, `Caddyfile`, `.github/workflows`.

@@ -10,22 +10,45 @@ import {
 } from "@leksis/types";
 import { db } from "../db";
 import { grammarLabelRows, syncLanguageLabels, type DeclaredLabel } from "./labels";
-import { syncLocalLanguages } from "./local-languages";
+import { removeLocalLanguage, syncLocalLanguages } from "./local-languages";
 
 // Decomposition of eu.leksis.language records into two collections:
-// - `languages` (versioned): only the record reference (URI/cid/author), the
-//   tag, and the current flag — no name content. Wikipedia model: records
-//   prove authorship, not ownership — the latest record for a tag becomes
-//   current regardless of author, the previous version is archived
-//   (current: false), nothing is ever deleted.
+// - `languages` (versioned): the record reference (URI/cid/author), the tag,
+//   the current flag, and the caches a version transition needs — no name
+//   content is *served* from here. Wikipedia model: records prove authorship,
+//   not ownership — the latest record for a tag becomes current regardless of
+//   author, and the version it displaces is archived (current: false).
 // - `localLanguages` (read model): per-locale language name lists, re-synced
 //   from the record's translations whenever a version becomes current.
+//
+// Archival covers being SUPERSEDED, never being withdrawn. A deleted record has
+// its versions removed, and when none survives it takes the language with it
+// (ADR-0018) — the rule `entries` has followed since loop 2, applied here.
 
 interface LanguageDoc {
   tag: string;
   recordURI: string;
   cid: string;
   authorDID: string;
+  /**
+   * This version's names, cached for the reason `labels` is cached and for one
+   * narrower one.
+   *
+   * The reason it shares: `localLanguages` has to follow a version transition
+   * without re-fetching a record from its PDS, because the consumer is a
+   * sequential writer, not an HTTP client.
+   *
+   * The reason it does not: exactly one transition reads it — promoting a
+   * surviving version after the current one's record was deleted. Every other
+   * way a version becomes current arrives *with* the record that made it so, so
+   * this field is dead weight until somebody withdraws a record, and it is what
+   * makes a language deletable without blanking its names (ADR-0018).
+   *
+   * Note the name is not new: docs written before the languages/localLanguages
+   * split carry a field of this name and shape, which is what `db:init`
+   * backfills the read model from.
+   */
+  translations: LanguageTranslation[];
   /**
    * The labels this version's grammar declares. The grammar itself is not
    * indexed (the record is its source of truth), but its *labels* are, for the
@@ -166,6 +189,7 @@ export async function ingestLanguage(
     recordURI,
     cid,
     authorDID,
+    translations: parsed.translations,
     labels,
     inherent: parsed.grammar?.inherent ?? [],
     createdAt: parsed.createdAt,
@@ -197,17 +221,85 @@ export async function ingestLanguage(
 }
 
 /**
- * Handle a delete op: archive the current version if it is the one whose
- * record was deleted. Older versions stay archived; no reinstatement
- * (deferred until the voting mechanism).
+ * Handle a delete op: **the index mirrors the network** (ADR-0018). Every
+ * version doc of the deleted record is removed; if one of them was current, the
+ * most recently indexed survivor is promoted back to current and the derived
+ * models follow it; and when nothing survives, the language itself goes — off
+ * the language list, and its declared labels out of the labels model.
+ *
+ * This is `ingestEntryDelete`'s rule, applied to languages. It replaces
+ * archive-and-stop (ADR-0003 §6), which was not a lighter version of the same
+ * thing but a different outcome: a withdrawn language stayed listed for every
+ * reader forever, and its labels stayed declared by a record that no longer
+ * existed — nothing here used to touch `localLanguages` or `labels` at all.
+ *
+ * What is *not* affected: archival on **overwrite**. A superseded version is
+ * still kept, because the record that superseded it still exists and the voting
+ * mechanism will want both. Only what the network no longer holds is removed.
+ *
+ * Nor do the language's entries, paradigms or sources move. Their own records
+ * still exist, and they reference a language by **tag**, not by record — so they
+ * stay indexed and searchable, and a tag with no current language record
+ * degrades exactly as one that never had a record does (the dashboard returns
+ * null, the page shows not-found).
  */
 export async function ingestLanguageDelete(recordURI: string): Promise<void> {
-  const cursor = await db.query<string>(aql`
+  const removedCursor = await db.query<{ tag: string; current: boolean }>(aql`
     FOR l IN languages
-      FILTER l.recordURI == ${recordURI} AND l.current == true
-      UPDATE l WITH { current: false } IN languages
-      RETURN l.tag
+      FILTER l.recordURI == ${recordURI}
+      REMOVE l IN languages
+      RETURN { tag: OLD.tag, current: OLD.current }
   `);
-  const tag = await cursor.next();
-  if (tag) console.log(`firehose: archived language "${tag}" (record deleted)`);
+  const removed = await removedCursor.all();
+  if (removed.length === 0) return;
+
+  const tag = removed[0]!.tag;
+  if (!removed.some((r) => r.current)) {
+    console.log(`firehose: removed archived version of language "${tag}" (record deleted)`);
+    return;
+  }
+
+  const promotedCursor = await db.query<{
+    recordURI: string;
+    translations: LanguageTranslation[] | null;
+    labels: DeclaredLabel[] | null;
+  }>(aql`
+    FOR l IN languages
+      FILTER l.tag == ${tag}
+      SORT l.indexedAt DESC
+      LIMIT 1
+      UPDATE l WITH { current: true } IN languages
+      RETURN {
+        recordURI: NEW.recordURI,
+        translations: NEW.translations,
+        labels: NEW.labels
+      }
+  `);
+  const promoted = await promotedCursor.next();
+
+  if (promoted) {
+    // The promoted version's own content, or nothing — never the deleted
+    // version's. `syncLocalLanguages` replaces this language's row in *every*
+    // locale doc, so a name the withdrawn record carried and this one does not
+    // is dropped rather than inherited.
+    //
+    // A version indexed before `translations` was cached contributes none and
+    // falls back to the bare tag, exactly as `ingestEntryDelete` treats a
+    // version predating its own caches: the names come back when that version's
+    // author republishes. Pre-1.0 that is a bot rerunning its import.
+    await syncLocalLanguages(db, tag, promoted.translations ?? []);
+    await syncLanguageLabels(db, tag, promoted.labels ?? []);
+  } else {
+    await removeLocalLanguage(db, tag);
+    // Declared labels go with the language. The rows entries still *use* stay,
+    // stripped of their names — the language is gone but its words are not, and
+    // an unnamed tag in use is this model's ordinary worklist state, not damage.
+    await syncLanguageLabels(db, tag, []);
+  }
+
+  console.log(
+    promoted
+      ? `firehose: removed current version of language "${tag}" (record deleted); promoted ${promoted.recordURI}`
+      : `firehose: removed language "${tag}" entirely (last record deleted)`,
+  );
 }

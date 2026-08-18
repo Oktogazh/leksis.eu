@@ -25,11 +25,15 @@ These are project law (from ADRs and the evolution skill); flag any violation as
 
 - **The index mirrors the network; superseded versions archive.** Overwrites never
   hard-delete: the superseded version gets `current: false` (voting substrate).
-  `languages` versions archive forever (structural to the app). The one legitimate
-  removal (Loop 2 decision, 2026-07-15): an `entries` version whose **record was
-  deleted from its author's PDS** is removed from the index, promoting the most
-  recently indexed remaining version — the entry version history lives on the
-  network, not in the DB. Any other hard-delete path is a violation.
+  The one legitimate removal: a version whose **record was deleted from its
+  author's PDS** — an `entries` one since the Loop 2 decision (2026-07-15), a
+  `languages` one since **ADR-0018** (2026-08-18), which retired "languages
+  archive forever, structural to the app" as a rule that protected a reference
+  nothing actually holds. Both promote the most recently indexed remaining
+  version; when none remains the entry leaves search, or the language leaves
+  `localLanguages` and its declared labels leave `labels`. Version history lives
+  on the network, not in the DB. Any other hard-delete path is a violation, and
+  so is a language deletion that leaves a derived model behind.
 - **Universal for any language.** No hardcoded language codes, scripts, orthography or
   grammar assumptions in logic (i18n resource files are fine).
 - **The AppView indexes only what the interface could have published (ADR-0015).**

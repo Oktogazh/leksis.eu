@@ -395,10 +395,19 @@ async function main() {
   });
   console.log('ensured indexes on "cognateEdges"');
 
-  // Backfill the localLanguages read model from language docs indexed before
-  // the languages/localLanguages split, which still carry `translations`.
-  // Legacy fields are left in place (archive, never migrate destructively);
-  // syncLocalLanguages upserts, so re-running is safe.
+  // Rebuild the localLanguages read model from the language docs' cached
+  // `translations`. This block used to be a one-way backfill for docs indexed
+  // before the languages/localLanguages split — the only ones that carried the
+  // field — and it still covers those unchanged: ADR-0018 made `translations` a
+  // live cache on every version doc, so the same filter now matches the whole
+  // collection and the same loop became a genuine rebuild.
+  //
+  // It upserts rather than reconciles, which is the one way it differs from the
+  // `labels` rebuild below — that one truncates first and rebuilds wholesale. So
+  // a language added or renamed is picked up here, while a stale row is not
+  // swept and a language ADR-0018 removed is not put back. Truncating would need
+  // a pure wholesale builder (`buildLabelDocs`'s counterpart) that this model has
+  // never had; worth writing when a drifted read model is actually observed.
   const legacyCursor = await db.query<{ tag: string; translations: LanguageTranslation[] }>(aql`
     FOR l IN languages
       FILTER l.current == true AND l.translations != null

@@ -4,6 +4,60 @@ All notable changes to Leksis. Each section is one loop — a unit of work, not 
 unit of time: the content loops grow the dictionary outward, the grammar loops
 (the morphology arc) grow the entry deeper, and the two interleave.
 
+## A language is deletable, like everything else
+
+Content loop 6 (polish), and a correction rather than a feature — it retires the
+one exception to a rule the rest of the app has followed since loop 2.
+
+Deleting your record for a language used to archive it and stop there. The
+language stayed in the language list forever, wearing the names of a record that
+no longer existed; its grammar went on declaring labels nobody stood behind; and
+if another author's version was sitting underneath, nothing promoted it — so the
+language list and the language page gave two different answers. See **ADR-0018**.
+
+> The exception was written to protect "structural" language references. There
+> are none: an entry carries a language **tag**, a string, and never resolves
+> through a language document. Nothing dangles when a language record goes.
+
+### Deleting a language record now means it
+
+- **The index mirrors the network, here too.** Every version of the deleted
+  record is removed. If it was the current one, the most recently indexed
+  surviving version is **promoted** and the language reverts to *its* names and
+  *its* grammar — including a name only that older version carried.
+- **When nothing survives, the language goes**: out of the language list, out of
+  every locale's naming of it, and its declared labels out of the labels model.
+- **Its words stay.** Entries, paradigms, sources and relations in that language
+  are untouched — their own records still exist. They remain indexed and
+  searchable; what is gone is the language record naming them.
+- **A tag some entry still uses keeps its row**, stripped of its name. That is
+  the labels model's ordinary worklist state — a tag in use that nothing has
+  named — not damage.
+- **Archival on *overwrite* is untouched.** A version superseded by a newer
+  record is still kept, because the record that superseded it still exists.
+
+### The confirmation says the new thing
+
+- The delete dialog's language bullet — already the one rendered in the danger
+  colour, because its blast radius leaves the author's own work — now names the
+  outcome it was missing: someone else's version takes over, or **the language
+  itself leaves Leksis**, and its words are left in a language nothing names.
+
+### Under it
+
+- `translations` is cached on the language version doc, beside `labels` and
+  `inherent` and for the same reason: the firehose consumer is a sequential
+  writer, not an HTTP client, so a promotion cannot go and ask a PDS what that
+  version called the language. It is the change that makes promotion possible
+  rather than blanking a language to its bare tag.
+- `removeLocalLanguage` is `syncLocalLanguages`' counterpart. A language's **own**
+  locale doc is not special-cased: `localLanguages/br` holds every language's name
+  *in Breton*, contributed by other people's records, so only the row naming
+  Breton goes.
+- Verified against the local ArangoDB by a harness driving the real ingest
+  functions over two authors and two versions — 18/18 across the
+  archived-version, promotion and last-version branches.
+
 ## Content loop — the dictionary opens to everyone
 
 Until now a stranger who followed a link to an entry got a login form, and the

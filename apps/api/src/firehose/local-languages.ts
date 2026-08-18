@@ -9,8 +9,9 @@ import type { LanguageTranslation, LanguageView } from "@leksis/types";
 // syncLocalLanguages runs whenever a language version becomes current in
 // the `languages` collection (firehose ingest today, the voting mechanism
 // later), so the read model stays in step regardless of what decides
-// currency. Deleted languages stay listed (removal deferred to voting);
-// only the `languages` collection tracks archival.
+// currency. removeLocalLanguage is its counterpart: a language whose last
+// record was deleted leaves the model entirely (ADR-0018), where it used to
+// stay listed forever because a `languages` version was never removed.
 
 /**
  * Propagate a now-current language version into `localLanguages`.
@@ -82,5 +83,41 @@ export async function syncLocalLanguages(
           RETURN e
       )
       UPDATE d WITH { languages } IN localLanguages
+  `);
+}
+
+/**
+ * Withdraw a language from the read model: its row leaves every locale doc,
+ * and a doc left with no rows at all is removed.
+ *
+ * Its **own** locale doc is not special-cased. `localLanguages/br` holds the
+ * names of every language *in Breton*, and those rows come from other people's
+ * records — withdrawing the Breton language record says nothing about them, so
+ * only the row naming Breton itself goes. The doc survives with the rest.
+ *
+ * Deleting a doc that empties follows the rule the derived collections already
+ * use (`labels`, the two network models): the model is rebuildable, so an empty
+ * doc is noise rather than history, and `syncLocalLanguages` recreates it —
+ * seeded with every available language — the moment a record names that locale
+ * again.
+ *
+ * Two queries rather than one because AQL cannot UPDATE and REMOVE the same
+ * collection in a single operation. Same sequential-single-writer assumption as
+ * its counterpart, so nothing can read between them.
+ */
+export async function removeLocalLanguage(db: Database, tag: string): Promise<void> {
+  await db.query(aql`
+    FOR d IN localLanguages
+      LET languages = (
+        FOR e IN NOT_NULL(d.languages, [])
+          FILTER e.tag != ${tag}
+          RETURN e
+      )
+      UPDATE d WITH { languages } IN localLanguages
+  `);
+  await db.query(aql`
+    FOR d IN localLanguages
+      FILTER LENGTH(NOT_NULL(d.languages, [])) == 0
+      REMOVE d IN localLanguages
   `);
 }
