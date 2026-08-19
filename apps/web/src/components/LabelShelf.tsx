@@ -226,7 +226,7 @@ function Conflicts({ row }: { row: ShelfRow }): ReactNode {
   if (row.conflictsWith.length === 0) return null;
   return (
     <span className="text-xs text-danger">
-      <span aria-hidden="true">⚠ </span>
+      <span aria-hidden="true" className="ml-2">⚠ </span>
       {t("languagePage.abbreviationsConflict", {
         pairs: row.conflictsWith.map(formatLabelRef).join(", "),
       })}
@@ -363,7 +363,7 @@ function FlatLabels({ labels }: { labels: LabelView[] }) {
             )}
             <span className="text-xs text-content-subtle">×{row.count}</span>
             {conflicted && (
-              <span className="text-xs text-danger">
+              <span className="text-xs text-danger mr-2">
                 {t("languagePage.abbreviationsConflict", {
                   pairs: row.conflictsWith.map(formatLabelRef).join(", "),
                 })}
