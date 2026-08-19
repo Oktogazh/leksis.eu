@@ -361,7 +361,20 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
   function saveForm() {
     const label = toLabel(form);
     if (label.long === "") return;
-    const scheme = form.minted ? tag : undefined;
+    // A row already minted keeps the scheme it was minted under. That is this
+    // language's own tag in the ordinary case but need not be — a value
+    // borrowed from a neighbour carries the neighbour's — and recomputing it as
+    // `tag` would rewrite the atom's identity behind the contributor's back,
+    // orphaning every layer-2-to-4 row standing on it.
+    const bound =
+      path.at === "posForm"
+        ? findPos(draft, path.value)
+        : path.at === "featureForm"
+          ? findFeature(draft, path.feature)
+          : path.at === "valueForm"
+            ? findValue(draft, path.feature, path.value)
+            : undefined;
+    const scheme = form.minted ? (bound?.scheme ?? tag) : undefined;
     const references = cleanReferences(form.references);
     const extra = {
       ...(scheme !== undefined ? { scheme } : {}),
@@ -930,6 +943,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
     const bound = findFeature(draft, feature);
     const values = valueRows(draft, feature);
     const url = featureDocUrl({ feature, scheme: bound?.scheme });
+    const note = bound?.note?.trim() ?? "";
     return (
       <>
         <div className="mb-3">
@@ -943,6 +957,14 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
             >
               {t("grammar.udDocs")}
             </a>
+          )}
+          {/* The note is read here and edited one level down, with the label it
+              belongs beside: it is what this feature covers *in this language*,
+              which is the first thing a contributor arriving at the level needs
+              and the last thing the record shows anywhere else — it is content,
+              indexed nowhere, so this dialog is its only reader. */}
+          {note !== "" && (
+            <p className="mt-2 whitespace-pre-line text-xs text-content-muted">{note}</p>
           )}
         </div>
         <ul className="space-y-2">
@@ -983,7 +1005,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
               disabled={values.length > 0}
               title={values.length > 0 ? t("grammar.unbindBlocked") : undefined}
               onClick={() => {
-                setDraft(removeFeature(draft, feature, bound.scheme));
+                setDraft(removeFeature(draft, feature));
                 // Back to the section that lists it, worked out from the row
                 // rather than remembered: a lexicographic set says so, any
                 // other minted feature is an inflection class, and a UD one
@@ -1032,27 +1054,43 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
           <p className="text-sm text-content-muted">{t("grammar.valuesEmpty")}</p>
         ) : (
           <ul className="space-y-1.5">
-            {values.map((row) => (
-              <li key={row.value}>
-                <button
-                  type="button"
-                  onClick={() => openForm({ at: "valueForm", feature, value: row.value })}
-                  className={levelButton}
-                >
-                  <span className="flex min-w-0 items-baseline gap-2">
-                    <span className="font-mono text-sm text-content">
-                      {feature}={row.value}
+            {values.map((row) => {
+              const note = row.note?.trim() ?? "";
+              return (
+                <li key={row.value}>
+                  <button
+                    type="button"
+                    onClick={() => openForm({ at: "valueForm", feature, value: row.value })}
+                    className={stackedLevelButton}
+                  >
+                    <span className="flex w-full items-center justify-between gap-3">
+                      <span className="flex min-w-0 items-baseline gap-2">
+                        <span className="font-mono text-sm text-content">
+                          {feature}={row.value}
+                        </span>
+                        {/* Under a minted feature every value is minted, so the
+                            badge would be on every row and say nothing. */}
+                        {row.scheme !== undefined && !minted && (
+                          <span className="text-xs text-warning">{t("grammar.mintedBadge")}</span>
+                        )}
+                      </span>
+                      <span className="text-sm text-content">
+                        {row.label.short ?? row.label.long}
+                      </span>
                     </span>
-                    {/* Under a minted feature every value is minted, so the
-                        badge would be on every row and say nothing. */}
-                    {row.scheme !== undefined && !minted && (
-                      <span className="text-xs text-warning">{t("grammar.mintedBadge")}</span>
+                    {/* Clamped, not omitted: a set may run to hundreds of values
+                        — an imported abbreviation list awaiting decisions does —
+                        and the first two lines are what tells them apart while
+                        triaging. The whole note is one click away, in the form. */}
+                    {note !== "" && (
+                      <span className="line-clamp-2 whitespace-pre-line text-xs text-content-subtle">
+                        {note}
+                      </span>
                     )}
-                  </span>
-                  <span className="text-sm text-content">{row.label.short ?? row.label.long}</span>
-                </button>
-              </li>
-            ))}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
         {!minted && (
@@ -2392,12 +2430,11 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
             <button
               type="button"
               onClick={() => {
-                const scheme = "scheme" in existing ? existing.scheme : undefined;
                 if (path.at === "posForm") {
-                  setDraft(removePos(draft, path.value, scheme));
+                  setDraft(removePos(draft, path.value));
                   setPath({ at: "pos" });
                 } else if (path.at === "valueForm") {
-                  setDraft(removeValue(draft, path.feature, path.value, scheme));
+                  setDraft(removeValue(draft, path.feature, path.value));
                   setPath({ at: "values", feature: path.feature });
                 } else if (path.at === "l2combinationForm") {
                   // The label goes; the combination's parts stay bound, so it
@@ -2706,6 +2743,16 @@ function ManualSelector({
 
 const levelButton =
   "flex w-full items-center justify-between gap-3 rounded-lg border bg-surface px-3 py-2 text-left hover:border-primary";
+
+/**
+ * The same row with its content stacked, for a level whose rows carry a note
+ * under their label. A separate constant rather than `levelButton` plus an
+ * override, because `items-center` and `items-stretch` are utilities of equal
+ * specificity: which one won would depend on Tailwind's emission order, not on
+ * the order they are written in the class attribute.
+ */
+const stackedLevelButton =
+  "flex w-full flex-col items-stretch gap-1 rounded-lg border bg-surface px-3 py-2 text-left hover:border-primary";
 
 /** A cell's identifier, as UD writes it — what a contributor reads in the grid. */
 function addressText(cell: LayoutAddress): string {

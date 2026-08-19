@@ -1,9 +1,7 @@
 import {
   axisKey,
   excludesCell,
-  featureKey,
   inherentKey,
-  posTag,
   tagKey,
   valueTag,
   type Grammar,
@@ -132,24 +130,39 @@ export function valueRows(grammar: Grammar, feature: string): GrammarValue[] {
   return (grammar.values ?? []).filter((row) => row.feature === feature);
 }
 
-/** The bound part of speech matching this one, if any. */
-export function findPos(
-  grammar: Grammar,
-  value: string,
-  scheme?: string,
-): GrammarPos | undefined {
-  const key = tagKey(posTag({ value, scheme }));
-  return posRows(grammar).find((row) => tagKey(posTag(row)) === key);
+/**
+ * The bound part of speech matching this one, if any — matched by its UPOS
+ * name, for the reason `findFeature` is matched by its: the editor addresses a
+ * part of speech by name, so a language holding "NOUN" twice under two
+ * provenances would have one row it could reach and one it could not.
+ */
+export function findPos(grammar: Grammar, value: string): GrammarPos | undefined {
+  return posRows(grammar).find((row) => row.value === value);
 }
 
-/** The bound feature name matching this one, if any. */
-export function findFeature(
-  grammar: Grammar,
-  feature: string,
-  scheme?: string,
-): GrammarFeature | undefined {
-  const key = featureKey({ feature, scheme });
-  return featureRows(grammar).find((row) => featureKey(row) === key);
+/**
+ * The bound feature name matching this one, if any — matched **by name, never
+ * by scheme**, which is the rule the whole model already runs on: `inherent`
+ * and `axes` rows name a bare feature, and `boundFeatureNames` /
+ * `isLexicographic` in packages/types compare names. So a feature name is one
+ * row per language whatever provenance it carries, and every minted one — an
+ * inflection class, a lexicographic label set — is reachable through a path
+ * that carries only its name.
+ */
+export function findFeature(grammar: Grammar, feature: string): GrammarFeature | undefined {
+  return featureRows(grammar).find((row) => row.feature === feature);
+}
+
+/**
+ * The identity of a value row *within one language's grammar*: its feature and
+ * its own name, with provenance dropped and any multivalue item normalised into
+ * UD's order — the same `valueMatchKey` rule an axis is matched by. Scheme is a
+ * property of the row, not part of what tells two rows apart here: two rows for
+ * one (feature, value) would be two labels the interface could not tell apart,
+ * which is exactly what ADR-0010 keys the labels model to prevent.
+ */
+function valueName(row: { feature: string; value: string }): string {
+  return tagKey(valueTag({ feature: row.feature, value: row.value }));
 }
 
 /** The bound value matching this one, if any. */
@@ -157,10 +170,9 @@ export function findValue(
   grammar: Grammar,
   feature: string,
   value: string,
-  scheme?: string,
 ): GrammarValue | undefined {
-  const key = tagKey(valueTag({ feature, value, scheme }));
-  return (grammar.values ?? []).find((row) => tagKey(valueTag(row)) === key);
+  const key = valueName({ feature, value });
+  return (grammar.values ?? []).find((row) => valueName(row) === key);
 }
 
 /** Drop the arrays an edit emptied, so an untouched record stays untouched. */
@@ -178,24 +190,25 @@ function tidy(grammar: Grammar): Grammar {
 
 /** Bind a part of speech, replacing any existing binding of the same one. */
 export function upsertPos(grammar: Grammar, row: GrammarPos): Grammar {
-  const key = tagKey(posTag(row));
   const rows = posRows(grammar);
-  const at = rows.findIndex((r) => tagKey(posTag(r)) === key);
+  const at = rows.findIndex((r) => r.value === row.value);
   const pos = at === -1 ? [...rows, row] : rows.map((r, i) => (i === at ? row : r));
   return tidy({ ...grammar, pos });
 }
 
 /** Unbind a part of speech. */
-export function removePos(grammar: Grammar, value: string, scheme?: string): Grammar {
-  const key = tagKey(posTag({ value, scheme }));
-  return tidy({ ...grammar, pos: posRows(grammar).filter((r) => tagKey(posTag(r)) !== key) });
+export function removePos(grammar: Grammar, value: string): Grammar {
+  return tidy({ ...grammar, pos: posRows(grammar).filter((r) => r.value !== value) });
 }
 
-/** Bind a feature name, replacing any existing binding of the same one. */
+/**
+ * Bind a feature name, replacing any existing binding of the same one — matched
+ * by name, as `findFeature` is, so re-minting a borrowed name (or un-minting a
+ * minted one) rewrites the row in place instead of leaving two behind.
+ */
 export function upsertFeature(grammar: Grammar, row: GrammarFeature): Grammar {
-  const key = featureKey(row);
   const rows = featureRows(grammar);
-  const at = rows.findIndex((r) => featureKey(r) === key);
+  const at = rows.findIndex((r) => r.feature === row.feature);
   const features = at === -1 ? [...rows, row] : rows.map((r, i) => (i === at ? row : r));
   return tidy({ ...grammar, features });
 }
@@ -206,34 +219,28 @@ export function upsertFeature(grammar: Grammar, row: GrammarFeature): Grammar {
  * refuses to publish. Deleting a contributor's value bindings as a side effect
  * of an unbind would be a far worse outcome than making them say so first.
  */
-export function removeFeature(grammar: Grammar, feature: string, scheme?: string): Grammar {
-  const key = featureKey({ feature, scheme });
+export function removeFeature(grammar: Grammar, feature: string): Grammar {
   return tidy({
     ...grammar,
-    features: featureRows(grammar).filter((r) => featureKey(r) !== key),
+    features: featureRows(grammar).filter((r) => r.feature !== feature),
   });
 }
 
 /** Bind a feature value, replacing any existing binding of the same one. */
 export function upsertValue(grammar: Grammar, row: GrammarValue): Grammar {
-  const key = tagKey(valueTag(row));
+  const key = valueName(row);
   const rows = grammar.values ?? [];
-  const at = rows.findIndex((r) => tagKey(valueTag(r)) === key);
+  const at = rows.findIndex((r) => valueName(r) === key);
   const values = at === -1 ? [...rows, row] : rows.map((r, i) => (i === at ? row : r));
   return tidy({ ...grammar, values });
 }
 
 /** Unbind a feature value. */
-export function removeValue(
-  grammar: Grammar,
-  feature: string,
-  value: string,
-  scheme?: string,
-): Grammar {
-  const key = tagKey(valueTag({ feature, value, scheme }));
+export function removeValue(grammar: Grammar, feature: string, value: string): Grammar {
+  const key = valueName({ feature, value });
   return tidy({
     ...grammar,
-    values: (grammar.values ?? []).filter((r) => tagKey(valueTag(r)) !== key),
+    values: (grammar.values ?? []).filter((r) => valueName(r) !== key),
   });
 }
 

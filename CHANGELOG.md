@@ -4,6 +4,71 @@ All notable changes to Leksis. Each section is one loop — a unit of work, not 
 unit of time: the content loops grow the dictionary outward, the grammar loops
 (the morphology arc) grow the entry deeper, and the two interleave.
 
+## A minted primitive is reachable again
+
+Content loop 6 (polish), a correction. Everything a language mints for itself —
+an **inflection class**, a **lexicographic label set**, and every value under
+either — was unreachable in the binding editor. Its level said *not bound*, its
+values door was missing, its form opened blank over a row that was there all
+along, and the `note` shipped one section below never reached a reader. Saving
+it appended a second row rather than rewriting the first.
+
+Breton's imported `Todo` set, 231 Meurgorf abbreviations awaiting a decision each
+carrying its frequency and an opinion, was 231 rows nobody could open.
+
+### One row, addressed by name
+
+The editor navigates by name: a path carries `Todo`, never `Todo` *in scheme
+`br`*. The lookups behind it keyed on the canonical tag, where an absent
+`scheme` is written out as `ud` — so `findFeature("Todo")` asked for
+`name=ud:Todo` and a row minted as `name=br:Todo` never answered. Every
+UD-documented row matched and every minted one did not, which is why nothing
+showed until a language minted something.
+
+- **A feature name is one row per language**, whatever provenance it carries.
+  That is the rule the rest of the model already ran on — `inherent` and `axes`
+  name a bare feature, `boundFeatureNames` and `isLexicographic` compare names —
+  and the one the lexicon states in as many words: *matched by name, as a value
+  is matched to its feature*.
+- **A value is its feature plus its own name**, the `valueMatchKey` rule an axis
+  is already matched by, with provenance dropped and multivalues normalised.
+- **A part of speech is its UPOS name.** Two rows sharing one name would be one
+  the interface can reach and one it cannot — the defect ADR-0010 keys the
+  labels model to prevent.
+- **`upsert` and `remove` follow `find`**, so re-minting a borrowed name or
+  un-minting a minted one rewrites the row in place instead of leaving two
+  behind.
+- **A row already minted keeps the scheme it was minted under.** Recomputing it
+  as this language's own tag would rewrite the atom's identity behind the
+  contributor's back and orphan every layer-2-to-4 row standing on it.
+
+Fixing the lookup fixes what read off it: the trail says *Lexicographic labels*
+rather than *Features*, a minted feature stops advertising Universal Dependencies
+documentation it has none of, the unbind control uses the wording of the section
+the row belongs to, its values level offers no UD candidates, and an inflection
+class used as an inherent feature or an axis prints its label at layers 2 and 3.
+
+### The note is read where it was written
+
+- **On the feature level**, in full, under the name — the first thing a
+  contributor arriving at a class or a label set needs, and prose the editor
+  showed nowhere.
+- **On each value row**, clamped to two lines. A set may run to hundreds of
+  values, and the first two lines are what tells them apart while triaging; the
+  whole note stays one click away in the form.
+
+### Verified
+
+In the browser on **Breton**. `Todo` opens as *Grammar › Lexicographic labels ›
+Todo* with its note in full, its 231 values behind the door that had gone
+missing, and each value row carrying its own note clamped. `Todo1` seeds its full
+form, its abbreviation, its note, its source and its minted state from the
+record; editing and re-binding leaves **231 values with one `Todo1`**, not 232,
+and the round trip preserves everything it did not touch. A newly minted
+inflection class round-trips through *Grammar › Inflection classes* with its
+note. `Gender` (Universal Dependencies) and `NOUN` are unchanged, documentation
+link and all. Nothing was published.
+
 ## A declared primitive can explain itself
 
 Content loop 6 (polish). A language's front matter could **name** its grammatical
