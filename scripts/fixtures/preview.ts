@@ -1,5 +1,6 @@
-// Run the shared generator over the fixture entries exactly as the reader does,
-// and print what each page will show — before anything is published.
+// Run the shared generator and the shared placement over the fixture entries
+// exactly as the reader does, and print what each page will show — before
+// anything is published.
 //
 // Its whole reason for existing is that the manifest's `expect` lines are
 // assertions a later session will trust. Writing them from the rules by eye and
@@ -9,15 +10,14 @@
 //   npx tsx scripts/fixtures/preview.ts
 
 import {
-
   formatTagVerbatim,
-
-  inherentAtomKeys,
-  layoutView,
+  headwordKeys,
+  headwordMatchKey,
   mergeParadigms,
-  tagAtomKeys,
+  paradigmCellAddresses,
+  placeForms,
+  resolveParadigmTables,
   type Grammar,
-  type Tag,
 } from "@leksis/types";
 import { entryFixtures } from "./entries.ts";
 import { languageFixtures } from "./languages.ts";
@@ -32,29 +32,26 @@ for (const fixture of entryFixtures) {
   const record = versions[versions.length - 1]!;
   const grammar = grammars.get(record.languageID) ?? {};
 
-  // The same containment test the AppView's expansion job and (since this
-  // slice) the reader both run.
-  const held = new Set(inherentAtomKeys(grammar.inherent ?? [], record.categories));
+  // Exactly the test the AppView's expansion job runs (ADR-0019): the entry's
+  // headword keys against the paradigm's selectors, by equality.
+  const keys = new Set(headwordKeys(grammar, record.categories));
   const reaching = paradigmFixtures.filter(
     (paradigm) =>
       paradigm.record.languageID === record.languageID &&
-      tagAtomKeys(paradigm.record.selector).every((atom) => held.has(atom)),
-  );
-  // Most specific selector first, which is the precedence the endpoint serves.
-  reaching.sort(
-    (a, b) => tagAtomKeys(b.record.selector).length - tagAtomKeys(a.record.selector).length,
+      paradigm.record.selectors.some((selector) => keys.has(headwordMatchKey(selector))),
   );
 
   const merged = mergeParadigms(
     reaching.map((paradigm) => ({
       id: paradigm.handle,
-      rules: paradigm.record.rules,
+      tables: paradigm.record.tables,
       requires: paradigm.record.requires,
     })),
     { lemma: record.orthography[0]!, forms: record.otherForms ?? [] },
   );
 
   console.log(`\n=== ${fixture.handle}  ${record.orthography[0]}  (${record.languageID}) ===`);
+  console.log(`    headword keys:  ${[...keys].join("  ·  ") || "none"}`);
   console.log(`    paradigms reaching it: ${reaching.map((p) => p.handle).join(", ") || "none"}`);
   for (const row of merged.missing) {
     console.log(`    MISSING ${row.address} — "${row.message.slice(0, 60)}…"`);
@@ -66,65 +63,47 @@ for (const fixture of entryFixtures) {
     generated: form.from !== undefined,
     id,
   }));
-  if (display.length === 0) {
-    console.log("    (no forms at all — the reader draws nothing)");
-    continue;
-  }
 
-  const view = layoutView(grammar, record.categories, display);
-  if (view.blocks.length === 0 || !view.filled) {
-    console.log("    FLAT LIST (no layout, or nothing filled a block):");
+  // The reader's own ladder: the stored tables of every reaching paradigm,
+  // re-qualified against the language, then the entry's forms placed in them.
+  const tables = reaching.flatMap((paradigm) =>
+    resolveParadigmTables(grammar, paradigm.record.tables),
+  );
+  if (tables.length === 0) {
+    if (display.length === 0) {
+      console.log("    (no tables and no forms — the reader draws nothing)");
+      continue;
+    }
+    console.log("    FLAT LIST (no paradigm reaches it):");
     for (const item of display) {
       console.log(`      ${item.generated ? "gen" : "own"}  ${formatTagVerbatim(item.tag)} = ${item.form}`);
     }
     continue;
   }
 
-  view.blocks.forEach((block, index) => {
-    const caption =
-      block.caption.length === 0
-        ? ""
-        : ` [caption ${block.caption.length} chip(s): ${block.caption
-            .map((part) => part.label?.long ?? part.verbatim ?? "?")
-            .join(" + ")}]`;
-    const summary = block.summary ? " (summary)" : "";
-    const geometry =
-      block.kind === "table"
-        ? ` rows=${block.rowAxes.map((a) => a.feature.feature).join("/")} cols=${block.columnAxes
-            .map((a) => a.feature.feature)
-            .join("/")}`
-        : "";
-    console.log(`    block ${index} ${block.kind}${caption}${summary}${geometry}`);
-    // A table's `cells` is line × column with `undefined` where the paradigm
-    // has no such cell — which is exactly the excluded state, and the one a
-    // reader must never confuse with "nobody filled it in".
-    if (block.kind === "table") {
-      block.cells.forEach((line, row) => {
-        line.forEach((cell, column) => {
-          if (cell === undefined) {
-            console.log(`      —    [${row},${column}] EXCLUDED`);
-            return;
-          }
-          report(cell);
-        });
+  /** Paradigms that contributed nothing because a principal part was missing. */
+  const skipped = new Set(merged.missing.map((row) => row.from));
+  const { placed, leftover } = placeForms(paradigmCellAddresses(tables), display);
+  tables.forEach((table, index) => {
+    const from = reaching[index >= reaching.length ? reaching.length - 1 : 0];
+    const note = from !== undefined && skipped.has(from.handle) ? "  (paradigm SKIPPED — a required base form is missing, so no cell generates)" : "";
+    console.log(`    table ${index}${table.name === undefined ? "" : ` "${table.name}"`}  ${table.width}×${table.height}${note}`);
+    table.rows.forEach((line, row) => {
+      const drawn = line.map((cell) => {
+        const size = cell.rowSpan > 1 || cell.colSpan > 1 ? `⟨${cell.rowSpan}×${cell.colSpan}⟩` : "";
+        if (cell.kind === "title") return `[T ${cell.text}]${size}`;
+        if (cell.kind === "empty") return `[— filler]${size}`;
+        const held = placed.get(cell.address.key) ?? [];
+        const address = formatTagVerbatim(cell.address.tag);
+        if (held.length > 0) {
+          return `[${held.map((h) => `${h.generated ? "gen" : "own"} ${h.form}`).join(" / ")} @ ${address}]${size}`;
+        }
+        return `[${cell.rules.length === 0 ? "manual-only" : "rule declined"} @ ${address}]${size}`;
       });
-      return;
-    }
-    for (const item of block.items) report(item);
+      console.log(`      row ${row}: ${drawn.join(" ")}`);
+    });
   });
-  for (const leftover of view.leftover) {
-    console.log(`    leftover: ${formatTagVerbatim(leftover.tag)} = ${leftover.form}`);
-  }
-
-  function report(address: { tag: Tag; key: string }): void {
-    const held = view.placed.get(address.key) ?? [];
-    const printed = formatTagVerbatim(address.tag);
-    if (held.length === 0) {
-      console.log(`      ·    ${printed}   empty`);
-      return;
-    }
-    for (const item of held) {
-      console.log(`      ${item.generated ? "gen" : "own"}  ${printed} = ${item.form}`);
-    }
+  for (const item of leftover) {
+    console.log(`    leftover: ${item.generated ? "gen" : "own"}  ${formatTagVerbatim(item.tag)} = ${item.form}`);
   }
 }

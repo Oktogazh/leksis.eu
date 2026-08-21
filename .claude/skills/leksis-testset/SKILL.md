@@ -89,7 +89,7 @@ fixture set lives entirely inside it. Three languages, each with a job:
 
 | tag | role | grammar |
 |---|---|---|
-| **`qtl`** | the **full** fixture language — everything that is supposed to work | layers 1–5 declared (primitives, inherence, axes, layout, and five paradigms), `grammarIssues` **empty**, permanently |
+| **`qtl`** | the **full** fixture language — everything that is supposed to work | layers 1 and 2 declared in the merged shape (primitives, inherence, and seven categories carrying their axes and defaults), seven paradigms with their own tables, `grammarIssues` **empty**, permanently |
 | **`qtm`** | the **bare** language — the degrade path the design promises | **no `grammar` at all**; its entries carry tags nobody bound |
 | **`qto`** | the **defective** language — the *refusal* test target | published coherent first, then rewritten with one row per `GrammarIssue` kind, on purpose |
 
@@ -163,7 +163,7 @@ Every fixture declares **what it is for**, on the record, so an agent that
 opens the page knows what it is supposed to be asserting:
 
 ```jsonc
-references: [{ "text": "Leksis fixture lxt-07 — otherForms × axes, non-rectangular paradigm" }]
+references: [{ "text": "Leksis fixture lxt-07 — a lemma that carries nothing: the whole table is generated" }]
 ```
 
 `references` renders at the bottom of the entry page and is record-only, so it
@@ -200,8 +200,8 @@ touching it:
   unless they all pass. That gate is not politeness: a language version archives
   forever, and one whose grammar is incoherent is refused at ingest, leaving the
   language silently on its previous version.
-- **`preview.ts` derives the `expect` lines** by running the shared generator
-  and `layoutView` exactly as the reader does. Writing them from the rules by
+- **`preview.ts` derives the `expect` lines** by running the shared generator,
+  `resolveParadigmTables` and `placeForms` exactly as the reader does. Writing them from the rules by
   eye is how a fixture set starts lying.
 - **Entries are swept before republishing** — scoped to records carrying an
   `lxt-` handle, never the whole collection, because the publishing account is
@@ -223,8 +223,8 @@ The manifest's shape:
       "entryKey": "qtl-tavesk-1b76",
       "url": "https://leksis.eu/entry/qtl-tavesk-1b76",
       "recordURI": "at://…",
-      "covers": ["otherForms", "axes", "non-rectangular-paradigm"],
-      "expect": "three form rows; the Person axis is offered for the finite form and absent for the infinitive"
+      "covers": ["E-17", "P-01", "P-06"],
+      "expect": "the table is drawn as authored and filled by generation; one cell is manual-only and one is structural filler"
     }
   ]
 }
@@ -255,25 +255,17 @@ its rows here in the same loop.
 | L-06 | **layered** feature name | a `Feature[psor]`-shaped name, bound with values |
 | L-07 | label with `short` **and** `long` | the ordinary case (short shown, long on hover) |
 | L-08 | label with `long` **only** | no abbreviated form — must never be treated as a conflict |
-| L-09 | **conflicting** labels | two bindings sharing a `short` with different `long` → `conflictsWith` populated on `GET /languages/qtl/labels` |
+| L-09 | **conflicting** labels | two declarations sharing a `short` with different `long` → `conflictsWith` populated on `GET /languages/qtl/labels` |
 | L-10 | bound label, **zero usage** | declared and used by no entry — `count: 0` is legitimate, not a bug |
 | L-11 | layer 2 `inherent` on a bare POS | e.g. Gender inherent to `{NOUN}` |
 | L-12 | layer 2 `inherent` on a **combination** | inherent to `{NOUN, Gender=…}` — sets narrowing depth |
-| L-13 | layer 2 named **combination** | a ≥2-item `bindings` row → renders as **one chip** (exact match) |
-| L-14 | combination deliberately **left unnamed** | its atoms bound separately → renders as **two chips** (decomposition) |
-| L-15 | layer 3 `axes` on a POS | with ≥2 values, in a **non-alphabetical** order, so order is visibly the language's |
-| L-16 | layer 3 axis on a **combination** — non-rectangular | an axis declared for one refined category and never for its sibling |
-| L-17 | axis value that is **multivalue** | one option spanning two values (`Fem,Masc`), for the "spans the axis" state |
-| L-50 | layer 4 `layout`, one table | a layout on a bound POS: one axis down, one across, cells derived from the axes' own value order |
-| L-51 | **nested** dimensions | two axes on one dimension, so an outer header spans several lines — the case a flat grid cannot express |
-| L-52 | several blocks, told apart by `fixed` | two tables of one category differing only in a pinned value (a mood, a tense) |
-| L-53 | a **named** pinned combination | the pinned pair also bound in `bindings` → the block caption is **one** chip, not two decomposed ones |
-| L-54 | `exclude`, complete address | one cell removed inside a grid; its line survives on the other value |
-| L-55 | `exclude`, **partial** address | one row naming fewer coordinates than a cell → a whole line or column dropped, not printed empty. No editor writes these, so only a fixture covers them |
-| L-56 | a `list` block marked `summary` | the "rosa, rosae" case: printed beside the headword with the full table behind the expander |
-| L-57 | a list item on a **non-axis** value | a form printed under a value that is bound but declared no axis — legitimate, and must not be reported |
-| L-58 | layout on a **combination**, non-rectangular | a layout for one refined category and none for its sibling, so the sibling degrades to the flat list |
-| L-59 | axes but **no layout** | a category with declared axes and no layout row → the flat list. The fallback the layer must never break, and the only row here that is verified by *absence* |
+| L-13 | a **category with no axis** | a ≥2-atom `categories` row naming no axis, so it takes exactly one annotation → renders as **one chip** (exact match). An infinitive is the natural case: it does not vary over anything |
+| L-14 | a bundle **no annotation names** | atoms all bound, matching no declared category tag → renders as **several chips** (decomposition). The unenumerated combination staying authorable |
+| L-15 | a **single-atom** category | a bare part of speech as a category — the ≥2-atom floor ADR-0019 removed, and it had to go, because a category is now also where an axis is declared |
+| L-16 | a category with an axis and **one** annotation | the ordinary case: the default rides into the bundle of every entry created through it |
+| L-17 | a category with an axis and **several** annotations | the merge's motivating case, which two separate declarations could not express: one category whose headwords sit at two values of its own axis, each with its own abbreviation (the *anv-kadarn stroll* beside the ordinary masculine noun) |
+| L-18 | a default that is a **minted value** | provenance re-attached from the `values` row by `categoryTags`, so the chip finds its label and the selector finds the entry |
+| L-19 | a **multivalue** value, bound | one value spanning two (`Fem,Masc`, `Person=1,2`), which is what a syncretic paradigm cell is addressed by and what gives the merged cell its heading |
 
 ### 3.2 Language records — `qtm` (bare) and `qto` (defective)
 
@@ -283,41 +275,51 @@ its rows here in the same loop.
 | L-21 | verbatim rendering | `qtm` entries carrying well-formed tags nobody bound → unbound-styled chips |
 | L-22 | the tag worklist | those tags appear on `GET /languages/qtm/labels` as rows **with a count and no `long`** |
 | L-30 | `unbound-feature` | `qto`: a value whose feature name is not bound |
-| L-31 | `unbound-atom` | `qto`: a layer-2/3 row built on an unbound atom |
-| L-32 | `duplicate` | `qto`: two rows keying the same tag |
-| L-33 | `ungrounded-combination` | `qto`: a named combination no inherence chain reaches |
-| L-34 | `single-item-binding` | `qto`: a one-atom row in `bindings` |
-| L-35 | `inherent-axis-conflict` | `qto`: the same (category, feature) declared both ways |
-| L-36 | `empty-axis` | `qto`: an axis row with no values |
-| L-37 | `layout-unknown-axis` | `qto`: a table dimension naming a feature the category declares no axis of |
-| L-38 | `layout-repeated-axis` | `qto`: one feature on both dimensions of a table |
-| L-39 | `layout-foreign-coordinate` | `qto`: an `exclude` coordinate outside the block's grid — the exclusion that silently removes nothing |
-| L-40 | `empty-layout-block` | `qto`: a table with no dimensions, **and** a list with no items |
-| L-41 | `layout-too-large` | `qto`: axes multiplying past `MAX_LAYOUT_CELLS` (4096) → the block draws nothing and says why |
-| L-42 | `lexicographic-in-grammar` | `qto`: a feature flagged `lexicographic` declared inherent to a category. "Archaic" is not something a word *is*, and the grammatical layers must never reach for that vocabulary (ADR-0010) |
-| L-43 | `duplicate-abbreviation` | `qto`: two `abbreviations` rows under one short form — two front-matter entries under one headword, keyed on the short form because that *is* the identity (ADR-0010) |
+| L-31 | `unbound-atom` | `qto`: a layer-2 row built on an unbound atom |
+| L-32 | `duplicate` | `qto`: two `categories` rows keying the same category — which would make its axis, and with it the whole cell space, depend on array order |
+| L-33 | `ungrounded-combination` | `qto`: a named category no inherence chain reaches |
+| L-34 | `category-axis-unbound` | `qto`: an `axis` naming a feature the language never declared it uses |
+| L-35 | `category-axis-inherent` | `qto`: the same (category, feature) declared both ways — a paradigm cannot be built from a coordinate that is also a constant |
+| L-36 | `category-default-missing` | `qto`: an axis is declared and an annotation says nothing about where its headwords sit |
+| L-37 | `category-default-forbidden` | `qto`: no axis, so a `default` names a value of nothing |
+| L-38 | `category-default-unbound` | `qto`: a `default` that is not a bound value of the axis |
+| L-39 | `category-duplicate-default` | `qto`: two annotations of one category at the same default — the only thing that could have told them apart |
+| L-40 | `lexicographic-in-grammar` | `qto`: a feature flagged `lexicographic` declared inherent to a category. "Archaic" is not something a word *is*, and the grammatical layers must never reach for that vocabulary (ADR-0010) |
+| L-41 | `duplicate-abbreviation` | `qto`: two `abbreviations` rows under one short form — two front-matter entries under one headword, keyed on the short form because that *is* the identity (ADR-0010) |
 
-All of L-30…L-43 land in **one** `qto` record — they are rows in one `grammar`
+All of L-30…L-41 land in **one** `qto` record — they are rows in one `grammar`
 object, and since ADR-0015 that record is **refused whole**, which is what these
-rows now assert: `GET /languages/qto/currentRecord` still points at the coherent
-version, and the ingest log names all fourteen kinds. The place each kind is
+rows assert: `GET /languages/qto/currentRecord` still points at the coherent
+version, and the ingest log names all twelve kinds. The place each kind is
 *read* is the binding editor's footer (U-16 below), because that is the surface a
 contributor repairs them in.
 
-**Verified 2026-08-16**, on a run since torn down. The rewrite was refused —
-`currentRecord` still served the coherent version's cid — and opening the dialog
-on `qto` listed all fourteen with Publish disabled. Note `qto`'s *history*
+**ADR-0019 replaced eight of these kinds with six of its own** (2026-08-21).
+`single-item-binding`, `inherent-axis-conflict`, `empty-axis`,
+`layout-unknown-axis`, `layout-repeated-axis`, `layout-foreign-coordinate`,
+`empty-layout-block` and `layout-too-large` are gone with the `bindings`, `axes`
+and `layout` arrays; the six `category-*` kinds above are the merged
+declaration's own gates. The count fell from fourteen to twelve, and the
+oversize-grid fixture went with `MAX_LAYOUT_CELLS`: a table is now written out
+cell by cell rather than derived from axes, so nobody can produce a million
+cells by declaring one more axis, and the successor cap (`MAX_TABLE_CELLS`) is a
+`paradigmIssues` kind rather than a `grammarIssues` one.
+
+**Verified 2026-08-16** on the fourteen-kind shape, and rebuilt for the
+twelve-kind one on 2026-08-21. The rewrite was refused — `currentRecord` still
+served the coherent version's cid — and opening the dialog on `qto` listed every
+kind with Publish disabled. Note `qto`'s *history*
 survives the teardown even though its record does not, so republishing the set
 re-creates this state rather than starting it over. The publisher asserts the refusal itself and fails the run
 if the defective version ever becomes current, so a regression in the ADR-0015
 gate cannot pass silently.
 
-Two of these are worth constructing deliberately rather than by accident. L-39
-is the only issue kind that reports something *harmless but useless*, so it is
-the one most likely to be dismissed as noise — the fixture exists to prove the
-worklist says it. L-41 needs a grid past the 4096 cap; 8 · 8 · 8 · 9 = 4608 does
-it with 33 value rows, bound under features nothing else uses so the oversize
-block cannot distort another row's diagnosis.
+One of these is worth constructing deliberately rather than by accident. L-39
+`category-duplicate-default` is the kind that reports something a record can
+carry *and still render* — two annotations that simply cannot be told apart — so
+it is the one most likely to be dismissed as noise. The fixture exists to prove
+the footer says it, because the alternative is a language whose two
+abbreviations mean the same thing and whose contributors cannot find out why.
 
 ### 3.3 Entry records
 
@@ -339,23 +341,26 @@ block cannot distort another row's diagnosis.
 | E-14 | node `notes` | free prose before a node's content |
 | E-15 | entry-level `notes` | the evicted editorial label as prose (`arch.`), below the definitions |
 | E-16 | `references` | one with a `url`, one without |
-| E-17 | `otherForms` on declared axes | one form per declared axis value; each spelling searchable |
-| E-18 | `otherForms` **off** the axes | a form whose tag matches no declared axis → stays in the flat list, not dropped |
+| E-17 | `otherForms` on the category's axis | one form per value of the axis its category declares; each spelling searchable |
+| E-18 | `otherForms` **off** the axis | a form whose tag matches no cell of any paradigm reaching it → stays in the flat list, not dropped |
 | E-19 | inflected-form search | asserting `GET /entries?q=<a form spelling>` returns the parent entry |
 | E-20 | `todo` queue | exactly **two** entries carrying `todo`, with 1 and 2 items — a known constant to assert the dashboard counter against |
 | E-21 | version history | one entry with **≥3 versions** chained by `subject` (last-write-wins, archival) |
 | E-22 | homonyms | two entries sharing `orthography[0]` in `qtl` → the entry page's homonym list |
 | E-23 | withdrawal | `deleted: true` + `deletionReason` → absent from search, still served at `/entry/<key>` |
 | E-24 | withdrawal + redirect | `deleted` + `redirectTo` pointing at E-22's survivor |
-| E-25 | volume | one entry with ~8 definitions and ~6 other forms — layout stress, and the ceiling on how big any single fixture gets |
+| E-25 | volume | one entry with ~8 definitions and ~6 other forms — table stress, and the ceiling on how big any single fixture gets. Its cells are almost all **asserted**, against E-27's almost all generated: the two states of one table, on one language |
 | E-26 | the bare language | 2–3 `qtm` entries (covers L-21/L-22) |
-| E-27 | forms filling a **laid-out** table | one entry whose `otherForms` cover most cells of L-50's table, with **at least one cell deliberately empty** — an empty cell and an excluded one must not look the same |
+| E-27 | forms filling an **authored** table | one entry whose `otherForms` cover most cells of a paradigm's table, with **at least one cell deliberately blank** — a manual-only cell, a rule that declined and a structural filler must not look the same |
 | E-28 | a form carrying **more** than its cell address | the inherent gender, or a part of speech, repeated on the form's tag → it must still land in its cell (the placement's superset tolerance) |
-| E-29 | a form matching **no cell** | a form tagged on a declared axis whose value combination the layout does not address → the leftover list *below* the table. Distinct from E-18, where the language declares no axis at all |
+| E-29 | a form matching **no cell** | a form whose address no cell of the reaching paradigm carries → the leftover list *below* the tables. Distinct from E-18, where no paradigm reaches the entry at all |
 | E-30 | `definitions[].examples` — the three citation states | **one** entry, one leaf carrying three examples: one citing **S-01** with a `locator`, one **unsourced** (no `source` at all), one citing **S-02**'s number, which no source record describes. The whole point is that the three render differently on one line each: the short citation form, the sentence alone, and the bare `OCLC <n>` styled unresolved with a "describe it" invitation |
 | E-31 | examples on a **second** leaf, same work | one more leaf citing **S-01** again, with a different locator — the per-number resolution cache, and the DRY claim: one description, two citations, and correcting the source corrects both |
+| E-32 | the bundle carries its **default axis value** | ADR-0019 §1.3: an entry created through an annotation is tagged with that annotation's default on the record itself, so it self-describes without the language record in hand. Verified on **two** entries of one category at **different** defaults, which is the only way the row means anything |
+| E-33 | the sibling **exact match** does not reach | the other flavour of E-32's category, and a paradigm selecting only one of the two → the sibling draws a different table (or none). Containment would have reached both, which is what the merge replaced |
+| E-34 | an axis value the category never declared | a bundle carrying a value of the axis that no annotation names → the headword key **drops** it, so no paradigm reaches the entry. A form's feature written on a headword is noise a rule must not select on |
 
-That is ~33 entries. Stay under 40.
+That is ~34 entries. Stay under 40.
 
 ### 3.4 Source records — the works examples cite
 
@@ -398,24 +403,32 @@ lexicon **the manifest is the only index** (§6), the handles are `lxp-NN`, and
 the on-record purpose text goes in `notes` — prose for other contributors, which
 reaches no reader.
 
-Five records cover the layer. They are deliberately fewer than the entries they
-act on, because what varies is which *entry* a rule meets, not how many rules
-there are.
+Seven records cover the layer. They are deliberately fewer than the entries they
+act on, because what varies is which *entry* a paradigm meets, not how many
+paradigms there are.
+
+**The shape changed at ADR-0019 and these rows changed with it.** A paradigm now
+carries its own tables, authored cell by cell, and names the headword bundles it
+applies to by **exact match** rather than by containment — so the retired rows
+are P-07 (constants pinned by a *layout* block, now simply part of a cell's
+address), P-08's old reading (most-specific-selector precedence, which exact
+match makes unreachable) and P-12's old reading (a layout block drawn although
+no asserted form fills it, which is what every generated table now is).
 
 | # | Covers | Fixture requirement |
 |---|---|---|
-| P-01 | generation from the lemma alone | a paradigm whose rules all start from `orthography[0]`, filling most of a laid-out grid. The arc's promise: a regular word carries nothing |
-| P-02 | several rows competing for one cell | two rules targeting one address with different `match` conditions, the narrower written FIRST — rule order is semantics, and the first matching row wins |
+| P-01 | generation from the lemma alone | a paradigm whose rules all start from `orthography[0]`, filling most of a table. The arc's promise: a regular word carries nothing |
+| P-02 | several rules competing for one cell | two rules **in one cell** with different `match` conditions, the narrower written FIRST — order is semantics, and the first matching rule wins |
 | P-03 | a required principal part, **supplied** | a `requires` row the entry answers, so the paradigm runs |
 | P-04 | the same row, **missing** | a second entry of the same category lacking it → the paradigm is skipped ENTIRELY (never half-generated) and the entry lands on the dashboard's missing-forms queue carrying the rule's own message, unaltered |
-| P-05 | syncretism | a rule whose target carries a multivalue coordinate (`Person=1,2`), producing ONE form that spans two cells under a merged heading — never printed twice, and never confusable with a cell nobody filled |
-| P-06 | empty vs excluded, under generation | one cell of a filled grid that no rule reaches (a faint dot) beside one the layout excludes (an em dash). The distinction the whole layer is drawn to preserve |
-| P-07 | rules addressing a block's pinned constants | a category laid out as two tables told apart by a `fixed` tense, with rules carrying those constants in their target address |
-| P-08 | most-specific-selector precedence | a broad paradigm and a narrow one both reaching one entry and colliding on exactly one cell — the narrow one wins it |
-| P-09 | a base chain | a rule based on a `requires` form, and a second based on THAT rule's target: a stem built once and inflected from |
-| P-10 | a paradigm no layout row covers | a selector for a category with declared axes and no layout → listed under the Paradigms tab's own "no table covers" heading, LISTED and never diagnosed (design note §7.3), while its forms still reach the flat list |
-| P-11 | an asserted form overriding a generated cell | an entry whose own `otherForms` occupy a cell a rule would otherwise fill — the entry wins, and is styled asserted where the rest are styled derived |
-| P-12 | a block filled ENTIRELY by generation | a layout block no asserted form touches, drawn anyway — the layer-4 rule "a block no form fills is not drawn", revised exactly as ADR-0009 predicted layer 5 would revise it |
+| P-05 | syncretism | a **cell** whose address carries a multivalue coordinate (`Person=1,2`), merged across the positions it covers, holding ONE form — never printed twice, and never confusable with a cell nobody filled. Verified generated *and* asserted, since a spanning cell an entry fills is the other half of the same claim |
+| P-06 | the three blank states, side by side | in one table: a cell with **no rules** (manual-only — an invitation), a cell whose rule **declined** for this lemma (the language's own "no form here"), and a `kind: "empty"` **filler** (a cell that cannot exist). The distinction the whole layer is drawn to preserve, now three-way rather than two |
+| P-07 | a base chain | a rule based on a `requires` form, and a second based on THAT rule's target: a stem built once and inflected from |
+| P-08 | **exact match**, seen from the reader | two entries of one category at different defaults, and a paradigm selecting only one bundle → it reaches that entry and **not** its sibling. What replaced most-specific precedence, and the reason two paradigms can never collide on a cell |
+| P-09 | **several selectors on one record** | one set of tables serving two categories (a declension shared by two genders), reachable from both entries under **one** `paradigmKey` — the identity being the *sorted* selector set, so the order they were written in says nothing |
+| P-10 | a selector nobody declared | a paradigm for a category the grammar declares nothing about and no entry carries → indexed, listed, and **inert**: a disagreement between two records, never a defect inside one. A paradigm arriving before its grammar is the same state |
+| P-11 | an asserted form overriding a generated cell | an entry whose own `otherForms` occupy a cell a rule would otherwise fill — the entry wins, and is **marked** as asserted over a generated one, which is the third form state and the one that tells a rule wrong for a word from a rule wrong for the language |
+| P-12 | **authored geometry** | in one record: a `title` cell spanning a whole table, a blank corner drawn as `empty` rather than as an untitled heading, and a merged form cell — the table shape the paradigm record took over from `grammar.layout` |
 
 ---
 
@@ -437,7 +450,7 @@ there are.
    `testbot.leksis.eu` and re-running the publisher is all it would take to fix.
 2. **Language records first**, then sources, then entries, **then paradigms** —
    same reason as any
-   import: tags published before their bindings render verbatim until the
+   import: tags published before the declarations naming them render verbatim until the
    language catches up, which would make half the fixtures temporarily wrong,
    and an example published before its source cites a number that resolves to
    nothing. Note the second case is *not* an error — a citation to an
@@ -480,6 +493,21 @@ there are.
 
 The protocol, in order — put this in the test session's prompt, not in the
 agent's guesswork:
+
+0. **Decide which AppView the run reads back from, and say so.** The publisher
+   writes to the **real PDS** either way — that is what makes a fixture travel
+   the whole path — but it reads the index back through `LEKSIS_API`, which
+   defaults to production. **A run verifying a release that changes a lexicon
+   must point at a local AppView** (`LEKSIS_API=http://127.0.0.1:8080
+   LEKSIS_SITE=http://127.0.0.1:5173`, with the `api` and `web-local-api`
+   preview servers up), because production is still on the *previous* release
+   and cannot index the new shapes — the run would fail on its first
+   `waitForLanguage` and prove nothing. Verified on ADR-0019's slice 6: the live
+   AppView indexed the languages and entries and **refused all seven
+   paradigms**, whose v2 shape its lexicon did not know. That refusal is worth
+   *watching for* — it is the cleanest evidence a change really is breaking —
+   but it is not the pass. Tear down as usual afterwards, and confirm the
+   teardown in **both** indexes.
 
 1. **Publish the set, then read the manifest it writes.** The set is ephemeral,
    so at rest there is nothing to open and `scripts/fixtures/manifest.json`
@@ -621,26 +649,31 @@ goes out to a PDS. A screenshot or `get_page_text` taken immediately after
 generated forms) and read exactly like a regression. Wait, or read the page
 twice, before concluding anything is broken.
 
-### 7.1 Grammar editor — layer 4, the Layout tab (unverified, shipped)
+### 7.1 Grammar editor — the Categories tab (ADR-0019, shipped)
+
+**This section replaced the Layout tab's rows.** The merge removed the Axes and
+Layout tabs entirely — an axis is declared on its category, a table's shape lives
+in the paradigm record — so U-01…U-15 named controls that no longer exist and
+have been retired rather than carried. What survives is U-16, which is about the
+defect footer and not about layout, and the rows below, which are the merged
+declaration's own.
 
 | # | Flow | What must be true |
 |---|---|---|
-| U-01 | the tab appears | a fourth tab beside Primitives / Categories / Axes; entering it lands on the layout root |
-| U-02 | the cascade as navigation | a language with **no axes** is told to declare axes first and offered nothing to lay out; only categories with a declared axis are offered |
-| U-03 | declaring a layout | picking a category creates it **with one empty table** and opens that block; the footer refuses to publish, naming `empty-layout-block` |
-| U-04 | assigning dimensions | axis chips move onto "down the table" / "across the table"; putting one on the second dimension **takes it off the first** |
-| U-05 | nesting order | ↑/↓ reorder a dimension's axes, and the grid's header spans change to match |
-| U-06 | pinning a constant | pinning an unplaced axis captions the block and adds the value to every cell's identifier |
-| U-07 | the derived grid | each cell shows its identifier in UD form (`Case=Gen\|Number=Sing`), in the axes' **declared order**, and the grid scrolls inside its own box rather than widening the dialog |
-| U-08 | excluding a cell | clicking a cell strikes it through; clicking again restores it — the round trip is the point, since a one-way exclusion would be a trap |
-| U-09 | list blocks | one value per axis, plus the manual identifier field; items reorder and delete |
-| U-10 | the summary flag | marking a block shows it as "beside the headword" in the block list and in the resolved preview |
-| U-11 | the preview | the category level draws every block through the *shipped* resolver — an excluded cell is absent there while still clickable in the editor |
-| U-12 | removing blocks | removing the last block **withdraws the layout** and returns to the root |
-| U-13 | publishing | the rewritten record round-trips: reopen the dialog and the layout is as authored, and the version is **indexed** (it appears in the dashboard's activity feed — a refused one never would) |
-| U-14 | the no-orphan guard | withdrawing an axis a layout uses is refused at publish, naming the layout row |
-| U-15 | mobile | the whole tab at 375px, including the grid's horizontal scroll |
-| U-16 | the defect list (ADR-0015) | open the dialog on **`qto`**, whose live record is the defective rewrite: Publish is disabled and the footer lists **every** kind L-30…L-43 with its own copy — not only the ones this edit would introduce. ✅ **2026-08-16**: all fourteen listed, Publish disabled. The *repair* half is still owed — bind the missing atoms and feature names, declare the grounding inherence, remove the one-atom `bindings` row with its own × control, and confirm the publish succeeds and indexes. Do it in a session that can afford to leave `qto` repaired, since publishing a coherent `qto` retires the fixture until the defective rewrite is republished |
+| U-01 | three tabs, not five | Primitives / Categories / Paradigms, and nothing between the last two. A path is derived from the level, so a stale deep link into an axis or a layout level must land somewhere sane rather than blank |
+| U-02 | the walk goes as deep as the declarations do | from a bound part of speech, each inherent feature opens an enumeration of its bound values, and each of those opens **another category's editor** — no naming step in between, which is what the merge removed. A language that has declared nothing still offers its parts of speech |
+| U-03 | declaring an axis | the axis picker offers bound feature names that are **not** lexicographic and **not** inherent for this category; picking one makes the default-value picker appear, and it offers the bound values of that feature |
+| U-04 | the iff rule, as navigation | with no axis there is no default field at all; with one, the annotation form cannot be saved without a default. Neither is reachable as a footer defect from the interface — the way `ragged-table` is unreachable from the grid editor |
+| U-05 | several annotations of one category | "add another abbreviation" produces a second annotation with its own default; the two are listed side by side under one category, and the level says which default each names |
+| U-06 | a **minted** default | choosing a minted value (`Number=Sgv`, scheme `qtl`) round-trips: the record stores it bare, the chip finds its label, and reopening the level shows it selected |
+| U-07 | editing keeps one row per category | changing a category's axis or a label rewrites the existing row in place rather than appending a second one — the defect `duplicate` exists precisely because appending is the easy bug |
+| U-08 | removing an annotation | removing the last annotation of a category removes the category, and returns to the level above |
+| U-09 | the count and sample chips (slice 1) | every category and every annotation row carries its usage count from `GET /languages/:tag/labels`, joined by canonical row key; a non-zero row also carries a random entry's orthography linking to `/entry/<key>`, and a reroll beside it that changes the target. A zero row shows the count and no link, and the hint says counts describe the **saved** grammar, not the draft |
+| U-10 | the no-orphan guard | unbinding a value that a category names as a default is refused at publish, naming the category row |
+| U-11 | publishing | the rewritten record round-trips: reopen the dialog and every category is as authored, and the version is **indexed** (it appears in the dashboard's activity feed — a refused one never would) |
+| U-12 | mobile | the whole tab at 375px |
+| U-16 | the defect list (ADR-0015) | open the dialog on **`qto`**, whose live record is the defective rewrite: Publish is disabled and the footer lists **every** kind L-30…L-41 with its own copy — not only the ones this edit would introduce. The *repair* half is still owed — bind the missing atoms and feature names, declare the grounding inherence, give the axis-less annotation's `default` somewhere to go — and confirm the publish then succeeds and indexes. Do it in a session that can afford to leave `qto` repaired, since publishing a coherent `qto` retires the fixture until the defective rewrite is republished |
+
 
 ### 7.2 Grammar editor — layer 4's sibling, the Inflection classes section
 
@@ -654,10 +687,11 @@ twice, before concluding anything is broken.
 
 ### 7.3 Carried forward from earlier layers
 
-ADR-0008's action item 4 — a full browser pass on the Axes tab, an entry
-authored with a form tag, and both viewers — was deferred by decision and is
-still owed. Do it in the same session as §7.1: the same login, the same fixture
-language.
+ADR-0008's action item 4 — a full browser pass on the Axes tab — is **moot**:
+ADR-0019 removed that tab, and what it declared is now §7.1's business. What
+remains of it, and is still owed, is the other half: an entry authored through
+the narrowing with a form tag on it, seen in both viewers. Do it in the same
+session as §7.1 — the same login, the same fixture language.
 
 ### 7.4 The semantic network's reader UI — loop 5 slice 4 (unverified, shipped)
 
@@ -710,28 +744,45 @@ at.
 left here after it has been checked is worse than no list, for the reason a stale
 manifest is: it sends the next session to re-do work that is already done.
 
-### 7.5 The rule editor — layer 5 slice 5 (verified 2026-08-16)
+### 7.5 The paradigm table editor — ADR-0019 (verified 2026-08-21)
 
-Driven against the fixtures on the session they were published. Kept rather than
-deleted because these are the rows a *regression* would show up in, and because
-each names the fixture that exercises it.
+**This section replaced the rule editor's rows.** The v1 editor listed rules
+under a *layout* category and locked a single selector; v2 walks the language's
+own categories to pick selectors and edits a grid. U-60…U-69 named that older
+surface and are retired; the rows below were driven end to end against a
+quarantined fixture on the session the editor was built, and are kept because
+they are where a *regression* would show up.
 
 | # | Flow | What must be true | |
 |---|---|---|---|
-| U-60 | the fifth tab | Paradigms sits **after** Layout and is the last tab; entering it lands on a list of the language's layout rows, each counting the rule sets filed under it | ✅ |
-| U-61 | filing, and the uncovered group | a paradigm files under the most specific layout category its selector contains; one containing none is listed under "Rules no table covers" — **listed, never diagnosed** (design note §7.3, still open) | ✅ `{ADJ}` / lxp-05 |
-| U-62 | the category level | that category's paradigms, **most specific selector first**, beside an "add" affordance offering the category, its named combinations, and a manual tag field | ✅ |
-| U-63 | the selector is locked | the editor shows it as text with no control, and says it cannot be changed afterwards: changing the category is publishing a different paradigm | ✅ |
-| U-64 | rule order is semantics | rows carry ↑/↓/×, and the level says the first matching row fills the cell. A collapsed row summarises address + condition + affix exchange, so order is legible without expanding anything | ✅ |
-| U-65 | the live preview | typing a sample headword renders the generated forms **through the reader's own component**, not a bespoke grid | ✅ `stella` → `stellae` |
-| U-66 | defects block the publish | a blank `requires` message and an uncompilable `match` each disable Publish and are named in the footer **with the row's own address** | ✅ both |
-| U-67 | stacking | Escape closes the paradigm editor and leaves the grammar dialog open behind it, on the level it was on | ✅ |
-| U-68 | the empty-cell door | an unfilled cell opens a popover holding both affordances — the entry's own irregular form, and the language's rules — with the cell's address printed. An **excluded** cell offers no door at all | ✅ 20 doors, 0 on excluded cells |
-| U-69 | the door lands on the right rules | "edit the language's rules" opens the **most specific paradigm reaching this entry** with the clicked cell seeded as a new rule target | ✅ opened lxp-01, seeded `Case=Gen\|Number=Sgv` |
-| U-70 | mobile | the whole tab and the editor at 375px, including the preview grid's horizontal scroll | |
-| U-71 | publishing from the editor | a real rewrite round-trips: reopen and the rules are as authored, the cid guard refuses a stale one, and the version indexes. The set was published by script, so the **editor's own** publish path is proven only up to the enabled button | |
+| U-60 | the third tab | Paradigms is the last tab and lands on a list of the language's published paradigms, each naming every category it serves, beside a *Declare a paradigm* door | ✅ |
+| U-61 | the selector walk | selectors are picked with the **entry editor's own** narrowing (`categoryRoots` / `categoryRefinements`), so the bundles offered are exactly the ones an entry can be created with — a bare part of speech included — and the axis step reads *Cited as (‹axis label›)* | ✅ |
+| U-62 | the identity guard | declaring a "new" paradigm whose categories already have one is refused, with a door onto the published record. The concurrency guard is skipped while creating, so this is the one rewrite that would otherwise have nothing behind it | ✅ |
+| U-63 | the grid is edited as the rectangle it draws | rows and columns insert and remove **at a position**; the record's own rows (where a spanned cell is written once and the positions it covers are omitted) are converted in and out, and the round trip is exact | ✅ |
+| U-64 | two invariants make `ragged-table` unreachable | the grid always tiles its rectangle and **every row keeps a cell of its own**, so `mergeDown`, `removeColumn` and `insertRow` decline rather than produce a row that serialises to `[]` | ✅ |
+| U-65 | the cell inspector | kind toggle (heading / form / filler), heading text, the address picker over **every bound grammatical feature** (not the category's axis — a conjugation cell is addressed by person, number, tense and mood at once), and the ordered rule rows: base, condition, both affix pairs, reorder, remove | ✅ |
+| U-66 | merging | one column or one row at a time, absorbing **only filler**, plus unmerge — so no merge can quietly discard a heading somebody wrote or a cell's rules. *Merge right* is offered only where the neighbour is filler | ✅ |
+| U-67 | the editor addresses the **published** grammar | never the grammar dialog's unsaved draft: a paradigm is a different record with its own publish button, so a cell address built from a value that exists only in a draft would be publishable and point at nothing | ✅ |
+| U-68 | the preview's specimen is a real word | *Draw one* fills the lemma from slice 1's random-entry endpoint, keyed on the first selector — rules written against an invented lemma test the author's own spelling instead of the language's | ✅ |
+| U-69 | defects block the publish | every `paradigmIssues` kind is listed in the footer with the offending cell's own address, and Publish is disabled | ✅ blank `requires` message, uncompilable `match` |
+| U-70 | mobile | the whole tab and the editor at 375px, including the grid's horizontal scroll | |
+| U-71 | publishing from the editor | a real rewrite round-trips: reopen and the tables are as authored, the cid guard refuses a stale one, and the version indexes. The list waits for the index only for a **new** paradigm — a rewrite keeps its identity, so its row is already on screen | ✅ |
+| U-72 | the reader's third form state | a form the entry asserts **over** a generated one is marked and named in the legend. Only the containment case reaches it, and it is the case that matters: without it, a rule wrong for one word and a rule wrong for the language look identical | ✅ |
 
----
+### 7.6 Counts, samples and the record link — ADR-0019 slice 1 (shipped)
+
+Three small surfaces the merge arc carried alongside it. They are listed
+separately because they are independent of the grammar model and would survive
+another revision of it.
+
+| # | Flow | What must be true |
+|---|---|---|
+| U-80 | the count chip | every POS, feature-value, category and annotation row in the grammar dialog carries `×N` from `GET /languages/:tag/labels`, joined by canonical row key. **A row at zero carries nothing** — deliberate, and the opposite of the dashboard's shelf, which prints `×0` because there every row is a declaration and here most rows of a young dictionary would be |
+| U-81 | the sample link | pressing the row's ↻ draws a random entry using that tag and links it by its orthography, in a **new tab** (the dialog holds an unpublished draft, so following a link in place would throw the contributor's work away). It is fetched **on demand**, never eagerly: a values level can run to hundreds of rows |
+| U-82 | the reroll | the control beside it re-calls `GET /languages/:tag/labels/random?row=<canonical row key>` — the key is a **query parameter**, not a path segment, because it carries `=`, `\|` and, on a layered feature name, brackets — and changes the target on a row with more than one member. A row with exactly one member legitimately re-draws the same entry, and a row with none 404s |
+| U-83 | counts describe the **saved** grammar | the hint says so, and editing a draft does not move a count |
+| U-84 | the language-record link | the dashboard footer links to `https://atproto.at/uri/<the raw at:// URI>` of the **currently accepted** version, under the `language.viewRecord` key, in every locale |
+
 
 ## Canonical sources
 
@@ -744,14 +795,17 @@ each names the fixture that exercises it.
 - `packages/types/src/grammar.ts` — `GrammarIssue` kinds, for §3.2
 - `packages/types/src/dashboard.ts`, `label.ts` — what the dashboard and labels
   endpoints serve, i.e. what a fixture is asserted against
-- `docs/design/grammatical-tagging.md` + `docs/adr/0006-*`, `0007-*`, `0008-*`,
-  `0009-*`, `0010-*` — the features the matrix must cover
-- `docs/design/paradigm-rules.md` + `docs/adr/0016-*` — layer 5, which §3.5 covers
+- `docs/design/grammatical-tagging.md` + `docs/adr/0006-*`, `0007-*`, `0010-*`,
+  and **`0019-*`** (the category–axis merge, which superseded `0008-*`'s axes and
+  `0009-*`'s layout) — the features the matrix must cover
+- `docs/design/paradigm-rules.md` + `docs/adr/0016-*` — layer 5, reshaped by
+  `docs/design/category-axis-merge.md` + ADR-0019, which §3.5 covers
 - `packages/types/src/paradigm.ts` — `generateForms`, `mergeParadigms`,
-  `paradigmIssues`, `paradigmRkey`: what a paradigm fixture is asserted against
+  `paradigmIssues`, `paradigmRkey`, `paradigmGrid`, `resolveParadigmTables`:
+  what a paradigm fixture is asserted against
 - `scripts/fixtures/` — the fixture content, the validator gate and the manifest
-- `packages/types/src/grammar.ts` — `resolveLayout`, `placeForms`,
-  `MAX_LAYOUT_CELLS`: what a layout fixture is actually asserted against, since
-  the viewer and the designer both draw from it
+- `packages/types/src/grammar.ts` — `categoryTags`, `headwordKeys`,
+  `placeForms`, `coordTag`: how a category's annotations become labelled tags,
+  which bundle a paradigm's selector is compared with, and where a form lands
 - `apps/web/src/components/GrammarBindingDialog.tsx` — the authoring surfaces
   §7 owes a pass to

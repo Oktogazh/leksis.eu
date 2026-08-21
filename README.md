@@ -11,15 +11,20 @@ built on the AT Protocol and ArangoDB. See [leksis.eu](https://leksis.eu).
 > contributors now have a page showing everything they have published, read
 > straight from their own PDS, with the means to withdraw any of it
 > ([ADR-0012](docs/adr/0012-contributor-page-and-record-deletion.md)); search is
-> the unbuilt half. In parallel the **morphology arc** is through layer 4:
-> a language declares its grammatical primitives, which features are inherent
-> to a category, which vary across its forms, and the shape of the tables those
-> forms are laid out in — see
+> the unbuilt half. In parallel the **morphology arc** is through generation:
+> a language declares its grammatical primitives and the categories its
+> headwords fall into — each naming the one feature its forms vary over and
+> **the value each of its headword flavours is cited at**, so an ordinary
+> masculine noun and a collective plural-headword noun are two abbreviations of
+> one declaration — and an `eu.leksis.paradigm` record draws the inflection
+> tables cell by cell and carries the rules that fill them from the lemma. See
 > [ADR-0006](docs/adr/0006-grammar-layer-primitives.md),
 > [ADR-0007](docs/adr/0007-grammar-layer-inherent-combinations.md),
-> [ADR-0008](docs/adr/0008-grammar-layer-axes-and-single-sourced-labels.md) and
-> [ADR-0009](docs/adr/0009-grammar-layer-layout.md). Generation from rules is
-> layer 5 and not built: a paradigm shows only the forms an entry carries.
+> [ADR-0016](docs/adr/0016-grammar-layer-rules.md) and
+> [ADR-0019](docs/adr/0019-category-axis-merge.md), which merged the separate
+> axes and layout declarations ([ADR-0008](docs/adr/0008-grammar-layer-axes-and-single-sourced-labels.md),
+> [ADR-0009](docs/adr/0009-grammar-layer-layout.md)) into those two. Export —
+> Hunspell, UniMorph, CoNLL-U — is the arc's last layer and is not built.
 > Beside the grammar, a language also declares the rest of a dictionary's front
 > matter — lexicographic labels (register, domain, usage) and plain
 > abbreviations — and every label is keyed on the tag it names

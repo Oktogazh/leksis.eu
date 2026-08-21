@@ -1,12 +1,25 @@
 # Design note: layer 5 — the paradigm lexicon (inflection rules)
 
-**Status:** **Built** — designed 2026-08-15, all six slices shipped 2026-08-16 (**ADR-0016**). This
-file was the plan the build sessions executed and is kept for its reasoning and its "as built"
-notes; where it and shipped code disagree, **the code and ADR-0016 win**. The §7 questions are still
-open and are still not to be answered by guessing.
+**Status:** **Built, then reshaped.** Designed 2026-08-15, all six slices shipped 2026-08-16
+(**ADR-0016**); **the record's shape and its reach were then changed by ADR-0019** (the category–axis
+merge, 2026-08-21). This file was the plan the build sessions executed and is kept for its reasoning
+and its "as built" notes; where it and shipped code disagree, **the code, ADR-0016 and — above both —
+ADR-0019 win.**
+
+> **What ADR-0019 changed here, so nothing below is read as current:** `selector` (one `Tag`, matched
+> by **containment** over an entry's `inherentAtoms`) became **`selectors`** (1–8 `Tag`s, matched by
+> **exact equality** over the entry's `selectorKeys`, which carry the default axis value), so
+> most-specific-selector precedence is gone and two paradigms can no longer both reach one entry;
+> `rules[]` (each carrying its own `coords`) became **`tables[]`**, grids authored cell by cell —
+> a cell is a heading, structural filler or a form with its address and the ordered rules that fill
+> it — because the cell space it used to fill came from `grammar.layout`, which no longer exists.
+> `MAX_LAYOUT_CELLS` became `MAX_TABLE_CELLS`, and `paradigmIssues` reports eight kinds that judge the
+> grid rather than the layout it referenced. The §7 questions are still open and are still not to be
+> answered by guessing.
 **For:** the morphology arc's layer 5 (`leksis-evolution` skill). Supersedes the "Layer 5 — Rules"
 section of `docs/design/grammatical-tagging.md`, which now points here.
-**Related:** ADR-0009 (layout — the cell space rules fill), ADR-0008 (axes), ADR-0007 (inherence),
+**Related:** **ADR-0019 (the merge — authoritative over this note)**, ADR-0009 (layout — the cell
+space rules used to fill, removed by 0019), ADR-0008 (axes, removed by 0019), ADR-0007 (inherence),
 ADR-0015 (the ingest gate this layer extends), `docs/design/weighted-voting.md` §2.1 (paradigms are
 the sixth upgradable collection), `lexicons/eu.leksis.defs.json` (the shared `Tag`).
 

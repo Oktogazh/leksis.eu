@@ -1,15 +1,19 @@
 # Design note: the category–axis merge (+ usage counts, record links)
 
-**Status:** **Planned** — designed 2026-08-21, not yet built. This file is the unified plan for
-one feature arc executed across several sessions. Progress is tracked in the staging ADR,
-**`docs/adr/0019-category-axis-merge.md`** — read it first in every build session, update it last.
+**Status:** **Built** — designed 2026-08-21, all six slices shipped the same day and released as
+**v0.28.0**. This file was the unified plan the build sessions executed and is kept for its
+reasoning; **`docs/adr/0019-category-axis-merge.md` is the accepted record and wins wherever the
+two disagree** — it carries the per-slice state notes, the deviations decided while building, and
+the Consequences. Its §6 open questions were all answered: `Cell.kind: "empty"` earns its place,
+merges are one row or column at a time absorbing only filler, the storage enum stayed
+`combination`, and the `otherForms` picker still offers the category's axis values alone.
 **For:** the grammatical tagging system's structural revision (merging axes back into categories)
 plus two small independent surfaces (usage counts / random-entry links in the grammar editor, the
 language-record link on the dashboard).
-**Supersedes, when built:** ADR-0008's `grammar.axes` (removed), ADR-0009's `grammar.layout`
-(removed — table shape moves into the paradigm record), and ADR-0016's containment selector
+**Superseded:** ADR-0008's `grammar.axes` (removed), ADR-0009's `grammar.layout`
+(removed — the table shape moved into the paradigm record), and ADR-0016's containment selector
 (replaced by exact match). ADR-0006/0007 (primitives, inherence) stand. Where this note and the
-code eventually disagree, the code and the finalized ADR-0019 win.
+code disagree, the code and ADR-0019 win.
 
 > **How to read this.** §1 is the model — what changes and why. §2 the new shapes (lexicon +
 > types). §3 storage and API. §4 the interfaces. §5 the build slices — **one slice = one full

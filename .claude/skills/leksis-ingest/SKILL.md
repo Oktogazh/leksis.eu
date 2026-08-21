@@ -272,12 +272,13 @@ it does so silently — nothing surfaces it to a reader, so a bot that never rea
 the ingest log will simply see its version missing. Vocabulary is never judged;
 **structure always is**. For a language record that means every row above layer 1
 may only name atoms, feature names and values the *same object* binds, no two rows
-may key the same, a named combination holds ≥2 atoms and must be grounded, a
-(category, feature) pair is inherent XOR an axis, an axis names ≥1 value, a layout
-dimension names an axis that category declares, and a lexicographic set appears
+may key the same, a named category of ≥2 atoms must be grounded, a
+(category, feature) pair is inherent XOR that category's axis, an annotation names a
+`default` **iff** its category names an axis, two annotations of one category do not
+share a default, and a lexicographic set appears
 nowhere in the grammatical layers. It also means **every `maxLength` the lexicons
 declare on an array is enforced** — 64 `pos`, 256 `features`, 2048 `values`, 512
-`inherent`, 1024 `bindings`, 512 `axes`, 256 `layout`, 512 `abbreviations`, 32
+`inherent`, 1024 `categories` (16 `annotations` each), 512 `abbreviations`, 32
 `feats` on one tag, 64 `todo` and 16 `etymology` items on an entry, 64 `languages`
 on a source. Text-length caps are *not* enforced, but stay inside them anyway.
 The reason for all of it: the web editors navigate these relations, so a row
@@ -308,12 +309,16 @@ of the import.
     //         Optional, and when present must be NON-EMPTY: `note: ""` fails isValidGrammar and
     //         the whole record is dropped. Content — indexed nowhere.
 
-    // ---- layer 2: what those atoms combine into ----
-    inherent?: { category: Tag, feature: string }[],
-    bindings?: { tag: Tag, label, references? }[],   // COMBINATIONS ONLY (≥2 items)
-
-    // ---- layer 3: what a category's forms vary over ----
-    axes?:     { category: Tag, feature: string, values: string[] }[],
+    // ---- layer 2: what those atoms combine into, and what its forms vary over ----
+    inherent?:   { category: Tag, feature: string }[],
+    categories?: {
+      category: Tag,          // ≥1 atom — a bare part of speech is allowed
+      axis?: string,          // bare feature name its forms vary over
+      annotations: {          // ≥1, ≤16 — one per headword flavour
+        long: string, short?: string,
+        default?: string,     // the axis value THIS flavour's headwords carry;
+      }[],                    //   required iff `axis` is set, forbidden otherwise
+    }[],
   },
   createdAt: string,
 }
@@ -358,41 +363,59 @@ declared for the first time. Never assume a published tagset exists.
   *combination*: declaring a declension inherent to `{NOUN, Gender=Fem}`
   rather than to `{NOUN}` is a lexicographic judgement about what a
   contributor is asked first, and it is the language's to make.
-- **`bindings`** — a label for a combination of **two or more** atoms:
-  French `{NOUN, Gender=Fem}` → `nf.`. A language that prints `n. f.` simply
-  binds the two atoms separately and writes **no** row here — decomposition
-  renders it. A one-atom row belongs in `pos` or `values`; putting it here
-  produces a `single-item-binding` issue.
-- **Grounding** is the gate: a named combination must be reachable by removing
-  one feature at a time, each removal licensed by an `inherent` declaration,
-  down to a bound atom. Otherwise: `ungrounded-combination`.
-- Enumerating every combination is a **prompt, never a constraint**. An
-  unenumerated combination stays perfectly authorable and renders by
-  decomposition.
+- **`categories`** — one row per headword category, carrying **what a reader
+  sees**: French `{NOUN, Gender=Fem}` → `nf.`. A language that prints `n. f.`
+  simply binds the two atoms separately and writes **no** row here —
+  decomposition renders it. Since ADR-0019 a **single atom is allowed**: a bare
+  part of speech is a category like any other, and has to be, because a category
+  is also where an axis is declared.
+- **Grounding** is the gate: a named category of two or more atoms must be
+  reachable by removing one feature at a time, each removal licensed by an
+  `inherent` declaration, down to a bound atom. Otherwise:
+  `ungrounded-combination`.
+- Enumerating every category is a **prompt, never a constraint**. An
+  unenumerated bundle stays perfectly authorable and renders by decomposition.
 
-### Layer 3 — axes
+### The axis, and where a headword sits on it (ADR-0019)
 
-- **`axes`** — `{category: Tag, feature: string, values: string[]}`, read as
-  *"for this category, this feature varies across its forms, over these
-  values, **in this order**"*. This is the option set for `otherForms`.
-- **The row names its values, in order**, rather than inheriting the whole
-  inventory, because a language's inventory and one category's paradigm are
-  not the same set (three genders in the adjectives, a split masculine in the
-  nouns). The order is grammatical order — no grammar prints the accusative
-  first — and the alphabetical order of an identifier is not it.
-- Keyed exactly as `inherent` (a `Tag` category, a bare feature name), which
-  is what makes the conflict between them detectable: the same
-  (category, feature) pair declared both ways is an
-  `inherent-axis-conflict`. A paradigm cannot be built from a coordinate that
-  is also a constant. (`Number` an axis of `{NOUN}` and inherent to
-  `{NOUN, Number=Ptan}` is *not* a conflict — different categories.)
-- An axis category is checked for **bound atoms only, never grounding**, and
-  that is what lets a paradigm be non-rectangular: declare Person an axis of
-  `{VERB, VerbForm=Fin}` and simply never declare it for
-  `{VERB, VerbForm=Inf}`.
-- An axis with no values is an `empty-axis` issue.
-- An axis declared on `{NOUN}` applies to an entry categorised
-  `{NOUN, Gender=Fem}` — matching walks **sub-bundles**, not exact keys.
+- **`axis`** is a **bare feature name** on the category row, read as *"this
+  category's forms vary over this feature"*. It replaced the standalone `axes`
+  array, and the reason is the `default` below: a language's convention couples
+  what a headword *is* with **where its own citation form sits** on that axis,
+  and only the category row holds a label to attach that to.
+- **A category names its axis and its defaults, never a value inventory.** What
+  values exist is layer 1's business (`values`), and which cells a table prints
+  is the paradigm record's. Do not try to enumerate an axis's range here.
+- **`default`** on an annotation is the value of `axis` that this flavour's
+  headwords carry — and **several annotations of one category are several
+  flavours**. Breton cites an ordinary masculine noun in the singular
+  (`ak.g.`, `default: "Sing"`) and an *anv-kadarn stroll* in the **plural**
+  (`ak.str.`, `default: "Plur"`), its singulative derived by rule. One row, two
+  abbreviations. A monolingual source's abbreviation list often distinguishes
+  exactly these, and mapping them onto one category is what this field is for.
+- It is stored **bare** and matched by name; provenance is re-attached from the
+  `values` row that bound it, so a minted `Number=Sgv` default works.
+- Issues: `category-axis-unbound` (the axis names a feature you never bound),
+  `category-axis-inherent` (the same (category, feature) declared both ways — a
+  paradigm cannot be built from a coordinate that is also a constant),
+  `category-default-missing` / `category-default-forbidden` (the iff rule),
+  `category-default-unbound`, `category-duplicate-default`.
+
+### What a bot must write on the ENTRY, because of the above
+
+**An entry's `categories` bundle carries the default axis value** of the
+annotation it was created through. An anv-stroll headword is
+`{NOUN, Gender=Masc, Number=Plur}` on the record itself, and an ordinary
+masculine noun is `{NOUN, Gender=Masc, Number=Sing}` — **not** a bare
+`{NOUN, Gender=Masc}`. Two consequences a bot must not get wrong:
+
+- Write the default, or the entry chips as a decomposed bundle instead of the
+  abbreviation its source printed, and **no paradigm reaches it** (selectors are
+  matched by exact equality since ADR-0019).
+- Write **only** a value the category declares as one of its defaults. An axis
+  value the category never names is a *form's* feature written on a headword;
+  the AppView drops it from the entry's headword key, so it buys nothing and
+  loses the exact match.
 
 ### What the AppView does with a malformed grammar
 
@@ -403,10 +426,9 @@ which is the opposite of what this section used to say:
   object, a feature name breaking the pattern, a label with no `long`, or an
   array past the `maxLength` its lexicon declares): **the whole record is
   rejected**, silently. The language keeps its previous version.
-- **Coherence failure** (`grammarIssues` — `unbound-feature`, `unbound-atom`,
-  `duplicate`, `ungrounded-combination`, `single-item-binding`,
-  `inherent-axis-conflict`, `empty-axis`, the five `layout-*` kinds,
-  `lexicographic-in-grammar`, `duplicate-abbreviation`): **also rejected**,
+- **Coherence failure** (`grammarIssues`, twelve kinds — `unbound-feature`,
+  `unbound-atom`, `duplicate`, `ungrounded-combination`, the six `category-*`
+  kinds above, `lexicographic-in-grammar`, `duplicate-abbreviation`): **also rejected**,
   silently, with the offending rows named in the AppView's log. The language
   keeps its previous version.
 
@@ -542,11 +564,18 @@ Generate the `grammar` **from** the map; never hand-write the two in parallel.
     "sl.": { "disposition": "ignore", "why": "typographic marker, no content" }
   },
 
-  // Layer 2/3 declarations, referencing the label keys above.
-  "inherent":     [ { "category": "an.", "feature": "Gender" } ],
-  "axes":         [ { "category": "an.", "feature": "Number",
-                      "values": ["Sing", "Plur", "Sgv"] } ],
-  "combinations": [ { "of": ["an.", "b."], "label": { "long": "anv benel", "short": "anb." } } ]
+  // Layer 2 declarations, referencing the label keys above.
+  "inherent":   [ { "category": "an.", "feature": "Gender" } ],
+  // One row per headword CATEGORY: what it is, the feature its forms vary over,
+  // and one abbreviation per flavour naming the value that flavour is cited at.
+  // Two abbreviations of one category is the anv-kadarn stroll case.
+  "categories": [
+    { "of": ["an.", "b."], "axis": "Number",
+      "annotations": [ { "long": "anv benel", "short": "anb.", "default": "Sing" } ] },
+    { "of": ["an.", "g."], "axis": "Number",
+      "annotations": [ { "long": "anv gourel",       "short": "ang.",  "default": "Sing" },
+                       { "long": "anv-kadarn stroll", "short": "astr.", "default": "Plur" } ] }
+  ]
 }
 ```
 
@@ -630,9 +659,10 @@ Definition = {
 InflectedForm = { tag: Tag, form: string }
 // ONE tag — the form's address in the paradigm: "gen. pl." is one coordinate in
 // two dimensions, so it is one bundle carrying Case=Gen AND Number=Plur, not two
-// tags. The values are normally the ones the language declares as `axes` of the
-// entry's category, but nothing enforces it: an axis declaration is a menu, never
-// a whitelist, and a form matching no declared axis simply stays in the flat list.
+// tags. The values are normally drawn from the feature the entry's category
+// declares as its `axis`, but nothing enforces it: a declaration is a menu, never
+// a whitelist, and a form matching no cell of a reaching paradigm simply stays in
+// the flat list.
 // Each `form` is added to the entry's search index, so an inflected form leads
 // back to the entry.
 

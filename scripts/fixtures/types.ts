@@ -15,7 +15,7 @@ import type {
 
 /** What a fixture is for, and what asserting against it looks like. */
 export interface FixtureNote {
-  /** Coverage-matrix row ids this fixture answers (`["L-50", "E-27"]`). */
+  /** Coverage-matrix row ids this fixture answers (`["P-12", "E-27"]`). */
   covers: string[];
   /** One sentence describing a correct page. Copied verbatim into the manifest. */
   expect: string;

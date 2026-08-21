@@ -16,6 +16,24 @@ import type { EntryFixture } from "./types.ts";
 import { UNDESCRIBED_OCLC } from "./sources.ts";
 
 const NOUN: Tag["upos"] = { value: "NOUN" };
+const VERB: Tag["upos"] = { value: "VERB" };
+const ADJ: Tag["upos"] = { value: "ADJ" };
+const masc = { feature: "Gender", value: "Masc" };
+const fem = { feature: "Gender", value: "Fem" };
+const sing = { feature: "Number", value: "Sing" };
+
+/**
+ * A masculine noun at its citation number.
+ *
+ * Since ADR-0019 a headword bundle carries the default axis value of the
+ * annotation it was created through — `{NOUN, Gender=Masc}` alone is no longer
+ * something the entry editor can emit, because the category declares two
+ * flavours and the abbreviation a contributor clicked is what says which. So
+ * every ordinary masculine noun below is written out at `Number=Sing`, and the
+ * one anv-kadarn stroll at `Number=Plur`.
+ */
+const mascSing: Tag = { upos: NOUN, feats: [masc, sing] };
+const femSing: Tag = { upos: NOUN, feats: [fem, sing] };
 
 /** A leaf definition at a flat depth-1 place. */
 function leaf(index: number, text: string, extra?: Partial<EntryDefinition>): EntryDefinition {
@@ -45,13 +63,13 @@ export const entryFixtures: EntryFixture[] = [
   },
   {
     handle: "lxt-02",
-    covers: ["E-02", "E-10", "E-14", "E-15", "E-16"],
+    covers: ["E-02", "E-10", "E-14", "E-15", "E-16", "E-32", "P-08"],
     expect:
-      "Four spellings, all of them searchable. Three flat definitions numbered 1. 2. 3.; the second carries a free prose remark before its text. Entry-level notes render below the definitions (the evicted editorial label as prose), and two references at the very bottom — one a link, one plain text.",
+      "Four spellings, all of them searchable. Three flat definitions numbered 1. 2. 3.; the second carries a free prose remark before its text. Entry-level notes render below the definitions (the evicted editorial label as prose), and two references at the very bottom — one a link, one plain text. Its bundle carries its own default axis value (`Number=Sing`), so the record self-describes as the singular flavour of the masculine noun and renders as ONE chip, `ak.g.` — and it is what proves the anv-stroll paradigm lxp-04 exact: that record selects the SAME category at `Number=Plur` and must not reach this page, which draws lxp-05's common declension instead.",
     record: {
       languageID: "qtl",
       orthography: ["kambr", "kammr", "kamr", "lxt-02"],
-      categories: [{ upos: NOUN, feats: [{ feature: "Gender", value: "Masc" }] }],
+      categories: [mascSing],
       definitions: [
         leaf(1, "Ul lec'h serret e-barzh un ti."),
         leaf(2, "Dre astenn, forzh peseurt egor bihan.", {
@@ -77,7 +95,7 @@ export const entryFixtures: EntryFixture[] = [
       languageID: "qtl",
       orthography: ["ταβεσκ", "lxt-03"],
       transcription: "[taˈvesk]",
-      categories: [{ upos: NOUN, feats: [{ feature: "Gender", value: "Masc" }] }],
+      categories: [mascSing],
       definitions: [leaf(1, "Ur ger skrivet en ul lizherenneg all.")],
       references: [{ text: "Leksis fixture lxt-03 — a non-Latin canonical orthography, and a transcription." }],
     },
@@ -88,9 +106,9 @@ export const entryFixtures: EntryFixture[] = [
   // -------------------------------------------------------------------------
   {
     handle: "lxt-04",
-    covers: ["E-09", "E-17", "E-19", "E-27", "E-28", "P-01", "P-08", "P-11", "P-12"],
+    covers: ["E-09", "E-17", "E-19", "E-27", "E-28", "P-01", "P-02", "P-06", "P-11", "P-12"],
     expect:
-      "The main layer-5 page. The main noun grid is mostly GENERATED from the lemma `roska` by lxp-01 and styled as derived, not asserted: roska, roskas, roskenn, roskae, roskai, roskis. One cell is the entry's own and wins: `roskerum` overrides the genitive plural lxp-01 would otherwise have produced (roskarum). Gen×Sgv is EMPTY — a faint dot, no rule reaches it — while Dat×Sgv is EXCLUDED, an em dash; the two must look different, and that distinction is the whole reason the layer draws them apart. The possessed block below is filled ENTIRELY by generation from lxp-04 — a block no asserted form fills, drawn anyway, which is the layer-4 rule ADR-0009 predicted layer 5 would revise. In the feminine-pinned block, `roskai-hir` lands in the dative singular although its tag also carries a part of speech no cell address asks for: the placement's superset tolerance. Searching `roskerum` returns this entry.",
+      "The main morphology page, and the one that shows every state a cell can be in. lxp-01's first table is drawn as its record authored it — a blank corner, a heading row, a heading column — and is mostly GENERATED from the lemma `roska`, styled as derived rather than asserted: roska, roskas, roskenn, roskae, roskai. The genitive singular takes the SECOND of that cell's two rules, the first having declined. One cell is the entry's own and wins: `roskerum` is marked as asserted over the `roskarum` lxp-01 would otherwise have produced. Three cells are blank for three reasons and must look different: Gen×Sgv has no rule at all (manual-only, an invitation), Dat×Plur has a rule whose condition declined for this lemma, and Dat×Sgv is structural filler — a cell the language says cannot exist. The second table, the possessed forms, is filled entirely by generation and its genitive row is ONE merged cell spanning both possessor columns. `roskai-hir` lands in the dative singular although its tag also carries a part of speech and a gender no cell address asks for — the placement's superset tolerance — and it is MARKED as asserted over the `roskai` the rule generated at the same cell, which is the third form state. Searching `roskerum` returns this entry.",
     record: {
       languageID: "qtl",
       orthography: ["roska", "lxt-04"],
@@ -100,8 +118,9 @@ export const entryFixtures: EntryFixture[] = [
         {
           upos: NOUN,
           feats: [
-            { feature: "Gender", value: "Fem" },
+            fem,
             { feature: "Declension", value: "1", scheme: "qtl" },
+            sing,
           ],
         },
       ],
@@ -114,7 +133,7 @@ export const entryFixtures: EntryFixture[] = [
           tag: {
             upos: NOUN,
             feats: [
-              { feature: "Gender", value: "Fem" },
+              fem,
               { feature: "Case", value: "Dat" },
               { feature: "Number", value: "Sing" },
             ],
@@ -133,7 +152,7 @@ export const entryFixtures: EntryFixture[] = [
   },
   {
     handle: "lxt-05",
-    covers: ["P-03", "P-09"],
+    covers: ["P-03", "P-07"],
     expect:
       "A second-declension noun that SUPPLIES the principal part lxp-02 requires (the genitive singular, `kerneris`). So the paradigm runs: the nominative plural is built from that form (kerneri), and the genitive plural from the plural in turn (kernerium) — a two-link base chain, neither link touching the lemma.",
     record: {
@@ -143,8 +162,9 @@ export const entryFixtures: EntryFixture[] = [
         {
           upos: NOUN,
           feats: [
-            { feature: "Gender", value: "Fem" },
+            fem,
             { feature: "Declension", value: "2", scheme: "qtl" },
+            sing,
           ],
         },
       ],
@@ -157,7 +177,7 @@ export const entryFixtures: EntryFixture[] = [
     handle: "lxt-06",
     covers: ["P-04"],
     expect:
-      "The same declension as lxt-05 and NO genitive singular, so lxp-02 is skipped ENTIRELY rather than half-generated — a paradigm missing a principal part would otherwise produce a plausible, wrong half-table, which is worse for a dictionary than an empty one. Its main grid is therefore blank where lxt-05's is full. Note lxp-04 still runs, because it requires nothing: one paradigm being skipped does not silence the others. /language/qtl's missing-forms card lists this entry carrying lxp-02's own message, in the fixture language, word for word — nothing paraphrases it, because the person who wrote the rule is a speaker.",
+      "The same declension as lxt-05 and NO genitive singular, so lxp-02 is skipped ENTIRELY rather than half-generated — a paradigm missing a principal part would otherwise produce a plausible, wrong half-table, which is worse for a dictionary than an empty one. Its main grid is therefore blank where lxt-05's is full. Under exact match this entry is reached by lxp-02 and by nothing else, so a skipped paradigm leaves the page with no table at all rather than a partial one. /language/qtl's missing-forms card lists this entry carrying lxp-02's own message, in the fixture language, word for word — nothing paraphrases it, because the person who wrote the rule is a speaker.",
     record: {
       languageID: "qtl",
       orthography: ["tornos", "lxt-06"],
@@ -165,8 +185,9 @@ export const entryFixtures: EntryFixture[] = [
         {
           upos: NOUN,
           feats: [
-            { feature: "Gender", value: "Fem" },
+            fem,
             { feature: "Declension", value: "2", scheme: "qtl" },
+            sing,
           ],
         },
       ],
@@ -178,13 +199,21 @@ export const entryFixtures: EntryFixture[] = [
   },
   {
     handle: "lxt-07",
-    covers: ["P-05", "P-07", "L-52", "L-53"],
+    covers: ["P-05", "P-12", "E-32"],
     expect:
-      "A perfectly regular verb that carries NO forms at all — the arc's promise in one page: kanan, kanez, kana, kanont are all generated. `kanomp` fills the 1st AND 2nd person plural under one merged heading rather than being printed twice, which is syncretism expressed instead of expanded. Two tables, told apart by their pinned tense: the present block's caption is ONE chip (the pair is named) and the past block's is two.",
+      "A perfectly regular verb that carries NO forms at all — the arc's promise in one page: kanan, kanez, kana, kanont, kanomp are all generated. `kanomp` occupies ONE cell spanning the first and second person plural rather than being printed twice, which is syncretism expressed instead of expanded. Two tables, captioned by their own tense in the language's words, and one manual-only gap in the past table's second-person singular. Its headword bundle carries `Person=1`, the default the finite-verb category declares — a Latin-style citation form, written on the record itself.",
     record: {
       languageID: "qtl",
       orthography: ["kan", "lxt-07"],
-      categories: [{ upos: { value: "VERB" }, feats: [{ feature: "VerbForm", value: "Fin" }] }],
+      categories: [
+        {
+          upos: VERB,
+          feats: [
+            { feature: "VerbForm", value: "Fin" },
+            { feature: "Person", value: "1" },
+          ],
+        },
+      ],
       definitions: [leaf(1, "Ober trouz gant ar vouezh, en un doare reizh.")],
       references: [
         { text: "Leksis fixture lxt-07 — a lemma that carries nothing: the whole table is generated." },
@@ -193,30 +222,30 @@ export const entryFixtures: EntryFixture[] = [
   },
   {
     handle: "lxt-08",
-    covers: ["L-58"],
+    covers: ["L-13", "E-33"],
     expect:
-      "The non-finite sibling. The language declares axes and a layout for `{VERB, VerbForm=Fin}` and NEITHER for `{VERB, VerbForm=Inf}`, and lxp-03's selector does not reach it — so this entry degrades to the flat `otherForms` list, which is the fallback layer 5 must never break.",
+      "The non-finite sibling, and the category that declares NO axis: an infinitive does not vary, so `{VERB, VerbForm=Inf}` takes exactly one annotation and its bundle carries no default. It renders as ONE chip (`a.v.`) by exact match, no paradigm selects it, and its own form degrades to the flat `otherForms` list — the fallback the arc must never break.",
     record: {
       languageID: "qtl",
       orthography: ["kanañ", "lxt-08"],
-      categories: [{ upos: { value: "VERB" }, feats: [{ feature: "VerbForm", value: "Inf" }] }],
+      categories: [{ upos: VERB, feats: [{ feature: "VerbForm", value: "Inf" }] }],
       otherForms: [form([["Number", "Sing"]], "kanadenn")],
       definitions: [leaf(1, "Anv-verb `kan`.")],
-      references: [{ text: "Leksis fixture lxt-08 — the sibling category with no axes and no layout." }],
+      references: [{ text: "Leksis fixture lxt-08 — the category that declares no axis, and the flat-list fallback." }],
     },
   },
   {
     handle: "lxt-09",
-    covers: ["L-17", "L-59", "P-10"],
+    covers: ["L-15", "L-19", "P-05", "P-11"],
     expect:
-      "An adjective. `{ADJ}` declares an axis (Gender) and NO layout, so the forms print as a flat list in the axis's declared order, never as a fake table — the row verified by absence. lxp-05 generates the feminine (`brava`), and the entry's own `bravik` is tagged with the multivalue `Gender=Fem,Masc`: one form spanning the whole axis, which must never look like a form nobody entered.",
+      "An adjective, and the POS-only category ADR-0019 made legal: `{ADJ}` is one atom, declares Gender as its axis and cites its headwords at the masculine — so this bundle is `{ADJ, Gender=Masc}`. lxp-07 generates the feminine (`brava`), and the entry's own `bravik`, tagged with the multivalue `Gender=Fem,Masc` at the plural, lands in the merged cell addressed the same way: one form spanning the whole axis, marked asserted, and never looking like a form nobody entered.",
     record: {
       languageID: "qtl",
       orthography: ["brav", "lxt-09"],
-      categories: [{ upos: { value: "ADJ" } }],
-      otherForms: [form([["Gender", "Fem,Masc"]], "bravik")],
+      categories: [{ upos: ADJ, feats: [masc] }],
+      otherForms: [form([["Gender", "Fem,Masc"], ["Number", "Plur"]], "bravik")],
       definitions: [leaf(1, "Plijus d'ar sell.")],
-      references: [{ text: "Leksis fixture lxt-09 — axes with no layout, and a form spanning an axis." }],
+      references: [{ text: "Leksis fixture lxt-09 — a part-of-speech-only category, and a form spanning its axis." }],
     },
   },
 
@@ -231,7 +260,7 @@ export const entryFixtures: EntryFixture[] = [
     record: {
       languageID: "qtl",
       orthography: ["gwez", "lxt-10"],
-      categories: [{ upos: NOUN, feats: [{ feature: "Gender", value: "Masc" }] }],
+      categories: [mascSing],
       definitions: [
         { place: [0, 1, 1], text: "Ur blantenn uhel gant ur c'hef koad." },
         { place: [0, 1, 2], text: "Ar c'hoad e-unan, evel danvez." },
@@ -248,7 +277,7 @@ export const entryFixtures: EntryFixture[] = [
     record: {
       languageID: "qtl",
       orthography: ["dougen", "lxt-11"],
-      categories: [{ upos: { value: "VERB" }, feats: [{ feature: "VerbForm", value: "Inf" }] }],
+      categories: [{ upos: VERB, feats: [{ feature: "VerbForm", value: "Inf" }] }],
       definitions: [
         { place: [1, 0, 0], notes: ["Gant un objed."] },
         {
@@ -273,19 +302,19 @@ export const entryFixtures: EntryFixture[] = [
   // -------------------------------------------------------------------------
   {
     handle: "lxt-12",
-    covers: ["E-06", "E-18", "E-29", "L-14"],
+    covers: ["E-06", "E-18", "E-34", "L-14"],
     expect:
-      "The category `{NOUN, Gender=Masc}` is deliberately NOT named as a combination although both its atoms are bound, so it renders as TWO chips by decomposition. Two forms fall outside the grid for different reasons and both survive below it, neither dropped: `dizanv` is tagged on a feature the language declares no axis of at all, while `kernosmo-hep` is tagged on a declared axis whose combination no block addresses.",
+      "A collective-only noun. Its bundle `{NOUN, Gender=Masc, Number=Coll}` is built entirely of atoms the language bound, and the masculine category's annotations name `Sing` and `Plur` and never `Coll` — so no exact match exists and it renders as THREE chips by decomposition, which is the unenumerated combination staying authorable. The same fact governs the headword key: an axis value the category never declared as a default is a form's feature written on a headword, so it is dropped, the key is the bare `{NOUN, Gender=Masc}`, and no paradigm reaches this entry. Both of its forms therefore print in the flat list, neither dropped.",
     record: {
       languageID: "qtl",
       orthography: ["mor", "lxt-12"],
-      categories: [{ upos: NOUN, feats: [{ feature: "Gender", value: "Masc" }] }],
+      categories: [{ upos: NOUN, feats: [masc, { feature: "Number", value: "Coll" }] }],
       otherForms: [
         form([["Polarity", "Neg"]], "dizanv"),
         form([["Number[psor]", "Sing"]], "kernosmo-hep"),
       ],
       definitions: [leaf(1, "An dour bras a zo tro-dro d'an douar.")],
-      references: [{ text: "Leksis fixture lxt-12 — a decomposed category, and two kinds of unplaceable form." }],
+      references: [{ text: "Leksis fixture lxt-12 — an unenumerated bundle, decomposed, and the headword key dropping an undeclared axis value." }],
     },
   },
   {
@@ -306,19 +335,19 @@ export const entryFixtures: EntryFixture[] = [
   },
   {
     handle: "lxt-14",
-    covers: ["E-05", "L-57"],
+    covers: ["E-05", "E-29", "P-09"],
     expect:
-      "The category is EXACTLY the combination the language named, so it renders as ONE chip (`akg.`, expanding to `anv-kadarn gwregel` on hover) rather than as its two atoms. Contrast lxt-12, whose category is equally well bound and deliberately unnamed. Its form `skeudez` is what draws the last list block: the block is addressed on `Gender=Fem`, a value the language has bound and declared NO axis of — legitimate, and it must never be reported as a defect.",
+      "The bundle is EXACTLY a labelled tag the language declared — the feminine noun at its singular default — so it renders as ONE chip (`ak.gw.`, expanding to `anv-kadarn gwregel` on hover) rather than as its atoms. Contrast lxt-12, whose bundle is equally well bound and matches no annotation. It is also the feminine half of lxp-05's two selectors, so it draws the same table lxt-02 does, from one record — and its own `skeudez`, addressed on a value no cell of that table carries, prints as a LEFTOVER below it rather than being dropped.",
     record: {
       languageID: "qtl",
       orthography: ["skeud", "lxt-14"],
-      categories: [{ upos: NOUN, feats: [{ feature: "Gender", value: "Fem" }] }],
-      // The only form in the set addressed on a bound non-axis value, and so
-      // the only thing that makes the layout's last block draw at all.
+      categories: [femSing],
+      // Addressed on a value no cell of lxp-05 carries, so it stays a leftover
+      // below the table — nothing is ever dropped.
       otherForms: [form([["Gender", "Fem"]], "skeudez")],
       definitions: [leaf(1, "Ar pezh a zeu diouzh un dra etre an heol hag an douar.")],
       references: [
-        { text: "Leksis fixture lxt-14 — an exact-match category, and a list block on a non-axis value." },
+        { text: "Leksis fixture lxt-14 — an exact-match category, and the second selector of a shared paradigm." },
       ],
     },
   },
@@ -334,7 +363,7 @@ export const entryFixtures: EntryFixture[] = [
     record: {
       languageID: "qtl",
       orthography: ["nezenn", "lxt-15"],
-      categories: [{ upos: NOUN, feats: [{ feature: "Gender", value: "Fem" }] }],
+      categories: [femSing],
       definitions: [leaf(1, "Un neudenn voan.")],
       todo: ["Gwiriañ ar ster eil."],
       references: [{ text: "Leksis fixture lxt-15 — exactly one todo item." }],
@@ -348,7 +377,7 @@ export const entryFixtures: EntryFixture[] = [
     record: {
       languageID: "qtl",
       orthography: ["seren", "lxt-16"],
-      categories: [{ upos: NOUN, feats: [{ feature: "Gender", value: "Fem" }] }],
+      categories: [femSing],
       definitions: [leaf(1, "Ur steredenn vihan.")],
       todo: ["Ouzhpennañ un daveenn.", "Gwiriañ an distagadur."],
       references: [{ text: "Leksis fixture lxt-16 — two todo items, and the redirect target of lxt-19." }],
@@ -362,7 +391,7 @@ export const entryFixtures: EntryFixture[] = [
     record: {
       languageID: "qtl",
       orthography: ["seren", "lxt-17"],
-      categories: [{ upos: NOUN, feats: [{ feature: "Gender", value: "Masc" }] }],
+      categories: [mascSing],
       definitions: [leaf(1, "Ur seurt pesk dour-dous, hep kar ebet gant lxt-16.")],
       references: [{ text: "Leksis fixture lxt-17 — the homonym of lxt-16." }],
     },
@@ -375,7 +404,7 @@ export const entryFixtures: EntryFixture[] = [
     record: {
       languageID: "qtl",
       orthography: ["ster", "lxt-18"],
-      categories: [{ upos: NOUN, feats: [{ feature: "Gender", value: "Masc" }] }],
+      categories: [mascSing],
       definitions: [leaf(1, "Ar pezh a dalvez ur ger. (stumm 1)")],
       references: [{ text: "Leksis fixture lxt-18 — version history: three versions, chained." }],
     },
@@ -383,7 +412,7 @@ export const entryFixtures: EntryFixture[] = [
       {
         languageID: "qtl",
         orthography: ["ster", "lxt-18"],
-        categories: [{ upos: NOUN, feats: [{ feature: "Gender", value: "Masc" }] }],
+        categories: [mascSing],
         definitions: [
           leaf(1, "Ar pezh a dalvez ur ger. (stumm 2)"),
           leaf(2, "Ivez: ar blijadur a gaver en un dra."),
@@ -393,7 +422,7 @@ export const entryFixtures: EntryFixture[] = [
       {
         languageID: "qtl",
         orthography: ["ster", "lxt-18"],
-        categories: [{ upos: NOUN, feats: [{ feature: "Gender", value: "Masc" }] }],
+        categories: [mascSing],
         definitions: [
           leaf(1, "Ar pezh a dalvez ur ger. (stumm 3, red)"),
           leaf(2, "Ivez: ar blijadur a gaver en un dra."),
@@ -411,7 +440,7 @@ export const entryFixtures: EntryFixture[] = [
     record: {
       languageID: "qtl",
       orthography: ["faziek", "lxt-19"],
-      categories: [{ upos: { value: "ADJ" } }],
+      categories: [{ upos: ADJ, feats: [masc] }],
       definitions: [leaf(1, "Ur ger n'eus ket anezhañ e gwirionez.")],
       deleted: true,
       deletionReason: "N'eus ket eus ar ger-mañ er yezh: fazi un urzhiataer eo.",
@@ -426,7 +455,7 @@ export const entryFixtures: EntryFixture[] = [
     record: {
       languageID: "qtl",
       orthography: ["serenn", "lxt-20"],
-      categories: [{ upos: NOUN, feats: [{ feature: "Gender", value: "Fem" }] }],
+      categories: [femSing],
       definitions: [leaf(1, "Un eil enmont evit `seren`.")],
       deleted: true,
       deletionReason: "Doubl: gwelet lxt-16.",
@@ -442,7 +471,7 @@ export const entryFixtures: EntryFixture[] = [
     handle: "lxt-21",
     covers: ["E-25"],
     expect:
-      "The ceiling on how big one fixture gets: eight definitions across two levels and six other forms, so the layout has something to strain against. Nothing here is exotic — it is bulk.",
+      "The ceiling on how big one fixture gets: eight definitions across two levels and six other forms, so lxp-01's tables have something to strain against. Every cell it draws is the entry's OWN — the same table that is almost entirely generated on lxt-04 is almost entirely asserted here, which is the two states side by side on one language. Nothing else here is exotic; it is bulk.",
     record: {
       languageID: "qtl",
       orthography: ["dour", "lxt-21"],
@@ -450,8 +479,9 @@ export const entryFixtures: EntryFixture[] = [
         {
           upos: NOUN,
           feats: [
-            { feature: "Gender", value: "Fem" },
+            fem,
             { feature: "Declension", value: "1", scheme: "qtl" },
+            sing,
           ],
         },
       ],
@@ -484,7 +514,7 @@ export const entryFixtures: EntryFixture[] = [
     record: {
       languageID: "qtl",
       orthography: ["gwerz", "lxt-22"],
-      categories: [{ upos: NOUN, feats: [{ feature: "Gender", value: "Fem" }] }],
+      categories: [femSing],
       definitions: [
         {
           place: [1],
@@ -513,6 +543,41 @@ export const entryFixtures: EntryFixture[] = [
         },
       ],
       references: [{ text: "Leksis fixture lxt-22 — the three citation states, and one work cited twice." }],
+    },
+  },
+
+  // -------------------------------------------------------------------------
+  // The merge, from the reader's side
+  // -------------------------------------------------------------------------
+  {
+    handle: "lxt-26",
+    covers: ["E-32", "E-33", "L-17", "L-18", "P-08"],
+    expect:
+      "The anv-kadarn stroll, and the whole reason `axes` were folded back into categories. `bezhin` is a masculine noun whose CITATION FORM IS THE PLURAL, so its bundle is `{NOUN, Gender=Masc, Number=Plur}` and it renders as ONE chip reading `ak.str.` — a second abbreviation of the same category lxt-02 renders as `ak.g.`, which two separate declarations could not have told apart. lxp-04 selects that exact bundle: the collective cell holds the lemma and the singulative `bezhinenn` is derived from it by rule. The sibling at `Number=Sing` (lxt-02) is a different bundle and this paradigm does not reach it. Its own `bezhinennoù` is asserted into the merged cell below.",
+    record: {
+      languageID: "qtl",
+      orthography: ["bezhin", "lxt-26"],
+      categories: [{ upos: NOUN, feats: [masc, { feature: "Number", value: "Plur" }] }],
+      otherForms: [
+        {
+          tag: {
+            feats: [
+              { feature: "Number", value: "Sgv", scheme: "qtl" },
+              { feature: "Number[psor]", value: "Plur" },
+            ],
+          },
+          form: "bezhinennoù",
+        },
+      ],
+      definitions: [
+        leaf(1, "Louzoù-mor, dastumet war an aod."),
+        leaf(2, "Dre astenn, ar pezh a chom war an traezh goude ar mor."),
+      ],
+      references: [
+        {
+          text: "Leksis fixture lxt-26 — the plural-headword flavour of a category whose sibling is cited in the singular: what the category–axis merge exists for.",
+        },
+      ],
     },
   },
 

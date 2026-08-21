@@ -4,6 +4,87 @@ All notable changes to Leksis. Each section is one loop — a unit of work, not 
 unit of time: the content loops grow the dictionary outward, the grammar loops
 (the morphology arc) grow the entry deeper, and the two interleave.
 
+## A category says where its own headword stands
+
+The morphology arc's structural revision (**ADR-0019**), six slices, released as
+**v0.28.0**. Layers 2 and 3 kept apart what a headword *is* and what its forms
+*vary over*. Real dictionaries do not: Breton cites an ordinary masculine noun in
+the singular, a collective-only noun in the collective, and an *anv-kadarn
+stroll* in the **plural**, deriving its singular by rule — three headword
+flavours of one category, each abbreviated differently. Two separate
+declarations could not tell them apart, because neither of them holds a label.
+
+So a category now declares its axis and its default value(s) together, and the
+standalone `axes` and `layout` arrays are gone from the language record.
+
+### The declaration
+
+- **`grammar.categories` replaces `grammar.bindings`.** A row is a category, the
+  one feature its forms vary over, and one abbreviation per headword flavour —
+  each naming the value of that feature its own headwords carry.
+- **A bare part of speech is a category.** The old two-atom floor had to go: a
+  category is now also where an axis is declared, and `{NOUN}` varying over
+  number is the ordinary case, not a special one.
+- **A category names its axis and its defaults, never a value inventory.** What
+  values exist is layer 1's business; which cells are printed is the paradigm's.
+- **An abbreviation must name a default if the category has an axis, and must
+  not if it has none.** Both halves are reported rather than refused as
+  malformed: a record missing one is undecidable, not unreadable.
+
+### The entry, and what a paradigm reaches
+
+- **The entry's own bundle carries its default axis value**, so an anv-stroll
+  headword reads `NOUN Gender=Masc|Number=Plur` on the record and describes
+  itself without the language record in hand. This reverses layer 3's "never
+  store the axis value on the entry" — it is identifying now.
+- **A paradigm selects by exact match on that bundle, and may list several.**
+  Containment and the most-specific-selector machinery are gone: two paradigms
+  cannot both reach one entry, and one set of tables serving two categories says
+  so by naming them both. On the index, `selectorKeys` replaces `inherentAtoms`
+  and the lookup becomes an indexed equality where it was an intersection.
+
+### The tables moved into the paradigm record
+
+Real conjugation tables are not cartesian products of their axes, so they are no
+longer derived from them. A paradigm now writes its grid out: a cell is a
+heading, structural filler, or a form carrying its address and the ordered rules
+that fill it, and merging is authored the way an HTML table's is. A rule no
+longer carries an address of its own — the cell it sits in is the address.
+
+The editor is a grid editor, and two invariants over every operation put
+`ragged-table` out of the interface's reach: the grid always tiles its rectangle,
+and every row keeps a cell of its own.
+
+### What a reader sees
+
+- **A cell is blank in three distinguishable ways**: no rule at all (an
+  invitation), a rule whose condition declined for this word, and filler the
+  language says cannot exist.
+- **A form the entry asserts *over* a generated one is marked**, so a rule wrong
+  for one word and a rule wrong for the language stop looking alike.
+- **Syncretism is one merged cell** addressed by a multivalue coordinate, never
+  the same form printed twice.
+
+### Also in this release
+
+- **Usage counts and a specimen beside every declaration.** Each part of speech,
+  value, category and abbreviation in the grammar editor carries how many entries
+  use it, and a control that draws one of them at random and links it — so
+  somebody who has just said what a tag means can see what it did. A new
+  endpoint serves one entry per press, never a list.
+- **A link to the accepted language record** at the foot of every language
+  dashboard.
+
+### Verified
+
+Full typecheck (8/8) and lint (5/5); `verify-paradigms.ts` 50/50 and
+`verify-paradigm-reader.ts` 37/37 against a local ArangoDB; the api and web
+images built. The testset fixture set was rebuilt over the merged shapes —
+seven categories including the anv-stroll pair and a minted default, seven
+paradigms including one serving two categories and one reaching a
+plural-headword flavour and not its singular sibling — published to the live
+PDS, driven in a browser, and torn down.
+
 ## A minted primitive is reachable again
 
 Content loop 6 (polish), a correction. Everything a language mints for itself —

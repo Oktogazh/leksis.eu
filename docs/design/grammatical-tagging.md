@@ -1,15 +1,23 @@
 # Design note: the Leksis grammar layer
 
-**Status:** **Layers 1, 2 and 3 are implemented and superseded by ADR-0006, ADR-0007 and ADR-0008** — for
-anything they cover, the ADRs and the code are authoritative and this note is history. Layers 4–6 are
-designed, not implemented, and this note remains their source.
+**Status:** **Layers 1 and 2 are implemented and superseded by ADR-0006 and ADR-0007; layers 3 and 4 no
+longer exist.** For anything they cover, the ADRs and the code are authoritative and this note is history.
+**ADR-0019 (the category–axis merge, accepted 2026-08-21) folded layer 3 back into layer 2 and moved layer
+4 into the paradigm record**, so §3's *Layer 3 — Axes* and *Layer 4 — Layout* sections describe two
+declarations that were removed from `eu.leksis.language`: a category now names its axis feature and the
+default value each of its headword flavours sits at, and a table's shape is written cell by cell inside
+`eu.leksis.paradigm`. Read those two sections as history and ADR-0019 as the design. Layer 5 shipped
+(ADR-0016, reshaped by ADR-0019, planned in `docs/design/paradigm-rules.md`); layer 6 (export) is designed
+here, not implemented, and this note remains its source.
 **Date:** 2026-07-30; rewritten 2026-08-01 around the layer model; layers renumbered 2026-08-01 (old layer 3
 merged into 1 + 2); layer 1 reconciled with what shipped 2026-08-02; layer 2 reconciled 2026-08-02; layer 3
 reconciled 2026-08-03.
-**For:** The morphology arc (`leksis-evolution` skill). **The next build is layer 5 — planned in
-`docs/design/paradigm-rules.md`, which is authoritative over this note for that layer.**
+**For:** The morphology arc (`leksis-evolution` skill). **The next build is layer 6, export — nothing here
+covers it beyond §3's sketch.** Layer 5 is planned in `docs/design/paradigm-rules.md` and reshaped by
+`docs/design/category-axis-merge.md`; both are authoritative over this note for what they cover.
 **Related:** **ADR-0006 (layer 1, accepted)**, **ADR-0007 (layer 2, accepted)**,
-**ADR-0008 (layer 3 + the label inversion, accepted)**,
+**ADR-0008 (layer 3 + the label inversion — its axes half REMOVED by ADR-0019)**,
+**ADR-0009 (layer 4 — REMOVED by ADR-0019)**, **ADR-0019 (the category–axis merge, accepted)**,
 `lexicons/eu.leksis.entry.json`, `lexicons/eu.leksis.language.json`, `lexicons/eu.leksis.defs.json`,
 ADR-0004 (the labels read model, amended by 0006 and re-keyed by 0010), ADR-0002 (the browser is the write path)
 
@@ -17,7 +25,7 @@ ADR-0004 (the labels read model, amended by 0006 and re-keyed by 0010), ADR-0002
 > anything absent from it as unknown, and §6 as the list of things nobody has checked. §§2–4 are the design.
 > Decisions are referred to **by name**, not by number, so references survive edits.
 >
-> **Where this note and the shipped layers 1–3 differ, the code wins** and the difference is marked
+> **Where this note and the shipped layers differ, the code wins** and the difference is marked
 > `[shipped]` inline. Two decisions changed during the layer-1 build and are recorded in ADR-0006: the XOR
 > rule became a strict per-site type split (§2.3), and `grammar`'s shape became three arrays with a
 > `values` row naming its feature (§2.2). Two more changed at layer 2 and are recorded in ADR-0007:
@@ -25,7 +33,11 @@ ADR-0004 (the labels read model, amended by 0006 and re-keyed by 0010), ADR-0002
 > a shared `eu.leksis.defs` lexicon. **Two more changed at layer 3 and are recorded in ADR-0008: an `axes`
 > row names its values in order and keys on a bare feature name; and invariant 3's "free annotation never
 > disappears" is REVERSED as to storage — the free pair is gone from the entry record, so §2.3's
-> `annotations` column and §5's second bullet are history.**
+> `annotations` column and §5's second bullet are history.** **And ADR-0019 removed layers 3 and 4
+> outright: `grammar.axes` and `grammar.layout` are rejected at validation, a category carries
+> `{axis?, annotations: [{long, short?, default?}]}`, an entry's bundle carries its default axis value, and
+> a paradigm selects on that bundle by exact match. Everything §3 says about axes, layout blocks, derived
+> cells, `exclude` and `summary` is superseded — read ADR-0019.**
 
 ---
 

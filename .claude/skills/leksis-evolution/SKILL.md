@@ -91,28 +91,26 @@ the arc must not stall loops 5 and 6.
 | Layer | Declares | Status |
 |---|---|---|
 | 1 | Primitives — the atoms this language uses | ✅ ADR-0006 |
-| 2 | Inherent combinations — what a headword *is* | ✅ ADR-0007 |
-| 3 | Axes — what its forms *vary over* | ✅ ADR-0008 |
-| 4 | Layout — the shape of the tables | ✅ ADR-0009 |
-| 5 | Rules — generation filling the cells | ✅ ADR-0016 |
+| 2 | Categories — what a headword *is*, what its forms *vary over*, and where its own citation form sits on that axis | ✅ ADR-0007, **merged with layer 3 by ADR-0019** |
+| ~~3~~ | ~~Axes~~ — folded into layer 2 | **removed** (ADR-0019; was ADR-0008) |
+| ~~4~~ | ~~Layout~~ — moved into the paradigm record | **removed** (ADR-0019; was ADR-0009) |
+| 5 | Rules — generation filling the cells a paradigm's own tables draw | ✅ ADR-0016, reshaped by ADR-0019 |
 | 6 | Export — Hunspell, UniMorph, CoNLL-U | |
 
 > Confirm the actual current position from `CHANGELOG.md` + `git tag` at orient time (step 1) —
-> these ✅ marks are a convenience, not the source of truth. As of ADR-0009 the grammar arc is
-> through layer 4; content loop 5 (translations) is **in progress** — its lexicon, ingest and read
-> surface are built (`docs/design/semantic-network.md` §5 slices 1–3), and the reader and writer
-> interfaces are what remain.
+> these ✅ marks are a convenience, not the source of truth. As of **ADR-0019 (v0.28.0, 2026-08-21)**
+> the arc is through layer 5 in its merged shape, and **layer 6 (export) is the next thing to
+> build**. Content loop 6 (search + polish) is where the content sequence stands; search itself is
+> its unbuilt half.
 >
-> **Two obligations trail the arc rather than blocking it.** The authoring surfaces of layers 3 and 4
-> still have not been driven in a browser — **U-01…U-24 in `leksis-testset` §7**. What changed at
-> layer 5 (2026-08-16) is that the excuses are gone: the session wall is solved, the **fixture set is
-> published** (three quarantined languages with layers 1–5 declared, so the Layout tab finally has
-> something to lay out), and layer 5's own flows were driven and recorded as **U-60…U-71**. U-16 is
-> half done — `qto`'s defect list renders, nobody has walked the repairs. And the **published
-> lexicons** still lag the code: `scripts/publish-lexicons.mjs` has not been run since
-> `grammar.layout` shipped and now owes `eu.leksis.paradigm` too. Neither blocked layer 5; both are
-> reasons not to call layer 4 *verified*, and the first is now a morning's work rather than a
-> prerequisite hunt.
+> **One obligation trails the arc rather than blocking it.** The **published lexicons** lag the code
+> badly: `scripts/publish-lexicons.mjs` resolves only `eu.leksis.language` (pre-grammar) and
+> `eu.leksis.entry` (still carrying `botSource`, removed at v0.9), and has never published `defs`,
+> `source`, `relation`, `cognate`, `profile` or `paradigm` at all. Its **output** was verified at
+> slice 6 of ADR-0019 (a `DRY_RUN=1` run emits all eight, correctly shaped); running it for real
+> needs the `lexicons.leksis.eu` app password and an IP the PDS allowlists, so it is the user's to
+> run, from the server. Nothing in the app depends on it — it is what makes the NSIDs resolvable to
+> outside tooling.
 
 > **Loop 1 was the hinge**: once the AppView consumes the firehose it must stay online and **real
 > data accumulates**. ADR-0001 action items #4 (deploy secrets) and #5 (off-box backups) were due
@@ -258,15 +256,17 @@ morphology as a table (declension, conjugation, mutation set…):
 
 - the **entry** declares what kind of word it is — its part of speech, its *inherent* features, and its
   inflection class;
-- the **language** declares, once, both the **layout** of the inflection tables and the Hunspell-like
-  **rules** that generate each cell from the lemma;
+- the **language** declares, once, the **categories** its headwords fall into and where each flavour
+  is cited, and a **paradigm record** declares the tables themselves — the grid, cell by cell — and the
+  Hunspell-like **rules** that generate each cell from the lemma;
 - the entry adds **only what cannot be derived** — irregular forms, which override generated cells;
 - a perfectly regular lemma carries **nothing**: the table is generated in the frontend;
-- with no layout declared for that language, it degrades to today's behaviour — `otherForms` shown as a
+- with no paradigm reaching that headword, it degrades to today's behaviour — `otherForms` shown as a
   flat list above the definitions, never a fake table.
 
-Layout and rules = the language-level objects. Irregular forms and the class selector = the entry-level
-override. Generation = from language-level rules, not stored data.
+Tables and rules = the language-level objects (one record per set of headword categories since
+ADR-0019). Irregular forms and the class selector = the entry-level override. Generation = from
+language-level rules, not stored data.
 
 ### Why it is in scope
 
@@ -353,17 +353,22 @@ what it has closed. The closed set, named so a session recognises them on sight:
 **identity on the tag, one row per tag per language, enforced by the doc key** ·
 **a lexicographic label set is a flagged feature, excluded from layers 2–4** ·
 **a plain abbreviation stands for no tag and is identified by its short form** ·
-**bindings, axes and layout on the language record, rules in their
+**the grammar object on the language record, rules and tables in their
 own lexicon** · **no XPOS as storage** · **`VerbForm=` on a VERB** · **the triage gate before minting** ·
 **the no-orphan rule** · **the layer-1 name→value gate** · **the layer-2 inherence gate, and its enumeration
 prompt is not a constraint** · **inflection classes are minted primitives, declared inherent at layer 2 —
 there is no separate class layer and no `appliesTo`** · **a (category, feature) pair is inherent XOR an
 axis** · **live UD candidate lists with degrade-to-manual** · **sense-level tagging on definition nodes** ·
-**`categories` order is the author's, `otherForms` order is the language's** ·
-**an axis names its values in order** · **a label lives on the language, never on an entry** (ADR-0008) ·
-**derived cells, never a stored matrix** · **a summary flag per block, not indices** · **bare coordinates,
-re-qualified before use** · **exact → containment → leftover** · **"no such form" ≠ "not entered yet"** ·
+**`categories` order is the author's** · **a label lives on the language, never on an entry** (ADR-0008) ·
+**bare coordinates, re-qualified before use** · **exact → containment → leftover** ·
+**"no such form" ≠ "not entered yet"** ·
 **an inflection class is a minted feature and gets a door, not a mechanism** (ADR-0009) ·
+**a category declares its axis and its defaults together, and never a value inventory** ·
+**a bare part of speech is a category** · **the entry's bundle carries its default axis value** ·
+**a paradigm selects by exact match on that bundle, and may list several** ·
+**a table is authored cell by cell inside the paradigm record** ·
+**syncretism is one merged cell, never two that agree** ·
+**three blank states, not two: manual-only, the rule declined, and filler** (ADR-0019) ·
 **index expansion at ingest for inflected-form search** (leaning, priced at layer 5) ·
 **the AppView indexes only what the interface could have published — structure validated, vocabulary and
 assertions not** (ADR-0015, which reversed "detection only, never rejection" for coherence while leaving it
@@ -388,9 +393,11 @@ layer 2's to build** — it derives from inherence, so it could not ship before 
   whole-entry label that is *not* a grammatical category (`arch.`, `fam.`) now has only prose `notes` or a
   minted feature. Watch whether contributors reach for a minted `Register` feature; if they do, that is
   evidence the triage gate needs a fourth answer, not that free pairs should come back.
-- **The `layout` sub-object's inner shape** (layer 4) — deliberately undesigned until a real conjugation
-  table has been drawn by hand. Note layer 3 proved paradigms may be **non-rectangular**, so a dense grid
-  is not a safe default.
+- ~~**The `layout` sub-object's inner shape** (layer 4)~~ — **answered, then dissolved.** ADR-0009
+  derived cells from the axes; drawing a real conjugation table by hand showed why that could not
+  hold (a `Person=0` with no Number, tables that are not products of anything), so ADR-0019 removed
+  the sub-object and had the paradigm record write its grid out cell by cell. Non-rectangularity is
+  no longer a special case: it is what an authored grid draws by default.
 - ~~**The lexicon `union` encoding for annotation-XOR-tag.**~~ **Moot** — sites separate by field, so no
   union is needed (ADR-0006).
 - **The remaining ~19 UD FEATS value inventories.** *Not* a layer-1 blocker — layer 1 validates shape, not
@@ -446,17 +453,17 @@ layer at its top; the scope says *what is in and out*, not *how*.
 |---|---|---|
 | **0 — Abbreviations** | homolingual labels bound to nothing: plain abbreviations, and (ADR-0010) lexicographic label sets for register, domain and editorial usage | **shipped** (v0.8); its entry-level site was removed at layer 3, and ADR-0010 gave it a home on the language record |
 | **1 — Primitives** | the atoms this language uses: 14 headword-eligible UPOS, feature *names*, feature *values*. **Minting lives here**, including inflection-class features and their values | **shipped** — see **ADR-0006**, which is authoritative over the design note for this layer |
-| **2 — Inherent combinations** | which features are **inherent** to a category, then the labelled headword categories that follow: masculine noun, first-declension feminine noun, transitive imperfective verb | **shipped** — see **ADR-0007**, authoritative over the design note for this layer |
-| **3 — Axes** | per category, which features **vary across its forms**, over which values, **in order** — the option set of the `otherForms` editor | **shipped** — see **ADR-0008**, authoritative over the design note for this layer |
-| **4 — Layout** | the *shape* of the inflection tables: which axis sits where, one table or several, their order, what is shown by default, and the order of the flat `otherForms` list — **not** chip order | **shipped** — see **ADR-0009**, authoritative over the design note for this layer |
-| **5 — Rules** | Hunspell-shaped rules populating cells, overridden by the entry's own `otherForms`; its own lexicon | **shipped** — see **ADR-0016**, authoritative over `docs/design/paradigm-rules.md` for this layer |
+| **2 — Categories** | which features are **inherent** to a category, then the headword categories that follow — *and, since ADR-0019, the one feature each category's forms vary over plus the value each of its headword flavours is cited at, one abbreviation per flavour* | **shipped** — see **ADR-0007** and **ADR-0019**, authoritative over the design note for this layer |
+| ~~**3 — Axes**~~ | folded into layer 2: an axis is a property of the category, not a declaration beside it | **removed** — ADR-0019 |
+| ~~**4 — Layout**~~ | moved into the paradigm record, which now writes its grid out cell by cell | **removed** — ADR-0019 |
+| **5 — Rules** | Hunspell-shaped rules populating the cells **the paradigm's own tables draw**, overridden by the entry's own `otherForms`; its own lexicon | **shipped** — see **ADR-0016** and **ADR-0019**, authoritative over `docs/design/paradigm-rules.md` for this layer |
 | **6 — Export** | Hunspell `.aff`/`.dic`, UniMorph TSV, CoNLL-U — and XPOS as a *derived* output | |
 
 **Layer 1 — Primitives.** *In:* the tag type in `packages/types` (per-item `scheme`, canonical key for
 matching); `grammar.bindings` + `grammar.features` on `eu.leksis.language`; the `labels` read model
 widened to carry the tag and to surface **unbound tags in use** as a worklist; the
 entry editor's suggestion flow; the viewer resolving **exact → decomposition → verbatim**. Two row kinds are
-both needed: a feature *name* row (the axis header layer 4 prints) and a feature *value* row (the chip), and
+both needed: a feature *name* row (the header a paradigm's tables print) and a feature *value* row (the chip), and
 they are **gated — a feature name must be bound before any of its values can be**, mirror included. The 14
 headword-eligible UPOS are 17 minus PUNCT/SYM/X — **a Leksis editorial judgement, not UD's**, which states
 no extension or eligibility policy on its POS page.
@@ -478,9 +485,9 @@ must hold: the suggestion tree is a **derived view** of layers 1–2, not a sepa
 path stores **one bundle, not an accumulation**; it **degrades to a flat multi-select** and never blocks an
 unenumerated combination; and **every step shows a bound homolingual label**, which is only possible because
 tag-only `categories` forced the grammar to be declared first.
-Note layer 1 also binds **form-level vocabulary** (Tense and Case values, for table headers layer 4 will
-print), so it applies **no altitude filter**: altitude emerges from which higher layer references an item.
-*Out:* inherence, axes, layout, rules, export.
+Note layer 1 also binds **form-level vocabulary** (Tense and Case values, for the cell addresses a
+paradigm's tables carry), so it applies **no altitude filter**: altitude emerges from which higher layer references an item.
+*Out:* inherence, categories, paradigms, export.
 
 **Layer 2 — Inherent combinations. ✅ shipped (ADR-0007).** Two steps, and the first is the one no earlier
 design had:
@@ -503,70 +510,39 @@ than as validation errors. *Never a whitelist:* an unenumerated combination stay
 decomposition. *Out:* anything concerning forms.
 
 **What layer 2 settled, and layer 3 inherits (ADR-0007), do not re-derive:** `inherent` rows are singular
-`(category, feature)` with a **bare feature name** — which is exactly how layer 3's `axes` should key, so
-the two read as one relation at two altitudes. **Grounding** is the gate's name: a named combination must be
+`(category, feature)` with a **bare feature name** — which is exactly how a category's `axis` keys, so
+the two read as one relation at two altitudes (and is why ADR-0019 could fold one into the other). **Grounding** is the gate's name: a named combination must be
 reachable by removing one feature at a time, each removal licensed by an inherence declaration, down to a
-bound atom. Completeness ("2 of 3 named") is a **counter and never a constraint**. Combinations reach the
-`labels` model through `grammarRows` alone, so **the API cost of the layer was zero** — expect the
-same of layer 3 if its shapes are right, and treat any need for new indexing as a signal to re-check the
-design. The entry editor resolves the grammar from the **language record via its PDS**, not from an index:
+bound atom. Completeness ("2 of 3 named") is a **counter and never a constraint**. Categories reach the
+`labels` model through `grammarRows` alone, so **the API cost of the layer was zero** — treat any need
+for new indexing above layer 1 as a signal to re-check the design. The entry editor resolves the grammar from the **language record via its PDS**, not from an index:
 an authoring surface may pay that round trip where the viewers never do. `Tag` now lives in a shared
 **`eu.leksis.defs`** lexicon, which is where layer 5's paradigms should get it too.
 
-**Layer 3 — Axes. ✅ shipped (ADR-0008).** Per category, which features **vary across its forms**, over
-which **values**, in which **order** — the `otherForms` editor's option set. With layer 2 this completes
-invariant 1's declaration: layer 2 is its inherent half, layer 3 its axis half, and the pair *is* the
-paradigm's cell-coordinate system.
+**Layers 3 and 4 no longer exist — ADR-0019 (v0.28.0, 2026-08-21) merged one back and moved the
+other out.** They are kept named here so a session meeting `grammar.axes` or `grammar.layout` in an
+old document knows what happened rather than trying to build them again.
 
-**What layer 3 settled, and layer 4 inherits (ADR-0008), do not re-derive:** an `axes` row is
-`{category: Tag, feature: string, values: string[]}` — it **names its values in order**, because a
-language's inventory and one category's paradigm are not the same set (three genders in the adjectives, a
-split masculine in the nouns) and because that order is what layer 4 prints. It keys exactly as `inherent`
-does — a `Tag` category, a **bare** feature name — which is what makes `inherent-axis-conflict` detectable;
-`empty-axis` is the other new issue kind, and both are issues rather than shape rejections. An axis
-category is checked for **bound atoms only, never grounding**, and that is what lets a paradigm be
-non-rectangular: `{VERB, VerbForm=Fin}` takes a Person axis, `{VERB, VerbForm=Inf}` simply never declares
-one — so **layer 4 must not assume a rectangular grid**. `applicableAxes` walks an entry's *sub-bundles*,
-so an axis on `{NOUN}` reaches an entry categorised `{NOUN, Gender=Fem}`; layer 4 should read the cell
-space through it, not through exact matching. `otherForms[].annotation` became `otherForms[].tag`, **one
-bundle** — the cell address layer 5 will match by canonical key. The API cost was **zero** again, as at
-layer 2; treat any need for new indexing at layer 4 as a signal to re-check the design.
+**What the merge settled, and layer 6 inherits (ADR-0019), do not re-derive:** an axis is a property
+of a **category**, not a declaration beside it, and the value each headword flavour is cited at is
+part of what the category means — `{NOUN, Gender=Masc}` holds an *anv-kadarn gourel* cited in the
+singular and an *anv-kadarn stroll* cited in the plural, one row, two abbreviations, each naming its
+own `default`. A category names its axis feature and its defaults and **never a value inventory**. A
+**single atom is a category** (the old ≥2 floor is gone). The **entry's bundle carries the default**,
+so a record identifies its flavour on its own — which is what makes a paradigm's `selectors` an
+**exact-equality** match against `selectorKeys` (`headwordKeys` computes it) rather than containment
+over `inherentAtoms`, and which retired most-specific-selector precedence entirely: two paradigms
+cannot both reach one entry. Cells are **written out, never derived** — a paradigm's `tables` are
+grids of headings, filler and form cells, each form cell carrying its address and its ordered rules,
+with merging authored the way an HTML table's is; so an exporter walking a language's morphology
+reads *tables*, not a cartesian product it has to reconstruct. `grammarIssues` reports **twelve**
+kinds, not fourteen: six `category-*` kinds replaced the eight the removed arrays carried.
+A reader distinguishes **three** blank states (manual-only · the rule declined · filler the language
+says cannot exist) and marks an asserted form standing **over** a generated one.
 
-**Layer 4 — Layout. ✅ shipped (ADR-0009).** Layer 3 gives a category's *cell space*; it does **not** say what the table looks
-like, and axes alone underdetermine presentation — four axes could be one grid with nested headers or four
-separate tables. So, per category: which axis sits on which dimension, one table or several, the order the
-tables appear in, and **what is shown by default** — Latin dictionaries print the genitive and expect the
-reader to derive the rest, so a full table is not always wanted. It also fixes the display order of the flat
-`otherForms` list, the one-dimensional degenerate case of the same declaration. **Chip order is *not*
-here** — `categories` order stays the entry author's: order-as-phrasing belongs to the entry,
-order-as-table-geometry to the language.
-**Ships alone and is immediately useful:** with no rules behind it, an entry's own hand-entered forms land
-in a proper grid instead of a flat list, and the fallback becomes exactly "no layout declared → flat list".
-*Out:* generation.
-
-**What layer 4 settled, and layer 5 inherits (ADR-0009), do not re-derive:** a `layout` row is
-`{category: Tag, blocks[]}`; a block is a **table** (axis feature *names* per dimension, outermost first) or
-a **list** (explicit addresses in order), either able to pin constants with `fixed` and be flagged
-`summary` — a flag per block, never indices on the layout. **Cells are derived, never stored**, so
-non-rectangularity comes from several blocks with different constants, `exclude` for holes, and a list block
-for what no grid reaches; that is the answer to "the inner shape", and layer 5 should fill cells rather than
-enumerate them. A coordinate is bare `{feature, value}` and is **re-qualified from its `values` row by
-`coordTag` before display or matching** — the step that makes minted vocabulary work, and the one to copy
-when a rule addresses a cell. The join is **scheme- and part-of-speech-blind** (`featsMatchKey`), because a
-bot and the editor write the same form differently. `placeForms` already matches **exact, then containment,
-most specific first**, and keeps the unplaced as **leftovers** — which is precisely the override layer 5
-needs, so a rule engine should generate into the *same* addresses and let this decide. Five new issue kinds
-(`layout-unknown-axis`, `layout-repeated-axis`, `layout-foreign-coordinate`, `empty-layout-block`,
-`layout-too-large`) with `MAX_LAYOUT_CELLS` at 4096; a layout whose category is unbound is **not inspected
-further**, one defect one issue. Two reader-facing rules are now fixed: a cell the language says **cannot
-exist** renders differently from one **nobody filled in**, and a block no form fills is **not drawn** — the
-second is layer 5's to revisit, since generation is exactly what makes an empty table stop being empty.
-The API cost was **zero** for the third layer running, but note layer 5 breaks that streak by design: its
-rules get their own lexicon, and ingest-time index expansion for inflected-form search is its cost to price.
-
-**Layer 5 — Rules. ✅ shipped (ADR-0016).** A new `eu.leksis.paradigm` lexicon (not fields on the language record): Hunspell-like
-rules populating the cells layer 4 laid out. **The entry's own `otherForms` override any generated cell** —
-matched by canonical key on the cell address, which is why layer 3 must make a form's annotation a bundle. An
+**Layer 5 — Rules. ✅ shipped (ADR-0016), reshaped by ADR-0019.** A new `eu.leksis.paradigm` lexicon (not fields on the language record): Hunspell-like
+rules populating the cells **the record's own tables draw** (layer 4 laid them out until ADR-0019 moved the tables here). **The entry's own `otherForms` override any generated cell** —
+matched by canonical key on the cell address, which is why a form's annotation is **one bundle**. An
 `otherForm` matching no declared cell falls back to the flat list rather than being dropped; that is the safe
 failure. The entry carries its inherent categories plus exceptions, never generated forms (invariant 5).
 **Which inherent feature selects a paradigm is decided here, not declared anywhere** — a rule keys on
@@ -580,14 +556,14 @@ multivalue over the language's declared inventory (`Gender=Fem,Masc`, values alp
 UniMorph `*`. Per-lexeme defectiveness is an entry-level exception here, not a property of any declaration.
 *Out:* export formats.
 
-**What layer 5 settled, and layer 6 inherits (ADR-0016), do not re-derive:** identity is the **rkey**,
-`{languageID}-{hash16(canonical selector key)}`, recomputed at ingest and refused on mismatch — so `selector`
-is immutable per identity, and an exporter reading a language's paradigms gets one per category by
-construction. A paradigm reaches an entry by containment on its **inherent bundle** (`inherentAtoms`, the
-UPOS plus the feats the language declares inherent), **never on all of `categories`** — an exporter walking
+**What layer 5 settled, and layer 6 inherits (ADR-0016, amended by ADR-0019), do not re-derive:** identity is the **rkey**,
+`{languageID}-{hash16(sorted, deduplicated selector keys)}`, recomputed at ingest and refused on mismatch — so `selectors`
+is immutable per identity, and an exporter reading a language's paradigms gets one per set of categories by
+construction. A paradigm reaches an entry by **exact equality** on its **headword bundle** (`selectorKeys`, the
+UPOS plus the feats the language declares inherent plus the declared default axis value), **never on all of `categories`** — an exporter walking
 entries must use the same test, and it lives in one place per side (`expand-forms.ts` in the AppView,
-`paradigmsReaching` in the browser). Several paradigms may reach one entry, **most specific selector wins per
-cell**. Display precedence is asserted → generated → the layer-4 states, which is also the precedence an
+`paradigmsReaching` in the browser). **At most one paradigm reaches an entry**, so there is no precedence for
+an exporter to reproduce. Display precedence is asserted → generated → the layer-4 states, which is also the precedence an
 export must flatten: a Hunspell `.dic` cannot carry "this one was derived". `generateForms` is **total** — a
 bad regex is a validation issue and never a throw, a base cycle yields nothing — because it runs inside the
 single sequential writer, and layer 6 will run it in bulk. `paradigmIssues` refuses a record whose rules
@@ -659,5 +635,6 @@ atom* (the dictionary) that the rest can grow from.
   fallback for not having checked. Pre-1.0 a wrong vocabulary costs a bot reset-and-republish; from 1.0 on,
   records live on strangers' PDSs and it cannot be migrated away at all.
 - **Don't let the morphology arc pre-empt the loops** — it advances in thin, individually shippable layers
-  beside loops 5–8, never instead of them; and it never breaks the "no layout declared" fallback.
+  beside loops 5–8, never instead of them; and it never breaks the "no paradigm reaches it → flat list"
+  fallback.
 - **Add the new versions to the package files** – the package.json and package-lock.json must be updated to reflect the new versions of dependencies used in the project, then give the new version number as the conclusion of the answers in the chat session, so that they can be added manually after review.
