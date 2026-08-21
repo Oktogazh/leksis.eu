@@ -3,7 +3,7 @@ import { aql } from "arangojs";
 import {
   collectLeafPlaces,
   featsMatchKey,
-  inherentAtomKeys,
+  headwordKeys,
   isLeafPlace,
   isValidDefinitionPlace,
   isValidLanguageTag,
@@ -18,6 +18,7 @@ import {
   type EntryDefinition,
   type EntryExample,
   type EntryInflectedForm,
+  type GrammarCategory,
   type GrammarInherent,
   type Tag,
 } from "@leksis/types";
@@ -33,7 +34,7 @@ import { reviveUnresolvedRelations, syncEntrySenses } from "./ingest-relation";
 // AppView indexes only what search needs — orthographies, the other forms, the
 // language tag, the record reference — plus the few derived keys the read
 // models join on without re-fetching a record (`tags`, `places`, and layer 5's
-// `inherentAtoms`). Versioned like `languages`: many docs per entry
+// `selectorKeys`). Versioned like `languages`: many docs per entry
 // (sharing `entryKey`), one with current: true; previous versions are
 // archived, never deleted (Wikipedia model, last write wins across authors).
 //
@@ -85,19 +86,20 @@ interface EntryDoc {
   /** The **form** half of the search index, one row per form. */
   otherForms: IndexedForm[];
   /**
-   * The atom keys of this version's inherent bundle — its part of speech plus
-   * the features the language declares inherent for the categories carrying them
-   * (`inherentAtomKeys`).
+   * The **headword keys** of this version: one scheme-blind key per category
+   * bundle it carries, each stripped to what identifies a kind of word — its
+   * part of speech, the features the language declares inherent for it, and the
+   * default axis value where the language declares one (`headwordKeys`).
    *
-   * This is the join a paradigm reaches an entry through: a selector's atoms are
-   * keyed the same way, so "every entry this rule applies to" is an indexed
-   * intersection filter rather than a scan of the language and a bundle
-   * comparison per doc. Only *inherent* features are stored — a form's feature
-   * on a headword is noise a rule must not select on — which is also what makes
-   * the stored set tell layer 5's expansion job precisely which entries a newly
-   * published rule reaches.
+   * This is the join a paradigm reaches an entry through, and since ADR-0019 it
+   * is an **equality**: a selector is keyed the same way, so "every entry this
+   * rule applies to" is an indexed lookup rather than an intersection filter,
+   * and no entry can be reached by two paradigms at once. Only identifying
+   * features are stored — a form's feature written on a headword is noise a rule
+   * must not select on — which is also what makes the stored set tell the
+   * expansion job precisely which entries a newly published rule reaches.
    */
-  inherentAtoms: string[];
+  selectorKeys: string[];
   recordURI: string;
   cid: string;
   authorDID: string;
@@ -135,7 +137,7 @@ interface ParsedEntry {
   orthography: string[];
   /**
    * The entry's lexeme-level categories, kept whole rather than folded into
-   * `tags`: `inherentAtoms` is computed from these alone, and the deduped union
+   * `tags`: `selectorKeys` is computed from these alone, and the deduped union
    * of all three altitudes cannot be split back into which tag was a headword's.
    */
   categories: Tag[];
@@ -471,24 +473,32 @@ async function mintEntryKey(languageID: string, orthography: string, recordURI: 
 }
 
 /**
- * The inherence declarations of the language this entry is in, read from the
- * cache on its current language doc.
+ * The declarations of the language this entry is in that decide its headword
+ * keys — its inherence rows and its categories — read from the caches on its
+ * current language doc.
  *
  * From the index, never from a PDS: the consumer is a sequential writer, and an
  * HTTP round trip per entry would put every author's server in the middle of
  * this one's ingest. A language nobody has described yet — or one described
- * before this cache existed — yields none, which costs nothing more than the
- * entry's inherent bundle shrinking to its part of speech until either record is
+ * before these caches existed — yields none, which costs nothing more than the
+ * entry's headword bundle shrinking to its part of speech until either record is
  * republished.
  */
-async function languageInherent(languageID: string): Promise<GrammarInherent[]> {
-  const cursor = await db.query<GrammarInherent[] | null>(aql`
+async function languageDeclarations(languageID: string): Promise<{
+  inherent: GrammarInherent[];
+  categories: GrammarCategory[];
+}> {
+  const cursor = await db.query<{
+    inherent: GrammarInherent[] | null;
+    categories: GrammarCategory[] | null;
+  }>(aql`
     FOR l IN languages
       FILTER l.tag == ${languageID} AND l.current == true
       LIMIT 1
-      RETURN l.inherent
+      RETURN { inherent: l.inherent, categories: l.categories }
   `);
-  return (await cursor.next()) ?? [];
+  const row = await cursor.next();
+  return { inherent: row?.inherent ?? [], categories: row?.categories ?? [] };
 }
 
 /**
@@ -542,7 +552,7 @@ export async function ingestEntry(
     entryKey = current?.entryKey ?? (await mintEntryKey(parsed.languageID, parsed.orthography[0]!, recordURI));
   }
 
-  const inherent = await languageInherent(parsed.languageID);
+  const declarations = await languageDeclarations(parsed.languageID);
 
   const doc: EntryDoc = {
     entryKey,
@@ -550,7 +560,7 @@ export async function ingestEntry(
     orthography: parsed.orthography,
     // A deleted version is withdrawn from search — its entry stays
     // addressable by entryKey, but never surfaces as a search result. Both
-    // halves go, and so does the inherent bundle: a withdrawn entry is one its
+    // halves go, and so does the headword bundle: a withdrawn entry is one its
     // author says should not be offered, which no paradigm should be generating
     // forms for either.
     orthographySearch: parsed.deleted
@@ -561,7 +571,7 @@ export async function ingestEntry(
     // the entry's author — since generation runs after ingest and writes its
     // own rows beside these.
     otherForms: parsed.deleted ? [] : parsed.otherForms.map(indexedForm),
-    inherentAtoms: parsed.deleted ? [] : inherentAtomKeys(inherent, parsed.categories),
+    selectorKeys: parsed.deleted ? [] : headwordKeys(declarations, parsed.categories),
     recordURI,
     cid,
     authorDID,
@@ -602,7 +612,7 @@ export async function ingestEntry(
       languageID: doc.languageID,
       orthography: doc.orthography,
       otherForms: doc.otherForms,
-      inherentAtoms: doc.inherentAtoms,
+      selectorKeys: doc.selectorKeys,
       deleted: parsed.deleted,
     });
   }
@@ -664,7 +674,7 @@ export async function ingestEntryDelete(recordURI: string): Promise<void> {
     languageID: string;
     orthography: string[] | null;
     otherForms: IndexedForm[] | null;
-    inherentAtoms: string[] | null;
+    selectorKeys: string[] | null;
     formIssues: unknown[] | null;
     tags: Tag[] | null;
     places: number[][] | null;
@@ -681,7 +691,7 @@ export async function ingestEntryDelete(recordURI: string): Promise<void> {
         languageID: NEW.languageID,
         orthography: NEW.orthography,
         otherForms: NEW.otherForms,
-        inherentAtoms: NEW.inherentAtoms,
+        selectorKeys: NEW.selectorKeys,
         formIssues: NEW.formIssues,
         tags: NEW.tags,
         places: NEW.places,
@@ -711,7 +721,7 @@ export async function ingestEntryDelete(recordURI: string): Promise<void> {
       languageID: promoted.languageID,
       orthography: promoted.orthography ?? [],
       otherForms: promoted.otherForms ?? [],
-      inherentAtoms: promoted.inherentAtoms ?? [],
+      selectorKeys: promoted.selectorKeys ?? [],
       deleted: promoted.deleted,
       hadIssues: (promoted.formIssues ?? []).length > 0,
     });

@@ -5,7 +5,6 @@ import {
   paradigmIssues,
   paradigmRkey,
   paradigmSelectorKey,
-  tagAtomKeys,
   type ParadigmRequirement,
   type ParadigmRule,
   type Tag,
@@ -26,8 +25,8 @@ import type { IngestResult } from "./ingest-language";
 //
 // The doc is a reference, with **one cache**: the rules themselves. That is a
 // departure from the design note's "the doc is reference-only", and it is
-// forced by the same constraint that put `inherent` on the language doc at
-// slice 2 — the expansion job runs inside the firehose consumer, which is a
+// forced by the same constraint that put `inherent` (and now `categories`) on
+// the language doc — the expansion job runs inside the firehose consumer, which is a
 // single sequential writer, and resolving a paradigm record from its author's
 // PDS once per ingested entry would put a stranger's server in the middle of
 // this AppView's write path. So the consumer reads rules from here; readers
@@ -38,22 +37,26 @@ import type { IngestResult } from "./ingest-language";
 /**
  * One paradigm version as indexed.
  *
- * `selectorAtoms` is the join: an entry's `inherentAtoms` must **contain** all
- * of them for this paradigm to reach it. Both sides are keyed by `tagAtomKeys`,
- * which is scheme-blind for the reason every form-to-cell join is — a bot
- * writes `Conjugation=2` bare where the language's own editor writes it
- * carrying the minting scheme, and a paradigm reaching only one of the two
- * would be worse than one reaching both.
+ * The join is an **equality** since ADR-0019: one of an entry's `selectorKeys`
+ * must equal `headwordMatchKey(selector)` for this paradigm to reach that entry,
+ * where it used to be a containment test over the retired `inherentAtoms`. That
+ * key is derived on demand rather than stored — nothing indexes it and the AQL
+ * filter is built in JS either way, so a stored copy would be a second thing to
+ * keep in step for no lookup. It is scheme-blind for the reason every
+ * form-to-cell join is: a bot writes `Conjugation=2` bare where the language's
+ * own editor writes it carrying the minting scheme, and a paradigm reaching only
+ * one of the two would be worse than one reaching both.
  */
 export interface ParadigmDoc {
   /** Stable across versions; equal to the record key by construction. */
   paradigmKey: string;
   languageID: string;
   selector: Tag;
-  /** Canonical key of the selector — what the identity hash is taken over. */
+  /**
+   * Canonical key of the selector — what the identity hash is taken over, and
+   * what `GET /languages/:tag/paradigms` sorts on.
+   */
   selectorKey: string;
-  /** Scheme-blind atom keys of the selector; matched against `entries.inherentAtoms`. */
-  selectorAtoms: string[];
   /** Cached for the expansion job — see the note at the top of this file. */
   rules: ParadigmRule[];
   requires: ParadigmRequirement[];
@@ -80,7 +83,6 @@ interface ParsedParadigm {
   languageID: string;
   selector: Tag;
   selectorKey: string;
-  selectorAtoms: string[];
   rules: ParadigmRule[];
   requires: ParadigmRequirement[];
   createdAt: string;
@@ -111,7 +113,7 @@ interface ParsedParadigm {
  * records, which ADR-0015 indexes and contests rather than refuses — and
  * refusing it would create an ingest-order dependency, since Jetstream can
  * deliver a paradigm before the grammar it addresses. Such a paradigm is
- * indexed and simply inert: its selector matches no entry's inherent bundle.
+ * indexed and simply inert: its selector matches no entry's headword bundle.
  */
 function parseRecord(record: unknown, recordURI: string): ParsedParadigm | null {
   if (!isValidParadigmRecord(record)) return null;
@@ -143,12 +145,33 @@ function parseRecord(record: unknown, recordURI: string): ParsedParadigm | null 
     languageID,
     selector: record.selector,
     selectorKey: paradigmSelectorKey(record.selector),
-    selectorAtoms: tagAtomKeys(record.selector),
     rules: record.rules,
     requires: record.requires ?? [],
     createdAt,
   };
 }
+
+/**
+ * **Slice-2 stopgap: every paradigm record is refused (ADR-0019).**
+ *
+ * The category–axis merge lands across several commits, and this one moves the
+ * language record and the entry index while `eu.leksis.paradigm` still carries
+ * its pre-merge shape: a single `selector`, no tables, and — most importantly —
+ * cells addressed through a `layout` that no longer exists. Indexing such a
+ * record now would generate forms against a cell space nothing declares and put
+ * them into search, where no editor could reach them to take them out.
+ *
+ * Refusing is the honest reading of ADR-0015: for the duration of this arc a
+ * paradigm record is not a record of the lexicon the AppView is being taught, so
+ * it is logged and skipped. Existing docs stay indexed and keep generating for
+ * whatever their selector exactly matches — and slice 4 rebuilds this function
+ * over the v2 shape.
+ *
+ * Deletion is deliberately **not** gated: withdrawing a paradigm whose rules are
+ * still in the index has to keep working, or a contributor could not clean up
+ * after one.
+ */
+const PARADIGM_INGEST_GATED = true;
 
 /**
  * Index one eu.leksis.paradigm record: archive the current version for this
@@ -165,6 +188,13 @@ export async function ingestParadigm(
   cid: string,
   record: unknown,
 ): Promise<IngestResult> {
+  if (PARADIGM_INGEST_GATED) {
+    console.warn(
+      `firehose: refused paradigm record ${recordURI} — paradigm ingest is gated ` +
+        `while the category–axis merge lands (ADR-0019, slice 2 of 6)`,
+    );
+    return "skipped-invalid";
+  }
   const parsed = parseRecord(record, recordURI);
   if (!parsed) {
     console.warn(`firehose: skipped invalid paradigm record ${recordURI}`);
@@ -188,7 +218,6 @@ export async function ingestParadigm(
     languageID: parsed.languageID,
     selector: parsed.selector,
     selectorKey: parsed.selectorKey,
-    selectorAtoms: parsed.selectorAtoms,
     rules: parsed.rules,
     requires: parsed.requires,
     recordDeleted: false,
@@ -211,8 +240,8 @@ export async function ingestParadigm(
   );
 
   // The rules changed, so every form they produced is stale. This is the cost
-  // layer 3 accepted and this layer pays: one rule edit re-expands the slice of
-  // a language the selector reaches.
+  // ingest-time expansion accepts: one rule edit re-expands the slice of a
+  // language the selector reaches.
   forgetParadigms();
   await expandForParadigm(db, doc);
   return "indexed";

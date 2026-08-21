@@ -38,10 +38,10 @@ Update the checkbox and the state note at the end of each session. One slice = o
 
 - [x] **Slice 1** — counts + random-entry links in the grammar editor; language-record link on
   the dashboard footer. (Non-breaking.) *Done 2026-08-21.*
-- [ ] **Slice 2** — grammar merge: language lexicon (`categories` replaces `bindings`; `axes` +
-  `layout` removed), types rework, ingest (`selectorKeys`, index swap, validation), **`br`
-  republished via testaccount without axes/layout/bindings**, minimal web compile pass (old tabs
-  removed, paradigm surfaces stubbed).
+- [x] **Slice 2** — grammar merge: language lexicon (`categories` replaces `bindings`; `axes` +
+  `layout` removed), types rework, ingest (`selectorKeys`, index swap, validation), minimal web
+  compile pass (old tabs removed, paradigm surfaces stubbed). **`br` is not republished** — see the
+  state note. *Done 2026-08-21.*
 - [ ] **Slice 3** — the categories editor (axis + default-value annotations) and the entry
   editor (narrowing emits the full bundle; otherForms picker over the axis feature's bound
   values).
@@ -53,48 +53,125 @@ Update the checkbox and the state note at the end of each session. One slice = o
 
 ### State after last session
 
-**2026-08-21, slice 1 — built and verified; next session starts slice 2.**
+**2026-08-21, slice 2 — built and verified; next session starts slice 3.**
 
-What shipped, and the three places it deviates from the design note:
+The shapes, as built. `grammar.categories` replaces `bindings`: a row is
+`{category: Tag, axis?: string, annotations: [{long, short?, default?}]}`, and
+**each annotation is a labelled tag of its own** — the category, plus
+`{axis: default}` where there is one, with the default's provenance re-attached
+from its `values` row (`categoryTags`). So the labels read model needed no change
+at all: `grammarRows` emits one row per annotation and everything downstream —
+the shelf, the counts, `resolveTag`'s exact branch — joins on the same keys it
+always did. `GRAMMAR_LIMITS` lost six entries and gained `annotations: 16`.
 
-- `GET /languages/:tag/labels/random?**row=**<canonical row key>` — the row is named in the
-  **query string**, not as a path segment as §3.2 planned. A canonical row key carries `=`, `|`
-  and, on a layered feature name, brackets; a path segment cannot hold them safely through a
-  proxy that normalizes paths. Returns `LabelSampleResponse` (`{languageID, row, entry}`), 404
-  when the row is unknown, unused, or has only withdrawn members — the caller renders the same
-  nothing for all three. Unmetered: see the decision below.
-- The join is `tagKey(tag)` alone, and **no `rowKey` was added to `LabelView`**. Usage reaches
-  the labels model from entries, an entry carries tags and nothing else, so a row with no tag (a
-  feature *name*, a plain abbreviation) is at zero by construction and needs no address.
-- The dashboard footer key is `languagePage.viewRecord`, not `language.viewRecord` — the page's
-  own namespace.
-- Chips are on POS rows, feature-value rows, layer-2 category rows and the enumerated
-  combination rows. A **zero renders as nothing**: in a young dictionary most rows are zero and
-  printing it on each would bury the counts that mean something. The sample opens in a **new
-  tab**, because this dialog holds an unpublished draft.
+Six deviations from the design note, each with its reason:
 
-**Decision recorded here rather than slipped in: the sample route is deliberately unmetered.**
-It does weaken the *practical* half of ADR-0004's "the dictionary cannot be enumerated through
-its label list" — about n·ln(n) unmetered calls would collect a row. The structural half is
-untouched (no response is ever a list). It is accepted because an entryKey is a public
-identifier for a public record that a crawler reads from the authors' PDSs anyway; because the
-query is strictly cheaper than the unmetered `GET /languages/:tag/labels` the same page already
-calls; and because metering would break the one control it exists for — a button whose purpose
-is being pressed again. Revisit if a crawler ever makes it visible in the logs.
+- **The language doc caches `categories`** beside `inherent`. §3.1 said the
+  headword key is computed from the inherence rows, but it cannot be: the default
+  axis value is now part of the identity, and only the category rows say which
+  feature a category varies over and which of its values is a headword flavour.
+  The consumer has no record in hand, so the rows are cached exactly as
+  `inherent` is, raw and whole.
+- **No `category-unbound` kind was added.** `unbound-atom` and
+  `ungrounded-combination` already say it, so the §2.1 table's "renames the
+  grounding checks as needed" was answered by renaming nothing. Grounding is now
+  skipped for a single-atom category, which is what lets a bare part of speech be
+  one.
+- **`single-item-binding` was not replaced, it was dissolved** — and this is
+  worth knowing before slice 3 designs the Categories tab. A POS-only category
+  *with an axis* is the point of dropping the two-atom floor. A POS-only category
+  *without* one is a second label for the tag its `pos` row already binds, so it
+  is reported as `duplicate` by the sweep that has always enforced one row per
+  tag. The verification harness asserts exactly that, after asserting the
+  opposite first and being wrong.
+- **`paradigmsReaching` and the expansion filter became exact in this slice**,
+  not in slice 4 as §2.3 filed them. They had no choice: `inherentAtomKeys` is
+  gone, and leaving the browser on containment while the AppView matched exactly
+  would break morphology invariant 6 for the duration of the arc. `paradigm.ts`'s
+  *shape* is untouched (still one `selector`, no tables) — only the join moved.
+  The paradigm doc's `selectorAtoms` is **gone rather than replaced**: the
+  equality key is derived from the stored `selector` on demand, because nothing
+  indexes it and the AQL filter is built in JS either way.
+- **The paradigms tab lists paradigms flat.** Its door was the layout list, which
+  no longer exists; rebuilding it belongs to the slice that rebuilds the editor.
+- **Two verification harnesses were deleted rather than reworked**:
+  `verify-paradigms.ts` and `verify-paradigm-reader.ts`. Their subject — the
+  containment selector, most-specific-wins, and `layoutView` — is what this arc
+  removed, so there was nothing left in them to adjust. Slice 4 owes both (action
+  item below). `verify-ingest-gate.ts` absorbed the paradigm-ingate check.
 
-Verification: full `turbo typecheck lint --force` (13/13); the endpoint curled for success,
-404-unused-row, 404-unknown-row, 400-missing-row and 400-bad-tag, plus a 24-draw distribution
-check (10/14 over a two-entry row) and a direct AQL check that `RAND()` is re-evaluated per
-subquery row on ArangoDB 3.12.4 and that `SORT RAND() LIMIT 1` is not optimized away; browser
-against a local API for all four chip sites, the reroll, the link's landing page, dark mode,
-375 px, and both degraded branches forced (empty and failed).
+**Two problems the plan did not anticipate, both found in the browser and both
+fixed here.**
 
-**Carried into slice 2, from the pre-slice-1 planning session:** latest tag v0.27.3 while every
-`package.json` says 0.26.0 (realigned at 0.28.0 in slice 6); paradigm matching is containment
-over `inherentAtoms` in three places that must stay in step (`expand-forms.ts:336-343`,
-`mergeParadigms`, `paradigmsReaching`); the `br` republish must check the current record's
-author before publishing under testaccount (last-write-wins makes the testaccount version
-current — intended).
+1. **A pre-merge record could not be loaded, so it could not be repaired.**
+   `fetchLanguageRecord` validates with `isValidGrammar` and refuses a record it
+   rejects — and the new lexicon rejects `axes`/`layout` outright. Every language
+   declared before the merge (i.e. all of them) therefore loaded as `null`, and
+   the Grammar & labels button sat disabled: exactly the ADR-0015 deadlock, from
+   the other direction. Fixed with `withoutRetiredGrammar` in `packages/types`:
+   the AppView validates the record as it stands, an **editor** validates it with
+   the retired keys set aside, and the record is still handed over carrying them
+   so the editor can say what publishing will drop.
+2. **`draftFromRecord` forward-maps `bindings` → `categories`**, one category per
+   row with a single annotation, and drops `axes`/`layout`. Without it a
+   contributor would load those keys invisibly into the draft, see no defect —
+   `grammarIssues` cannot report a field it does not know — and have every
+   publish silently refused. `axes` is deliberately *not* carried forward: the
+   feature could be, but which of its values a headword sits at is the
+   lexicographic judgement the merge exists to capture, and a guessed default
+   would be incoherent on arrival. `carriesRetiredGrammar` drives a one-line
+   notice in the footer, because a Publish button that is enabled on open with
+   nothing visibly changed should not quietly drop somebody's declaration.
+
+**A third fix, in a function this slice had to rewrite anyway:** `tidy` in
+`grammar-draft.ts` rebuilds the grammar object from a fixed list of arrays and
+**`abbreviations` was not on it**, so every abbreviation a contributor added was
+discarded by the very call that added it. Pre-existing, unrelated to the merge,
+and invisible until the list was rewritten.
+
+**`br` was deliberately not republished, and the plan's mechanism is retired.**
+Its current record is authored by **the developer's own account**
+(`alankersaudy.bsky.social`), not by a bot — so §5's "putRecord as
+testaccount.leksis.eu, last-write-wins makes it current" would have displaced the
+user's own version with the test account's. It is also no longer necessary: the
+editor now loads that record, maps it forward and publishes the migration itself,
+which is a better path on every count (the record stays its author's, the new
+code path gets exercised, no impersonation). **Proposed instead:** open Grammar &
+labels on `/language/br` while logged in as the author and press Publish. Nothing
+in slice 2 depends on it — the indexed version stays current until someone
+publishes over it.
+
+**One visible behaviour change to expect, and it is the merge working.** `br`'s
+one paradigm selects `{NOUN}`; its entry *biz* is `{NOUN, Gender=Masc}`. Under
+containment the paradigm reached it and generated *bizied*; under exact match it
+does not, and the entry shows only the form its author wrote. Every language's
+paradigms go inert until its categories declare an axis with defaults and its
+entries are republished carrying them. This is §1.4 as designed, and it is the
+concrete reason the arc must not be tagged before slice 6.
+
+Verification: full `turbo typecheck lint --force` (13/13); `verify-ingest-gate.ts`
+reworked and **37/37** against a local ArangoDB, covering every new issue kind,
+the outright refusal of `axes`/`layout`, the headword bundle an entry is indexed
+under (both that it keeps the inherent feature and the default, and that it drops
+an undeclared one), and the paradigm stopgap; `db:init` run locally — the
+`idx_language_selectors` index ensured, `idx_language_inherent` dropped, generated
+forms swept to zero; browser at 1280 and 375 px against the production API — the
+`br` dashboard and its record-link footer, the dialog opening on the forward-mapped
+record with three tabs, the two carried-over categories at the foot of the
+Categories list with their slice-1 usage chips intact, the Paradigms tab's notice
+and the stub editor behind it, and `/entry/br-biz-962d` degrading to the flat form
+list. One unrelated 400 was observed on `com.atproto.server.refreshSession` before
+a successful `getSession`; the dev session works and it predates this slice.
+
+**Carried into slice 3:** the Categories tab is still the old combinations walk
+(pick a category → a feature → one value at a time), writing one axis-less
+annotation per row — the axis picker, the default-value picker and the
+several-abbreviations affordance are slice 3's, and `upsertCategory` /
+`removeCategory` / `findCategory` in `grammar-draft.ts` are what they build on.
+The entry editor's narrowing still emits bundles without defaults, and
+`FormTagEditor` is on the flat picker. Also still true from before slice 1: the
+latest tag is v0.27.3 while every `package.json` says 0.26.0 (realigned at 0.28.0
+in slice 6).
 
 ## Decision
 
@@ -119,3 +196,12 @@ current — intended).
   reshaped `eu.leksis.language` (the published lexicons already lagged the code before this arc).
 - [ ] Slice 6: retire or update `docs/design/grammatical-tagging.md` layer-3/4 sections and
   `docs/design/paradigm-rules.md` with pointers here.
+- [ ] **Slice 4 owes two verification harnesses**, deleted in slice 2 because the arc removed what
+  they tested: `verify-paradigms.ts` (ingest, identity, expansion) and `verify-paradigm-reader.ts`
+  (the pure display path). Both are recoverable at commit 343516e.
+- [ ] **Slice 5 owes the rule-row UI**, deleted with `ParadigmEditorDialog`'s body and
+  `lib/paradigm-draft.ts`. Also recoverable at 343516e, as is the reader's table geometry
+  (`mergeCellSpans` survives in `packages/types`) and the `entry.*` copy for the two absent states.
+- [ ] **Slice 2's paradigm-ingest gate must be removed in slice 4.** `PARADIGM_INGEST_GATED` in
+  `apps/api/src/firehose/ingest-paradigm.ts` refuses every paradigm record; slice 4 replaces the
+  function it guards.

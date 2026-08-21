@@ -5,6 +5,7 @@ import {
   isValidLanguageTag,
   normalizeLanguageTag,
   type Grammar,
+  type GrammarCategory,
   type GrammarInherent,
   type LanguageTranslation,
 } from "@leksis/types";
@@ -66,8 +67,8 @@ interface LanguageDoc {
    * from a PDS to find out — the consumer is a sequential writer, not an HTTP
    * client. The reason it does not: `labels` is a read model's input, while this
    * is a **matching** input — it decides what goes into an entry's
-   * `inherentAtoms`, and so which entries a paradigm's selector reaches
-   * (layer 5, docs/design/paradigm-rules.md §2.1).
+   * `selectorKeys`, and so which entries a paradigm's selector reaches
+   * (ADR-0016, ADR-0019).
    *
    * Stored raw, not resolved: an orphan cannot survive here (a row naming an
    * unbound feature costs the record its place in the index, ADR-0015), and the
@@ -75,6 +76,23 @@ interface LanguageDoc {
    * is likewise impossible in an indexed grammar.
    */
   inherent: GrammarInherent[];
+  /**
+   * This version's category declarations, cached for exactly the reason
+   * `inherent` is — and needed since ADR-0019 for exactly the same computation.
+   *
+   * A headword bundle now carries the **default axis value** of the category it
+   * was created through, and that value is part of what identifies a kind of
+   * word. So `headwordKeys` cannot be computed from the inherence rows alone:
+   * it has to know which feature each category varies over and which of its
+   * values the language declared a headword flavour. Only the categories say
+   * that, and the consumer has no record in hand.
+   *
+   * Stored raw, and deliberately the whole row rather than a distilled
+   * (category, axis, defaults) triple: a second shape here would be a second
+   * thing to keep in step with the lexicon, for no saving worth having on a doc
+   * that already caches every label the same grammar declares.
+   */
+  categories: GrammarCategory[];
   createdAt: string;
   indexedAt: string;
   current: boolean;
@@ -192,6 +210,7 @@ export async function ingestLanguage(
     translations: parsed.translations,
     labels,
     inherent: parsed.grammar?.inherent ?? [],
+    categories: parsed.grammar?.categories ?? [],
     createdAt: parsed.createdAt,
     indexedAt: new Date().toISOString(),
     current: true,
@@ -209,7 +228,7 @@ export async function ingestLanguage(
   // label joins the language's own list even before any entry uses it.
   await syncLocalLanguages(db, parsed.tag, parsed.translations);
   await syncLanguageLabels(db, parsed.tag, labels);
-  // Nothing recomputes the entries' `inherentAtoms` here, deliberately: a
+  // Nothing recomputes the entries' `selectorKeys` here, deliberately: a
   // grammar edit would otherwise re-read every entry of the language on every
   // save. Each entry refreshes its own on its next republication, and whether a
   // language-record transition should trigger a language-wide recompute waits

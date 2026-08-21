@@ -222,16 +222,22 @@ async function main() {
     fields: ["languageID", "otherForms[*].search"],
     unique: false,
   });
-  // The layer-5 join: "every entry in this language whose inherent bundle
-  // contains this selector" is an indexed intersection filter, which is what
-  // lets a newly published paradigm find the entries it reaches without
-  // scanning the language and comparing bundles doc by doc.
+  // The layer-5 join: "every entry in this language whose headword bundle IS
+  // this selector" is an indexed array lookup, which is what lets a newly
+  // published paradigm find the entries it reaches without scanning the language
+  // and comparing bundles doc by doc. An equality since ADR-0019 — it was an
+  // intersection filter over `inherentAtoms` while a selector was matched by
+  // containment, and that field is retired with the index that served it.
   await db.collection("entries").ensureIndex({
     type: "persistent",
-    name: "idx_language_inherent",
-    fields: ["languageID", "inherentAtoms[*]"],
+    name: "idx_language_selectors",
+    fields: ["languageID", "selectorKeys[*]"],
     unique: false,
   });
+  // Its predecessor, dropped rather than left in place: it indexes a field
+  // nothing writes any more, so every entry write would keep paying for it and
+  // nothing would ever read it.
+  await dropIndex(db, "entries", "idx_language_inherent");
   // Per-language reads (dashboard counters, todo queue, activity) filter on
   // language + currency without touching orthographies.
   await db.collection("entries").ensureIndex({
@@ -427,7 +433,7 @@ async function main() {
   // recoverable from the doc — it is the lowercased orthographies, which are
   // stored. The form half is not: the retired `search` array pooled the form
   // spellings with the orthographies and said nothing about which form each one
-  // was, and a form's tag lives only in the record. Neither does the inherent
+  // was, and a form's tag lives only in the record. Neither is the headword
   // bundle, computed from the record's lexeme-level categories. Both come back
   // when an entry's author republishes it — pre-1.0 that is a bot rerunning its
   // import, not a migration, which is why nothing here fetches a record.
@@ -445,13 +451,14 @@ async function main() {
         UPDATE e WITH {
           orthographySearch: headwords,
           otherForms: [],
-          inherentAtoms: [],
+          selectorKeys: [],
+          inherentAtoms: null,
           search: null
         } IN entries OPTIONS { keepNull: false }
     `);
     console.log(
       `reshaped ${pending} entry doc(s) to the split search index ` +
-        `(headwords recomputed; forms and inherent atoms on republication)`,
+        `(headwords recomputed; forms and headword keys on republication)`,
     );
   }
 

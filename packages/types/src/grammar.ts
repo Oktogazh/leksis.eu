@@ -1,5 +1,6 @@
 // Contract for the `grammar` sub-object of an eu.leksis.language record —
-// layers 1 to 4 of the grammar layer (docs/design/grammatical-tagging.md).
+// layers 1 and 2 of the grammar layer (docs/design/grammatical-tagging.md,
+// revised by docs/design/category-axis-merge.md).
 //
 // A language declares the grammatical vocabulary it uses by *binding* each
 // atom to a homolingual label. Binding is not merely labelling: it is how a
@@ -22,37 +23,34 @@
 //
 // Layer 2 declares what those atoms combine into, in two more arrays:
 //
-//   inherent — "for this category, this feature is inherent": a property of
-//              the word itself rather than of one of its forms
-//   bindings — a label for a combination of two or more atoms ("nf.")
+//   inherent   — "for this category, this feature is inherent": a property of
+//                the word itself rather than of one of its forms
+//   categories — a headword category and the label(s) a reader sees for it:
+//                the atoms it is made of, the feature its forms vary over, and
+//                which value of that feature each of its headwords sits at
 //
 // The two are gated the same way layer 1 gates a value behind its feature
-// name: a combination has to be reachable through the inherence declarations
-// that build it up. One rule at two levels — which is why both render as
-// navigation in the editor rather than as validation errors.
+// name: a category of two or more atoms has to be reachable through the
+// inherence declarations that build it up. One rule at two levels — which is
+// why both render as navigation in the editor rather than as validation errors.
 //
-// Layer 3 adds the other half of that declaration, in one more array:
+// **A category's axis and its default values live on the category itself**
+// (ADR-0019, which retired the standalone `axes` and `layout` arrays). Real
+// conventions couple what a headword *is* with where it sits on the axis its
+// forms range over: Breton nouns are cited in the singular, collective-only
+// nouns in the collective, and an *anv-kadarn stroll* in the plural with its
+// singulative derived by rule. Three headword flavours of one category, each
+// abbreviated differently — which two separate declarations could not express,
+// because neither of them holds a label.
 //
-//   axes     — "for this category, this feature varies across its forms",
-//              naming the values it varies over, in order
+// So each annotation of a category is a **labelled tag**: the category plus its
+// own default axis value, which is exactly what an entry created through it
+// carries. That is what makes the entry record self-describing and what makes a
+// paradigm's selector an exact match rather than a containment test.
 //
-// Inherence and axes are one relation at two altitudes: layer 2 says what a
-// headword *is*, layer 3 says what its forms *range over*, and together they
-// are the paradigm's cell-coordinate system. They are keyed identically —
-// (category, bare feature name) — so that a pair declared as both can be
-// caught, which is the layer's own gate.
-//
-// Layer 4 arranges that cell space, in one more array:
-//
-//   layout   — per category, the *shape* of its tables: which axis sits on
-//              which dimension, one table or several, in what order, and what
-//              is shown without asking
-//
-// It declares no vocabulary of its own and carries no labels: every string a
-// reader sees still comes from the layer-1 rows its axes and coordinates point
-// at. Axes alone underdetermine presentation — four axes could be one grid with
-// nested headers or four separate tables — and that gap is the whole reason the
-// layer exists.
+// The *shape* of the inflection tables is declared nowhere here: it belongs to
+// the eu.leksis.paradigm record, which defines its cells one by one, because
+// real conjugation tables are not cartesian products of their axes.
 //
 // Two more things a dictionary prints are declared here and take part in none
 // of that cascade, because they are lexicography rather than grammar:
@@ -82,7 +80,9 @@ import {
   type Tag,
   type TagFeat,
   type TagUpos,
+  FEATS_VALUE_SEPARATOR,
   FEATURE_NAME_PATTERN,
+  FEATURE_VALUE_PATTERN,
 } from "./tag.js";
 
 /**
@@ -121,7 +121,7 @@ export interface GrammarPos {
 
 /**
  * A bound feature *name*: `Case` → "troad". Not a tag — a bare name has no
- * value — and not a chip: this is the axis header layer 4 will print, and the
+ * value — and not a chip: this is the header a paradigm's tables print, and the
  * gate every value of the feature sits behind.
  */
 export interface GrammarFeature {
@@ -144,10 +144,9 @@ export interface GrammarFeature {
    * extension". Its values are ordinary tags an entry or a sense may carry, and
    * they render and bind exactly like any other; what the flag withholds is
    * participation in the grammatical layers. A lexicographic feature is never
-   * inherent to a category, never an axis of one, never a layout dimension and
-   * never part of a named combination, because none of those describe it: "by
-   * extension" is not something a word *is* nor something its forms *vary
-   * over*.
+   * inherent to a category, never the axis of one and never part of a
+   * category's own bundle, because none of those describe it: "by extension" is
+   * not something a word *is* nor something its forms *vary over*.
    *
    * It is a flag on a feature rather than a sixth array because the machinery
    * is a feature's exactly — one name, several values, one label each — and a
@@ -191,8 +190,8 @@ export interface GrammarValue {
    * independent remarks about a word, where this is one remark about one row.
    * Paragraphs are newlines.
    *
-   * **Content, indexed nowhere** — the precedent is `layout` (ADR-0009) and an
-   * example sentence (ADR-0014). It rides to a reader on the language record
+   * **Content, indexed nowhere** — the precedent is a paradigm's rules
+   * (ADR-0016) and an example sentence (ADR-0014). It rides to a reader on the language record
    * the dashboard already resolves from its author's PDS, so it cost no
    * collection, no endpoint and no ingest logic beyond being accepted.
    */
@@ -228,170 +227,90 @@ export interface GrammarInherent {
 }
 
 /**
- * A label for a combination of two or more atoms: French `{NOUN, Gender=Fem}`
- * → "nf.". A language that prints "n. f." instead binds the two atoms
- * separately and never writes a row here — decomposition renders it, and a
- * synthesised label nobody authored is precisely what the rendering chain
+ * One label of a category, and the axis value the headwords it names sit at.
+ *
+ * The same two halves a `GrammarLabel` has, plus the `default` that makes
+ * several of them distinguishable within one category — which is the whole
+ * point of ADR-0019's merge. `{NOUN, Gender=Masc}` with axis `Number` holds one
+ * annotation defaulting to `Sing` ("anv-kadarn gourel") and another defaulting
+ * to `Plur` (*anv-kadarn stroll*), and those are two different labelled tags
+ * over one declaration.
+ *
+ * `default` is **required iff the category names an axis** and forbidden
+ * otherwise: without an axis there is no value for it to name, and with one
+ * there is no way to tell two annotations apart. Both halves of that are
+ * reported by `grammarIssues` rather than refused as malformed, because a
+ * record missing one is a record whose meaning is *undecidable*, not one that
+ * cannot be read.
+ */
+export interface GrammarAnnotation {
+  /** Full form — the only required half, as on a `GrammarLabel`. */
+  long: string;
+  /** Abbreviated display form, shown instead of `long` where present. */
+  short?: string;
+  /**
+   * The value of the category's `axis` a headword named by this annotation
+   * carries. Bare — matched by name, with provenance re-attached from the
+   * `values` row that bound it (`categoryTags`), exactly as a cell coordinate
+   * is.
+   */
+  default?: string;
+}
+
+/**
+ * A headword category this language names: what a word *is*, what its forms
+ * vary over, and where its own citation form sits on that axis.
+ *
+ * **One row per category, and it carries the labels.** French `{NOUN,
+ * Gender=Fem}` → "nf."; a language that prints "n. f." instead binds the two
+ * atoms separately and never writes a row here — decomposition renders it, and
+ * a synthesised label nobody authored is precisely what the rendering chain
  * refuses to invent.
  *
- * **Two or more items, always.** A one-atom label belongs in `pos` or
- * `values`, so that every fact keeps exactly one home; a single-item row here
- * is reported by `grammarIssues` rather than silently accepted as a second way
- * to say the same thing.
+ * **A single atom is allowed** (ADR-0019 removed the old two-atom floor): a
+ * part of speech on its own is a headword category like any other, and it has
+ * to be, because a category is now also where an axis is declared — `{NOUN}`
+ * varying over `Number` is the ordinary case, not a special one.
+ *
+ * `axis` names the feature this category's forms range over. It is **not** an
+ * inventory: what values exist is layer 1's business, and which cells are
+ * printed is the paradigm record's, so a category says only which feature
+ * varies and where its headwords sit. That is the minimum that cannot be
+ * derived from anything else, and it is why the standalone `axes` array is
+ * gone.
  */
-export interface GrammarCombination {
-  tag: Tag;
-  label: GrammarLabel;
-  references?: GrammarReference[];
-}
-
-/**
- * "For this category, this feature **varies across its forms**" — layer 3, and
- * the exact counterpart of an inherence declaration one altitude up. Together
- * they are the paradigm's cell-coordinate system: layer 2 says what a headword
- * *is*, layer 3 says what its forms *range over*.
- *
- * **The row names its values, in order**, rather than inheriting whatever layer
- * 1 happens to have bound — because a language's inventory and one category's
- * paradigm are not the same set. A language may distinguish three genders in
- * its adjectives while splitting the masculine of its nouns in two, personal
- * and non-personal; only a per-category value list can say that, and a
- * declaration that spanned every bound value could not. Naming them also fixes
- * their **order**, which is what layer 4's table headers print and what the
- * flat `otherForms` list is sorted by: the alphabetical order of an identifier
- * is not a grammatical order, and no grammar prints the accusative first.
- *
- * `category` is a `Tag`, which is what lets a paradigm stop being rectangular.
- * A language declares Person an axis of `{VERB, VerbForm=Fin}` and simply never
- * declares it for `{VERB, VerbForm=Inf}`, so an infinitive has no person cells
- * to leave conspicuously empty. Note such a category refines by a value that is
- * itself an axis value elsewhere: that is ordinary, and it is why an axis
- * category is checked only for **bound atoms**, exactly as an inherence
- * declaration's category is, and never for layer 2's grounding.
- *
- * `feature` is a bare name and the values are bare strings, both matched **by
- * name and never by scheme** — the same rule a value already follows to reach
- * its feature. An axis is a *selection* from the language's inventory, not a
- * second place to declare it, so it repeats neither provenance nor labels.
- */
-export interface GrammarAxis {
+export interface GrammarCategory {
   category: Tag;
-  feature: string;
-  /** The values this category's forms range over, in the order they are shown. */
-  values: string[];
+  /**
+   * Bare name of the feature this category's forms vary over. Matched by name
+   * and never by scheme, exactly as an `inherent` row's feature is, and
+   * mutually exclusive with inherence on the same category — a paradigm cannot
+   * be built from a coordinate that is also a constant.
+   */
+  axis?: string;
+  /** At least one, one per headword flavour; each is a labelled tag of its own. */
+  annotations: GrammarAnnotation[];
 }
 
 /**
- * One coordinate of a layout: a bare `Feature=Value` pair.
+ * One coordinate of a cell address: a bare `Feature=Value` pair.
  *
- * **Bare, and matched by name**, exactly as an axis names its values — a layout
- * is a *selection* from the language's inventory, never a second place to
- * declare it, so it repeats neither provenance nor labels. That has a
- * consequence which is load-bearing rather than cosmetic: provenance is
- * re-attached from the `values` row before anything is displayed or matched
- * (see `coordTag`), because a form authored through the language's own picker
- * carries the minting scheme and an address built without it would match
- * nothing and find no label.
+ * **Bare, and matched by name** — an address is a *selection* from the
+ * language's inventory, never a second place to declare it, so it repeats
+ * neither provenance nor labels. That has a consequence which is load-bearing
+ * rather than cosmetic: provenance is re-attached from the `values` row before
+ * anything is displayed or matched (see `coordTag`), because a form authored
+ * through the language's own picker carries the minting scheme and an address
+ * built without it would match nothing and find no label.
+ *
+ * It lives here rather than with the paradigm shapes because the re-qualifying
+ * step needs the grammar, and because a category's `default` is joined to its
+ * `values` row by exactly the same rule.
  */
 export interface LayoutCoord {
   feature: string;
   /** One value, or several comma-separated ones for a form spanning them all. */
   value: string;
-}
-
-/**
- * An addressed cell: a list of coordinates.
- *
- * A list block's item is a **full** address — the cell it prints. An `exclude`
- * entry may be **partial**, and then it removes every cell whose coordinates
- * contain all of its own: a complete address deletes one cell, an incomplete
- * one deletes the whole row, column or slice it names. Without that, a language
- * whose plural half is defective would have to write one row per missing cell.
- */
-export interface LayoutCell {
-  coords: LayoutCoord[];
-}
-
-/**
- * A grid: axes assigned to dimensions, cells **derived** from the values those
- * axes declared.
- *
- * The cells are deliberately not stored. A stored matrix would be a second copy
- * of layer 3's value lists, free to drift from them, and a Latin verb would
- * carry hundreds of rows in a record that is rewritten whole on every edit.
- *
- * `rows` and `columns` hold **feature names, outermost first**: nesting is what
- * makes a header span, and a paradigm's dimensions are not always two — a
- * possessive declension nests possessor number under possessor person. Either
- * may be empty, since one axis on `rows` alone is a one-column table, which is
- * a perfectly ordinary way to print a fifteen-case declension.
- *
- * Non-rectangularity is expressed in three composable ways, which is why a
- * dense grid is not the default: **several blocks** with different `fixed`
- * constants (one table per mood and tense, the way a Latin grammar prints
- * them), **`exclude`** for holes inside one grid, and a **list block** for what
- * no grid reaches at all.
- */
-export interface LayoutTable {
-  kind: "table";
-  fixed?: LayoutCoord[];
-  summary?: boolean;
-  /** Axes on the vertical dimension, outermost first. */
-  rows?: string[];
-  /** Axes on the horizontal dimension, outermost first. */
-  columns?: string[];
-  /**
-   * Cells this paradigm does not have. A line or column left entirely excluded
-   * is dropped rather than printed empty: "these forms do not exist" and
-   * "nobody has entered these forms yet" must not look the same to a reader.
-   */
-  exclude?: LayoutCell[];
-}
-
-/**
- * An ordered list of addressed forms: "rosa, rosae" beside the headword, or the
- * infinitive, gerund and supine that no cell of a Latin finite grid reaches.
- *
- * This is also the **one-dimensional degenerate case of the same declaration**,
- * and so what fixes the order of the flat `otherForms` list — the fallback every
- * entry uses until its language declares a layout.
- */
-export interface LayoutList {
-  kind: "list";
-  fixed?: LayoutCoord[];
-  summary?: boolean;
-  /** The addresses to print, in the order they are printed. */
-  items: LayoutCell[];
-}
-
-/**
- * One block of a layout. The two kinds are distinguished by `kind` rather than
- * by a lexicon union: a union would put a `$type` on every block inside the
- * record for a choice between two shapes that are never referenced from
- * anywhere else.
- */
-export type LayoutBlock = LayoutTable | LayoutList;
-
-/**
- * How one category's forms are laid out — layer 4, which exists because **axes
- * alone underdetermine presentation** and nothing in layer 3 can say which
- * arrangement was meant.
- *
- * `category` is a `Tag` and is matched the way an axis's category is — the
- * entry's own bundle or any sub-bundle of it — so a layout declared on `{NOUN}`
- * serves an entry categorised `{NOUN, Gender=Fem}`. Where several match, the
- * **most specific wins** (`layoutFor`), which is how a language gives its
- * perfective verbs a different table from its imperfective ones without
- * repeating the parts they share.
- *
- * It carries **no labels and no values**, so it adds nothing to the
- * abbreviations read model and nothing to the API: everything a reader sees is
- * resolved through the layer-1 rows its axes and coordinates point at.
- */
-export interface GrammarLayout {
-  category: Tag;
-  /** The blocks, in the order they are shown. */
-  blocks: LayoutBlock[];
 }
 
 /**
@@ -439,9 +358,7 @@ export interface Grammar {
   features?: GrammarFeature[];
   values?: GrammarValue[];
   inherent?: GrammarInherent[];
-  bindings?: GrammarCombination[];
-  axes?: GrammarAxis[];
-  layout?: GrammarLayout[];
+  categories?: GrammarCategory[];
   abbreviations?: GrammarAbbreviation[];
 }
 
@@ -461,20 +378,12 @@ export const GRAMMAR_LIMITS = {
   features: 256,
   values: 2048,
   inherent: 512,
-  bindings: 1024,
-  axes: 512,
-  layout: 256,
+  categories: 1024,
   abbreviations: 512,
-  /** Blocks of one layout declaration. */
-  blocks: 64,
-  /** Constants pinned on one block, and coordinates of one cell. */
+  /** Annotations of one category — one per headword flavour of it. */
+  annotations: 16,
+  /** Coordinates of one cell address. */
   coords: 16,
-  /** Features on one dimension of a table (`rows`, `columns`). */
-  dimension: 8,
-  /** Cells listed by one block (`items`, `exclude`). */
-  cells: 256,
-  /** Values one axis declares. */
-  axisValues: 256,
   /** References on one row. */
   references: 16,
 } as const;
@@ -540,33 +449,17 @@ export function inherentKey(row: GrammarInherent): string {
 }
 
 /**
- * Stable identity of an axis declaration. Deliberately **prefixed**, because an
- * axis and an inherence declaration are keyed on the same (category, feature)
- * pair — that identical keying is what makes the conflict between them
- * detectable — and an issue reported against one must not be indistinguishable
- * from the same issue reported against the other.
+ * Stable identity of a category **declaration** — the row, not the labelled
+ * tags it produces.
+ *
+ * Deliberately **prefixed**, for the reason the retired `axisKey` was: a
+ * declaration and the annotation tags hanging off it would otherwise key the
+ * same string, and an issue reported against the row ("this axis is not bound")
+ * must not read as an issue against one of its labels. It is also what makes
+ * "two rows for one category" reportable at all.
  */
-export function axisKey(row: { category: Tag; feature: string }): string {
-  return `axis#${tagKey(row.category)}#${row.feature}`;
-}
-
-/**
- * Stable identity of a layout declaration. Prefixed for the reason `axisKey`
- * is: a layout and an axis are keyed on the same categories, and an issue
- * reported against one must not read as the same issue against the other.
- */
-export function layoutKey(row: { category: Tag }): string {
-  return `layout#${tagKey(row.category)}`;
-}
-
-/**
- * Stable identity of one block of a layout. The index is part of it because a
- * block is not otherwise identifiable — two tables of one layout may differ
- * only in which value they fix — and a repair worklist has to point at one of
- * them rather than at the whole declaration.
- */
-export function layoutBlockKey(row: { category: Tag }, index: number): string {
-  return `${layoutKey(row)}[${index}]`;
+export function categoryKey(row: { category: Tag }): string {
+  return `category#${tagKey(row.category)}`;
 }
 
 /**
@@ -640,18 +533,21 @@ export function grammarRows(grammar: Grammar): GrammarRow[] {
       feature: row.feature,
     });
   }
-  // Layer 2's combinations are rows like any other, which is the whole reason
-  // they need no plumbing of their own: they flow into the abbreviations read
-  // model and into the renderer's lookup through this one function, and a
-  // language's "nf." lands on the same shelf as its "n.".
-  for (const row of grammar.bindings ?? []) {
-    rows.push({
-      kind: "combination",
-      key: tagKey(row.tag),
-      label: row.label,
-      ...(row.references !== undefined ? { references: row.references } : {}),
-      tag: row.tag,
-    });
+  // Layer 2's categories are rows like any other, which is the whole reason
+  // they need no plumbing of their own: they flow into the labels read model
+  // and into the renderer's lookup through this one function, and a language's
+  // "nf." lands on the same shelf as its "n.".
+  //
+  // **One row per annotation, not per declaration.** A category naming an axis
+  // holds one label per default value of it, and each is a labelled tag of its
+  // own — the category plus that value — which is exactly the bundle an entry
+  // created through it carries. That is what keeps `resolveTag`'s exact branch
+  // reachable after the merge, with no change to the read model's shape or key
+  // space (ADR-0019).
+  for (const row of grammar.categories ?? []) {
+    for (const { tag, label } of categoryTags(grammar, row)) {
+      rows.push({ kind: "combination", key: tagKey(tag), label, tag });
+    }
   }
   // An abbreviation flows through here for the same reason a combination does:
   // it is a row like any other, so it reaches the language's label list with no
@@ -687,10 +583,10 @@ function boundFeatureNames(grammar: Grammar): Set<string> {
 
 /**
  * The feature values this language has bound, keyed so a bare (feature, value)
- * pair can find them — the layer-1 inventory an axis draws its values from.
+ * pair can find them — the layer-1 inventory a category's `default` draws from.
  * Distinct from `boundAtomKeys`, which keys on the full tag including scheme:
- * a category in an `inherent` or `bindings` row carries its provenance and is
- * matched exactly, while an axis value does not carry any and cannot be.
+ * a category in an `inherent` or `categories` row carries its provenance and is
+ * matched exactly, while a bare default does not carry any and cannot be.
  */
 function boundValueKeys(grammar: Grammar): Set<string> {
   return new Set((grammar.values ?? []).map((row) => valueMatchKey(row.feature, row.value)));
@@ -704,79 +600,103 @@ export function isInherent(grammar: Grammar, category: Tag, feature: string): bo
   );
 }
 
-/** Whether this language declares `feature` an axis of exactly this category. */
+/**
+ * The category declaration for exactly this bundle, if any.
+ *
+ * Exact, not by containment: a declaration *is* a row about one category, and
+ * two rows for one bundle is a defect `grammarIssues` reports rather than a
+ * precedence question. Reaching an entry that named more than the declaration
+ * did is `headwordKeys`' business, and it is by containment there.
+ */
+export function categoryRow(grammar: Grammar, category: Tag): GrammarCategory | undefined {
+  const key = tagKey(category);
+  return (grammar.categories ?? []).find((row) => tagKey(row.category) === key);
+}
+
+/** Whether this language declares `feature` the axis of exactly this category. */
 export function isAxis(grammar: Grammar, category: Tag, feature: string): boolean {
-  const key = tagKey(category);
-  return (grammar.axes ?? []).some(
-    (row) => row.feature === feature && tagKey(row.category) === key,
-  );
+  return categoryRow(grammar, category)?.axis === feature;
 }
 
-/** One declared axis, resolved to the layer-1 rows that give it its labels. */
-export interface ResolvedAxis {
-  feature: GrammarFeature;
-  /** The axis's values in the order the language declared them. */
-  values: GrammarValue[];
+/** One annotation of a category, as the labelled tag it stands for. */
+export interface CategoryTag {
+  tag: Tag;
+  label: GrammarLabel;
+  annotation: GrammarAnnotation;
 }
 
 /**
- * The axes this language declares for exactly this category, resolved to their
- * bound rows — what the `otherForms` editor offers, and what layer 4 will lay
- * out. Declaration order is preserved: it is the language's default axis order,
- * as each row's `values` order is its default header order.
+ * The labelled tags one category declaration produces — one per annotation.
  *
- * A row naming a feature or a value nobody bound is skipped rather than shown
- * unnamed, exactly as `inherentFeatures` skips its orphans: an authoring
- * surface is not where an orphan gets repaired, the worklist is. An axis whose
- * values are *all* orphaned drops out entirely — an axis with nothing to range
- * over offers no choice.
+ * The tag is the category itself when nothing narrows it, and the category plus
+ * `{axis: default}` when the annotation names a default. That second case is
+ * the whole of ADR-0019's merge, and the reason this needs the grammar rather
+ * than the row alone: the default is stored **bare** and its provenance is
+ * re-attached from the `values` row that bound it, exactly as `coordTag`
+ * re-qualifies a cell coordinate. Without that step a minted `Number=Sgv`
+ * headword would key differently from the tag the entry editor writes, so the
+ * label would never be found.
+ *
+ * An annotation naming a default on a category with no axis is skipped: it
+ * addresses no feature, `grammarIssues` says so, and inventing a tag for it
+ * would put an unaddressable row on the language's own label shelf.
  */
-export function axesOf(grammar: Grammar, category: Tag): ResolvedAxis[] {
-  const key = tagKey(category);
-  return resolveAxes(
-    grammar,
-    (grammar.axes ?? []).filter((row) => tagKey(row.category) === key),
-  );
-}
-
-/**
- * The axes that apply to an entry carrying these categories — what its forms
- * may vary over, and so what the `otherForms` editor offers.
- *
- * Wider than `axesOf` on purpose: an axis declared on `{NOUN}` applies to an
- * entry categorised `{NOUN, Gender=Fem}`, because that entry *is* a noun.
- * Requiring the declaration to match the entry's bundle exactly would make the
- * ordinary case — a language declaring number of nouns in general, an entry
- * naming its gender as well — silently offer nothing. So a row applies when
- * its category is the entry's bundle **or any sub-bundle of it**, which is the
- * same containment the renderer's decomposition walks.
- *
- * Rows are returned in the language's own declaration order, one per feature:
- * a paradigm has one Number axis, however many categories of the entry
- * declared it.
- */
-export function applicableAxes(grammar: Grammar, categories: readonly Tag[]): ResolvedAxis[] {
-  return resolveAxes(grammar, applicableAxisRows(grammar, categories));
+export function categoryTags(grammar: Grammar, row: GrammarCategory): CategoryTag[] {
+  const out: CategoryTag[] = [];
+  for (const annotation of row.annotations ?? []) {
+    if (annotation.default !== undefined && row.axis === undefined) continue;
+    const feats = [...(row.category.feats ?? [])];
+    if (row.axis !== undefined && annotation.default !== undefined) {
+      const scheme = resolveCoord(grammar, {
+        feature: row.axis,
+        value: annotation.default,
+      })?.scheme;
+      feats.push({
+        feature: row.axis,
+        value: annotation.default,
+        ...(scheme !== undefined ? { scheme } : {}),
+      });
+    }
+    const tag: Tag = {
+      ...(row.category.upos !== undefined ? { upos: row.category.upos } : {}),
+      ...(feats.length > 0 ? { feats } : {}),
+    };
+    const short = annotation.short;
+    out.push({
+      tag,
+      label: { long: annotation.long, ...(short !== undefined ? { short } : {}) },
+      annotation,
+    });
+  }
+  return out;
 }
 
 // ---- layer 5: which entries a paradigm reaches ---------------------------
 //
-// A paradigm selects the entries it generates forms for by **containment**: the
-// entry's inherent bundle contains the selector. Both sides are therefore
-// reduced to the same alphabet of atom keys, which is what lets the AppView
-// store an entry's on its doc and answer "every entry this new rule reaches"
-// with an indexed lookup — never a scan, and never a record fetched from a PDS.
+// A paradigm selects the entries it generates forms for by **exact match** on
+// the headword bundle (ADR-0019, which replaced containment over the entry's
+// inherent atoms). The bundle now carries the default axis value, so it fully
+// identifies a kind of headword: `{NOUN}` selects only entries whose headword
+// bundle is literally a bare noun, and the *anv-kadarn stroll* flavour
+// `{NOUN, Gender=Masc, Number=Plur}` is a different paradigm rather than a more
+// specific one. That is what removes the whole most-specific-wins machinery:
+// two paradigms cannot both reach one entry.
+//
+// Both sides are reduced to the same scheme-blind key, which is what lets the
+// AppView store an entry's on its doc and answer "every entry this new rule
+// reaches" with an indexed equality lookup — never a scan, and never a record
+// fetched from a PDS.
 
 /**
- * The keys of a bundle's atoms, **scheme-blind** — the alphabet an entry's
- * categories and a paradigm's selector are compared in.
+ * The keys of a bundle's atoms, **scheme-blind** — the alphabet a category's
+ * atoms are compared in.
  *
  * Provenance is dropped for the reason `featsMatchKey` drops it wherever a form
  * meets a cell: a bot writes `Conjugation=2` bare where the language's own
- * editor writes it carrying the minting language's scheme, and a paradigm
- * reaching only one of the two would be worse than one reaching both. The part
- * of speech keeps its own slot, as it does in every key here — it is its own
- * CoNLL-U column, and `upos=` can never collide with a feature item.
+ * editor writes it carrying the minting language's scheme, and a rule reaching
+ * only one of the two would be worse than one reaching both. The part of speech
+ * keeps its own slot, as it does in every key here — it is its own CoNLL-U
+ * column, and `upos=` can never collide with a feature item.
  */
 export function tagAtomKeys(tag: Tag): string[] {
   const keys: string[] = [];
@@ -786,44 +706,84 @@ export function tagAtomKeys(tag: Tag): string[] {
 }
 
 /**
- * The atom keys of an entry's **inherent bundle**: its part of speech, plus
- * every feature the language declares inherent for the category carrying it.
+ * A whole bundle's key with provenance dropped — the string a paradigm's
+ * selector and an entry's headword bundle are compared on.
  *
- * The filter is the point. `categories` is lexeme-level, but nothing stops a
- * record from carrying a form's feature there, and an atom that is not inherent
- * is noise a rule must not select on — what is stored is exactly the set a new
- * paradigm's selector is tested against. Inherence is read **per category and by
- * containment**, so a declaration on `{NOUN}` reaches an entry categorised
- * `{NOUN, Gender=Fem}` exactly as `applicableAxes` reaches it, while the keys
- * that come out are scheme-blind, the way every form-to-cell join is.
+ * `featsMatchKey` one altitude up: it keeps the part of speech, because a
+ * selector without one selects a different thing from a selector with one,
+ * while a form's address never carries one at all.
+ */
+export function headwordMatchKey(tag: Tag): string {
+  return tagKey({
+    ...(tag.upos !== undefined ? { upos: { value: tag.upos.value } } : {}),
+    feats: (tag.feats ?? []).map((feat) => ({ feature: feat.feature, value: feat.value })),
+  });
+}
+
+/**
+ * The **headword keys** of an entry: one per category bundle it carries, each
+ * the scheme-blind key of that bundle stripped to what identifies a kind of
+ * word — its part of speech, the features the language declares inherent for
+ * it, and the default axis value where the language declares one.
+ *
+ * The filter is the point, and ADR-0019 widened it by exactly one term.
+ * `categories` is lexeme-level, but nothing stops a record from carrying a
+ * form's feature there, and an atom that is neither inherent nor a declared
+ * default is noise a rule must not select on. What survives is precisely the
+ * bundle a paradigm's `selector` is compared with.
+ *
+ * Both declarations are read **per category and by containment**, so a
+ * declaration on `{NOUN}` reaches an entry categorised `{NOUN, Gender=Fem}`,
+ * and a default declared for `{NOUN, Gender=Masc}` is kept on an entry that
+ * also names its declension. A default is admitted only when the language
+ * actually declared **that value** for the axis — a value the category's own
+ * annotations never name is a form's feature written on a headword, not a
+ * flavour of it.
  *
  * The part of speech needs no declaration of any kind: it is what a paradigm
  * minimally selects on, and requiring it to be bound first would make every
  * paradigm of a language whose labels nobody has written yet silently inert.
  *
- * Takes the `inherent` rows rather than the whole grammar because the caller is
- * the firehose consumer, which holds those rows cached on the language doc and
- * has no record in hand. Deduped and sorted, so one entry's stored value is
+ * Takes the two declaration arrays rather than the whole grammar because the
+ * caller is the firehose consumer, which holds them cached on the language doc
+ * and has no record in hand. Deduped and sorted, so one entry's stored value is
  * stable and two runs cannot differ on ordering alone.
  */
-export function inherentAtomKeys(
-  inherent: readonly GrammarInherent[],
+export function headwordKeys(
+  declarations: {
+    inherent?: readonly GrammarInherent[];
+    categories?: readonly GrammarCategory[];
+  },
   categories: readonly Tag[],
 ): string[] {
+  const inherent = declarations.inherent ?? [];
+  const declared = declarations.categories ?? [];
   const keys = new Set<string>();
   for (const category of categories) {
-    if (category.upos !== undefined) {
-      keys.add(tagKey({ upos: { value: category.upos.value } }));
-    }
-    const feats = category.feats ?? [];
-    if (feats.length === 0) continue;
     const held = heldKeys([category]);
-    for (const feat of feats) {
-      const declared = inherent.some(
+    const feats = (category.feats ?? []).filter((feat) => {
+      const isInherentHere = inherent.some(
         (row) => row.feature === feat.feature && held.has(tagKey(row.category)),
       );
-      if (declared) keys.add(featsMatchKey({ feats: [feat] }));
-    }
+      if (isInherentHere) return true;
+      const wanted = valueMatchKey(feat.feature, feat.value);
+      return declared.some(
+        (row) =>
+          row.axis === feat.feature &&
+          held.has(tagKey(row.category)) &&
+          (row.annotations ?? []).some(
+            (annotation) =>
+              annotation.default !== undefined &&
+              valueMatchKey(feat.feature, annotation.default) === wanted,
+          ),
+      );
+    });
+    const bundle: Tag = {
+      ...(category.upos !== undefined ? { upos: category.upos } : {}),
+      ...(feats.length > 0 ? { feats } : {}),
+    };
+    if (category.upos === undefined && feats.length === 0) continue;
+    keys.add(headwordMatchKey(bundle));
   }
   return [...keys].sort();
 }
@@ -846,72 +806,23 @@ function heldKeys(categories: readonly Tag[]): Set<string> {
   return held;
 }
 
-/**
- * The axis rows that apply to these categories, unresolved and in record order.
- *
- * Separate from `applicableAxes` because the two callers want different things:
- * a renderer wants axes resolved to their labels, with orphans dropped, while
- * the validator has to speak about the *declarations* — an axis whose values are
- * all orphaned has already been reported as such, and reporting a layout that
- * uses it as naming an undeclared axis would be a second, misleading issue for
- * one defect.
- */
-function applicableAxisRows(grammar: Grammar, categories: readonly Tag[]): GrammarAxis[] {
-  const held = heldKeys(categories);
-  return (grammar.axes ?? []).filter((row) => held.has(tagKey(row.category)));
-}
-
-/** Resolve axis rows to their bound layer-1 rows, one per feature, in order. */
-function resolveAxes(grammar: Grammar, rows: readonly GrammarAxis[]): ResolvedAxis[] {
-  const features = grammar.features ?? [];
-  const values = grammar.values ?? [];
-  const seen = new Set<string>();
-  const out: ResolvedAxis[] = [];
-  for (const row of rows) {
-    if (seen.has(row.feature)) continue;
-    const feature = features.find((f) => f.feature === row.feature);
-    // A lexicographic label set is dropped here exactly as an orphan is: the
-    // declaration is incoherent, `grammarIssues` says so, and an authoring
-    // surface is not where it gets repaired. Nothing the AppView indexes
-    // carries one now (ADR-0015), but this stays total anyway: a record is read
-    // from its author's PDS, and a language record's rkey is its tag, so the
-    // content behind an indexed pointer can be rewritten under it.
-    if (feature === undefined || feature.lexicographic === true) continue;
-    const resolved: GrammarValue[] = [];
-    for (const value of row.values) {
-      const wanted = valueMatchKey(row.feature, value);
-      const bound = values.find(
-        (v) => v.feature === row.feature && valueMatchKey(v.feature, v.value) === wanted,
-      );
-      if (bound !== undefined) resolved.push(bound);
-    }
-    if (resolved.length === 0) continue;
-    seen.add(row.feature);
-    out.push({ feature, values: resolved });
-  }
-  return out;
-}
-
-// ---- layer 4: laying the cell space out ----------------------------------
+// ---- cell addresses ------------------------------------------------------
 //
-// Everything below turns a stored `layout` row into what a viewer draws and
-// what a form is matched against. It lives here rather than in a component
-// because one generator has to serve the viewer now and the exporters later,
-// and because a grid derived from a declaration is exactly the kind of
-// arithmetic that has to be checkable without a browser.
-
-/**
- * Above this many cells a table block resolves to nothing and reports
- * `layout-too-large`. Real paradigms are far below it — a Latin tense table is
- * a dozen cells, a Hungarian possessive declension a few hundred — so the cap
- * only ever catches a mistyped declaration, and it catches it loudly on the
- * dashboard instead of silently in a reader's browser.
- */
-export const MAX_LAYOUT_CELLS = 4096;
+// Everything below is about an **address**: the bare coordinates that name one
+// cell of a paradigm, how provenance is re-attached to them, and how an entry's
+// own forms find the cell they belong in. The cells themselves are declared by
+// the eu.leksis.paradigm record (ADR-0019), which is why nothing here derives a
+// grid from anything.
+//
+// It lives in this package rather than in a component because one generator has
+// to serve the viewer now and the exporters later, and because deciding which
+// form lands where is exactly the kind of arithmetic that has to be checkable
+// without a browser.
 
 /**
  * The `values` row a bare coordinate names, matched by name with provenance
- * ignored — the same rule that lets an axis name its values bare.
+ * ignored — the same rule that lets a category's `default` name its value
+ * bare.
  */
 function resolveCoord(grammar: Grammar, coord: LayoutCoord): GrammarValue | undefined {
   const wanted = valueMatchKey(coord.feature, coord.value);
@@ -1025,292 +936,19 @@ function coordsContained(coords: readonly LayoutCoord[], keys: ReadonlySet<strin
 }
 
 /**
- * Whether a block's exclusions remove the cell at these coordinates — the rule
- * the renderer applies, exported because the designer has to show the same
- * truth. A designer previews a block with its exclusions **set aside**, so that
- * an excluded cell stays visible and clickable rather than vanishing with no way
- * back, and then asks this which of those cells are excluded.
+ * One addressed cell of a paradigm — what a form is matched against.
  *
- * Containment, not equality: an exclusion naming fewer coordinates than a cell
- * removes every cell that contains it, which is how one row removes a whole
- * slice.
+ * Three fields and each earns its place: `coords` is the address as the record
+ * stores it, bare; `tag` is the same address with provenance re-attached
+ * (`coordTag`), because a reader is shown the cell's **labels** and a key
+ * cannot be resolved back into one; and `key` is the scheme-blind join key a
+ * form finds its cell on.
  */
-export function excludesCell(
-  block: { exclude?: LayoutCell[] },
-  coords: readonly LayoutCoord[],
-): boolean {
-  const keys = new Set(coords.map((coord) => valueMatchKey(coord.feature, coord.value)));
-  return (block.exclude ?? []).some(
-    (cell) => cell.coords.length > 0 && coordsContained(cell.coords, keys),
-  );
-}
-
-/**
- * The layout that applies to an entry carrying these categories, or none.
- *
- * Matched by containment, as an axis is: a layout declared on `{NOUN}` serves an
- * entry categorised `{NOUN, Gender=Fem}`. Where several match, **the most
- * specific wins** — a language that lays out verbs in general and perfective
- * verbs particularly means the second for a perfective verb — and an exact tie
- * goes to the earlier declaration, so the choice never depends on anything but
- * the record's own order.
- */
-export function layoutFor(grammar: Grammar, categories: readonly Tag[]): GrammarLayout | undefined {
-  const held = heldKeys(categories);
-  let best: GrammarLayout | undefined;
-  let bestSize = -1;
-  for (const row of grammar.layout ?? []) {
-    if (!held.has(tagKey(row.category))) continue;
-    const size = tagSize(row.category);
-    if (size > bestSize) {
-      best = row;
-      bestSize = size;
-    }
-  }
-  return best;
-}
-
-/** One header cell of a resolved table: a value, and how far it reaches. */
-export interface LayoutHeader {
-  feature: GrammarFeature;
-  value: GrammarValue;
-  /** Index of the first line this header covers. */
-  start: number;
-  /** How many lines it covers — its nesting, minus whatever was dropped. */
-  span: number;
-  /** Nesting depth; 0 is the outermost axis of the dimension. */
-  depth: number;
-}
-
-/** One addressed cell of a resolved block. */
-export interface LayoutAddress {
-  /** The block's `fixed` first, then one coordinate per axis, outermost first. */
+export interface CellAddress {
   coords: LayoutCoord[];
-  /**
-   * The address as a feats-only tag with provenance re-attached: what layer 5
-   * will key a generated cell on, and what a contributor clicks to define the
-   * rule that fills it.
-   */
   tag: Tag;
   /** Scheme-blind join key — how a form finds its cell. */
   key: string;
-}
-
-/** A table block, resolved to what a viewer draws. */
-export interface ResolvedLayoutTable {
-  kind: "table";
-  summary: boolean;
-  /** The `fixed` coordinates resolved for display; empty when the block fixes nothing. */
-  caption: ResolvedTagPart[];
-  rowAxes: ResolvedAxis[];
-  columnAxes: ResolvedAxis[];
-  rowHeaders: LayoutHeader[];
-  columnHeaders: LayoutHeader[];
-  /** `cells[line][column]`, `undefined` where the paradigm has no such cell. */
-  cells: (LayoutAddress | undefined)[][];
-}
-
-/** A list block, resolved to what a viewer prints. */
-export interface ResolvedLayoutList {
-  kind: "list";
-  summary: boolean;
-  caption: ResolvedTagPart[];
-  items: LayoutAddress[];
-}
-
-export type ResolvedLayoutBlock = ResolvedLayoutTable | ResolvedLayoutList;
-
-/**
- * A layout resolved against the language that declared it — the blocks a viewer
- * draws, in the order it draws them.
- *
- * Rows the declaration cannot support are **skipped rather than reported here**,
- * exactly as `resolveAxes` skips an orphaned value: a dimension naming an axis
- * this category does not have, or naming one twice, simply does not appear.
- * `grammarIssues` is where those are surfaced, because a repair worklist is
- * where they get fixed, and a reader must never be shown a broken table instead
- * of a smaller correct one.
- */
-export function resolveLayout(grammar: Grammar, layout: GrammarLayout): ResolvedLayoutBlock[] {
-  const lookup = grammarLookup(grammar);
-  const axes = new Map(
-    applicableAxes(grammar, [layout.category]).map((axis) => [axis.feature.feature, axis]),
-  );
-  return layout.blocks.map((block) =>
-    block.kind === "list"
-      ? resolveListBlock(grammar, lookup, block)
-      : resolveTableBlock(grammar, lookup, axes, block),
-  );
-}
-
-/** Every addressed cell of a resolved block, in reading order. */
-export function blockCells(block: ResolvedLayoutBlock): LayoutAddress[] {
-  if (block.kind === "list") return block.items;
-  return block.cells.flat().filter((cell): cell is LayoutAddress => cell !== undefined);
-}
-
-/** A coordinate list resolved to an address. */
-function toAddress(grammar: Grammar, coords: readonly LayoutCoord[]): LayoutAddress {
-  const copied = coords.map((coord) => ({ feature: coord.feature, value: coord.value }));
-  const tag = coordTag(grammar, copied);
-  return { coords: copied, tag, key: coordsMatchKey(copied) };
-}
-
-/** A block's caption: its constants, rendered by the ordinary chain. */
-function blockCaption(
-  grammar: Grammar,
-  lookup: ReadonlyMap<string, GrammarLabel>,
-  fixed: readonly LayoutCoord[],
-): ResolvedTagPart[] {
-  // A language that named the whole combination gets its own label for the
-  // block ("present indicative"); one that named only the parts gets them in
-  // order. That is `resolveTag`'s job and there is no second rule for captions.
-  return fixed.length === 0 ? [] : resolveTag(coordTag(grammar, fixed), lookup);
-}
-
-function resolveListBlock(
-  grammar: Grammar,
-  lookup: ReadonlyMap<string, GrammarLabel>,
-  block: LayoutList,
-): ResolvedLayoutList {
-  const fixed = block.fixed ?? [];
-  return {
-    kind: "list",
-    summary: block.summary === true,
-    caption: blockCaption(grammar, lookup, fixed),
-    items: (block.items ?? []).map((cell) => toAddress(grammar, [...fixed, ...cell.coords])),
-  };
-}
-
-function resolveTableBlock(
-  grammar: Grammar,
-  lookup: ReadonlyMap<string, GrammarLabel>,
-  axes: ReadonlyMap<string, ResolvedAxis>,
-  block: LayoutTable,
-): ResolvedLayoutTable {
-  const fixed = block.fixed ?? [];
-  const caption = blockCaption(grammar, lookup, fixed);
-  const empty: ResolvedLayoutTable = {
-    kind: "table",
-    summary: block.summary === true,
-    caption,
-    rowAxes: [],
-    columnAxes: [],
-    rowHeaders: [],
-    columnHeaders: [],
-    cells: [],
-  };
-
-  // A feature can sit on one dimension only: the same axis on both would put
-  // two of its values in one address, which is not a tag at all.
-  const taken = new Set<string>();
-  const dimension = (names: readonly string[]): ResolvedAxis[] => {
-    const out: ResolvedAxis[] = [];
-    for (const name of names) {
-      const axis = axes.get(name);
-      if (axis === undefined || taken.has(name)) continue;
-      taken.add(name);
-      out.push(axis);
-    }
-    return out;
-  };
-  const rowAxes = dimension(block.rows ?? []);
-  const columnAxes = dimension(block.columns ?? []);
-  if (rowAxes.length === 0 && columnAxes.length === 0) return empty;
-
-  // Counted before anything is built: the product is what could be large, so
-  // capping after building it would be capping nothing.
-  const size = (dim: readonly ResolvedAxis[]): number =>
-    dim.reduce((n, axis) => n * axis.values.length, 1);
-  if (size(rowAxes) * size(columnAxes) > MAX_LAYOUT_CELLS) {
-    return { ...empty, rowAxes, columnAxes };
-  }
-
-  const rowLines = leafLines(rowAxes);
-  const columnLines = leafLines(columnAxes);
-  // An exclusion with no coordinates would empty the whole table; the lexicon
-  // forbids one, and `excludesCell` ignores a record that carries one anyway.
-  const excluded = (line: readonly GrammarValue[], column: readonly GrammarValue[]): boolean =>
-    excludesCell(block, [...line, ...column]);
-
-  // A line or column with nothing left in it is dropped, and the headers are
-  // built from what survived — which is why they are built here and not from
-  // the axes directly. Excluding the plural half of a nested table must remove
-  // those lines, not print them empty.
-  const keptRows = rowLines.filter((line) => columnLines.some((column) => !excluded(line, column)));
-  const keptColumns = columnLines.filter((column) =>
-    keptRows.some((line) => !excluded(line, column)),
-  );
-
-  return {
-    kind: "table",
-    summary: block.summary === true,
-    caption,
-    rowAxes,
-    columnAxes,
-    rowHeaders: headersOf(rowAxes, keptRows),
-    columnHeaders: headersOf(columnAxes, keptColumns),
-    cells: keptRows.map((line) =>
-      keptColumns.map((column) =>
-        excluded(line, column)
-          ? undefined
-          : toAddress(grammar, [
-              ...fixed,
-              ...[...line, ...column].map((value) => ({
-                feature: value.feature,
-                value: value.value,
-              })),
-            ]),
-      ),
-    ),
-  };
-}
-
-/**
- * One list of values per leaf line of a dimension — the cartesian product of
- * its axes, outermost varying slowest, which is what nesting means. With no
- * axes there is exactly one unnamed line, so a table with axes on one dimension
- * only needs no special case anywhere else.
- */
-function leafLines(axes: readonly ResolvedAxis[]): GrammarValue[][] {
-  let lines: GrammarValue[][] = [[]];
-  for (const axis of axes) {
-    const next: GrammarValue[][] = [];
-    for (const line of lines) for (const value of axis.values) next.push([...line, value]);
-    lines = next;
-  }
-  return lines;
-}
-
-/**
- * The header cells of one dimension, from the lines that survived exclusion.
- * Filtering preserves order, so lines sharing a prefix are still adjacent and
- * one pass per depth finds every span.
- */
-function headersOf(
-  axes: readonly ResolvedAxis[],
-  lines: readonly GrammarValue[][],
-): LayoutHeader[] {
-  const out: LayoutHeader[] = [];
-  const same = (a: readonly GrammarValue[], b: readonly GrammarValue[], depth: number): boolean => {
-    for (let i = 0; i <= depth; i++) {
-      if (a[i]?.feature !== b[i]?.feature || a[i]?.value !== b[i]?.value) return false;
-    }
-    return true;
-  };
-  for (let depth = 0; depth < axes.length; depth++) {
-    let start = 0;
-    while (start < lines.length) {
-      let end = start + 1;
-      while (end < lines.length && same(lines[start]!, lines[end]!, depth)) end++;
-      const value = lines[start]![depth];
-      if (value !== undefined) {
-        out.push({ feature: axes[depth]!.feature, value, start, span: end - start, depth });
-      }
-      start = end;
-    }
-  }
-  return out;
 }
 
 /** Where each form landed, and which landed nowhere. */
@@ -1337,7 +975,7 @@ export interface PlacedForms<T> {
  * somewhere — that is the failure the flat list exists to absorb.
  */
 export function placeForms<T extends { tag: Tag }>(
-  cells: readonly LayoutAddress[],
+  cells: readonly CellAddress[],
   forms: readonly T[],
 ): PlacedForms<T> {
   const byKey = new Set(cells.map((cell) => cell.key));
@@ -1362,7 +1000,7 @@ export function placeForms<T extends { tag: Tag }>(
         continue;
       }
       const held = featKeySet(address);
-      let best: LayoutAddress | undefined;
+      let best: CellAddress | undefined;
       for (const cell of cells) {
         if (cell.coords.length === 0 || !coordsContained(cell.coords, held)) continue;
         if (best === undefined || cell.coords.length > best.coords.length) best = cell;
@@ -1376,54 +1014,6 @@ export function placeForms<T extends { tag: Tag }>(
     else for (const key of claimed) put(key, form);
   }
   return { placed, leftover };
-}
-
-/** Everything a viewer needs to draw one entry's paradigm. */
-export interface LayoutView<T> {
-  /** The blocks to draw, resolved; empty when nothing applies. */
-  blocks: ResolvedLayoutBlock[];
-  /** Cell join key → the forms in it. */
-  placed: Map<string, T[]>;
-  /** Forms no cell claimed — the flat list beside or below the blocks. */
-  leftover: T[];
-  /** Whether any cell holds a form: the test for drawing a table at all. */
-  filled: boolean;
-}
-
-/**
- * The whole viewer path in one call — find the layout that applies to these
- * categories, resolve it, and place the entry's forms in its cells.
- *
- * It exists so that the component drawing a paradigm contains no arithmetic: one
- * generator serves the viewer now and the exporters later, and what a reader sees
- * can be checked without a browser.
- *
- * **The degradation is total, and deliberately expressed as one shape.** No
- * grammar (the record would not load, the language declared none), no layout for
- * this category, or a layout that resolves to no cells at all: each returns no
- * blocks and every form as a leftover — which *is* the flat list, today's
- * behaviour and the fallback this layer must never break. A caller that renders
- * `leftover` whenever `blocks` is empty cannot get the fallback wrong.
- */
-export function layoutView<T extends { tag: Tag }>(
-  grammar: Grammar | undefined,
-  categories: readonly Tag[],
-  forms: readonly T[],
-): LayoutView<T> {
-  const flat: LayoutView<T> = {
-    blocks: [],
-    placed: new Map<string, T[]>(),
-    leftover: [...forms],
-    filled: false,
-  };
-  if (grammar === undefined) return flat;
-  const layout = layoutFor(grammar, categories);
-  if (layout === undefined) return flat;
-  const blocks = resolveLayout(grammar, layout);
-  const cells = blocks.flatMap(blockCells);
-  if (cells.length === 0) return flat;
-  const { placed, leftover } = placeForms(cells, forms);
-  return { blocks, placed, leftover, filled: placed.size > 0 };
 }
 
 /**
@@ -1449,12 +1039,12 @@ export type CellSpan = { colSpan: number; rowSpan: number } | "covered";
  * never claims a position it does not cover; a non-rectangular group simply
  * becomes several rectangles, which is still merged rather than repeated.
  *
- * It lives here rather than in the component for the reason `resolveLayout`
- * does: what a reader sees should be checkable without a browser.
+ * It lives here rather than in the component for the reason `placeForms` does:
+ * what a reader sees should be checkable without a browser.
  */
 export function mergeCellSpans(
-  cells: readonly (LayoutAddress | undefined)[][],
-  key: (address: LayoutAddress) => string | undefined,
+  cells: readonly (CellAddress | undefined)[][],
+  key: (address: CellAddress) => string | undefined,
 ): CellSpan[][] {
   const rows = cells.length;
   const spans: CellSpan[][] = cells.map((line) => line.map(() => ({ colSpan: 1, rowSpan: 1 })));
@@ -1497,65 +1087,6 @@ export function mergeCellSpans(
     }
   }
   return spans;
-}
-
-/**
- * The order a flat list of forms is shown in — the one-dimensional degenerate
- * case of a layout, and what every entry falls back to.
- *
- * Three orders, in descending strength. With a **layout**, the blocks' own cell
- * order, leftovers last. With **axes** only, the order the axes and their values
- * were declared in, which is still a grammatical order where the record's is
- * merely the order a bot's source happened to print. With neither, the record's
- * own order, untouched — today's behaviour, and the fallback the layer must
- * never break.
- */
-export function flatFormOrder<T extends { tag: Tag }>(
-  grammar: Grammar,
-  categories: readonly Tag[],
-  forms: readonly T[],
-): T[] {
-  const layout = layoutFor(grammar, categories);
-  if (layout !== undefined) {
-    const cells = resolveLayout(grammar, layout).flatMap(blockCells);
-    const { placed, leftover } = placeForms(cells, forms);
-    const out: T[] = [];
-    const done = new Set<string>();
-    for (const cell of cells) {
-      if (done.has(cell.key)) continue;
-      done.add(cell.key);
-      out.push(...(placed.get(cell.key) ?? []));
-    }
-    return [...out, ...leftover];
-  }
-
-  const axes = applicableAxes(grammar, categories);
-  if (axes.length === 0) return [...forms];
-  // A form saying nothing about an axis, or something the axis does not
-  // declare, sorts after every value that axis does declare: an unrecognised
-  // form belongs at the end of the list, not scattered through it.
-  const rank = (form: T): number[] =>
-    axes.map((axis) => {
-      const feat = (form.tag.feats ?? []).find((f) => f.feature === axis.feature.feature);
-      if (feat === undefined) return axis.values.length;
-      const wanted = valueMatchKey(feat.feature, feat.value);
-      const at = axis.values.findIndex(
-        (value) => valueMatchKey(value.feature, value.value) === wanted,
-      );
-      return at === -1 ? axis.values.length : at;
-    });
-  return forms
-    .map((form, index) => ({ form, index, rank: rank(form) }))
-    .sort((a, b) => {
-      for (let i = 0; i < a.rank.length; i++) {
-        const difference = a.rank[i]! - b.rank[i]!;
-        if (difference !== 0) return difference;
-      }
-      // The entry author's order breaks every tie, so two forms of one cell
-      // stay in the order they were written.
-      return a.index - b.index;
-    })
-    .map((item) => item.form);
 }
 
 /** The same tag without its i-th feature item. */
@@ -1640,44 +1171,44 @@ export function grammarLookup(grammar: Grammar): Map<string, GrammarLabel> {
  *   before any of its values can be, and the mirror holds, so unbinding a name
  *   orphans its values.
  * - `duplicate` — two rows sharing a canonical key, which makes the label a
- *   tag resolves to depend on array order.
+ *   tag resolves to depend on array order. Also two **category declarations**
+ *   for one category, which would make its axis depend on array order.
  * - `unbound-atom` — a layer-2 row built on an atom layer 1 does not bind: a
  *   category can only be made of what the language has declared it uses.
- * - `ungrounded-combination` — a labelled combination that no chain of
+ * - `ungrounded-combination` — a category of two or more atoms that no chain of
  *   inherence declarations reaches. Layer 2's gate, and the same rule as
- *   `unbound-feature` one level up.
- * - `single-item-binding` — a combination row holding a single atom, which
- *   already has a home in `pos` or `values`. Two ways to state one fact is how
- *   the two come to disagree.
- * - `inherent-axis-conflict` — a (category, feature) pair declared both
- *   inherent and an axis: the language says the same feature both identifies
- *   the word and varies across its forms, and a paradigm cannot be built from
- *   a coordinate that is also a constant. The apparent counterexample resolves
- *   through the keying rather than through this rule — `Number` is an axis of
- *   `{NOUN}` and inherent to `{NOUN, Number=Ptan}`, which are different
- *   categories and so never meet here.
- * - `empty-axis` — an axis row naming no values, which declares that a feature
- *   varies without saying what it varies over.
- * - `layout-unknown-axis` — a table dimension naming a feature this category
- *   does not declare an axis of. Layer 4's own gate: a layout arranges a cell
- *   space, so it can only name dimensions layer 3 gave it.
- * - `layout-repeated-axis` — one feature on more than one dimension of a table,
- *   which would put two of its values in a single cell address.
- * - `layout-foreign-coordinate` — an `exclude` coordinate the block's grid does
- *   not contain: an unknown feature, or a value that dimension's axis does not
- *   declare. It removes nothing, and a declaration that silently does nothing
- *   is exactly what a worklist is for.
- * - `empty-layout-block` — a table with no dimensions, or a list with no items:
- *   a block that says a paradigm is laid out without saying how.
- * - `layout-too-large` — a table whose axes multiply out past
- *   `MAX_LAYOUT_CELLS`. The block renders nothing rather than hanging a reader's
- *   browser, and this is what says so.
+ *   `unbound-feature` one level up. A single-atom category needs no grounding —
+ *   a part of speech on its own is a headword category, which is what ADR-0019
+ *   dropped the old two-atom floor for.
+ * - `category-axis-unbound` — a category naming an axis whose feature nobody
+ *   bound. The cascade's mirror at this altitude, and what makes unbinding a
+ *   feature some category varies over show up as an orphan rather than silently
+ *   flattening a paradigm.
+ * - `category-axis-inherent` — the same feature declared both inherent to a
+ *   category and the axis of it: the language says it both identifies the word
+ *   and varies across its forms, and a paradigm cannot be built from a
+ *   coordinate that is also a constant. Successor of the retired
+ *   `inherent-axis-conflict`, now that the axis lives on the category. The
+ *   apparent counterexample resolves through the keying rather than through
+ *   this rule — `Number` is the axis of `{NOUN}` and inherent to
+ *   `{NOUN, Number=Ptan}`, which are different categories and never meet here.
+ * - `category-default-missing` — a category names an axis and one of its
+ *   annotations does not say which value of it that headword carries. There is
+ *   then no tag for the label to name, so it would reach a reader through
+ *   nothing.
+ * - `category-default-forbidden` — the mirror: an annotation names a default on
+ *   a category with no axis, so the value belongs to no feature at all.
+ * - `category-default-unbound` — a default naming a value nobody bound under
+ *   that feature. The layer-1 gate again, one altitude up.
+ * - `category-duplicate-default` — two annotations of one category sharing a
+ *   default. The default is what tells them apart, so two labels for one
+ *   headword flavour make which one a reader sees depend on array order.
  * - `lexicographic-in-grammar` — a lexicographic label set, or one of its
  *   values, used where the grammatical layers expect a grammatical feature: as
- *   an inherent feature, as an axis, inside a named combination or a category,
- *   or as a layout coordinate. The flag says this vocabulary describes usage
- *   rather than form, so a paradigm cannot be built from it — a table of
- *   "archaic" against "by extension" addresses no cell.
+ *   an inherent feature, as a category's axis, or inside a category's own
+ *   bundle. The flag says this vocabulary describes usage rather than form, so
+ *   a paradigm cannot be built from it — a table of "archaic" against "by
+ *   extension" addresses no cell.
  * - `duplicate-abbreviation` — two abbreviations sharing a short form. Distinct
  *   from `duplicate` because the defect is different: a duplicate label makes a
  *   *tag* resolve by array order, while two `udb.` rows are two entries in the
@@ -1689,24 +1220,23 @@ export interface GrammarIssue {
     | "duplicate"
     | "unbound-atom"
     | "ungrounded-combination"
-    | "single-item-binding"
-    | "inherent-axis-conflict"
-    | "empty-axis"
-    | "layout-unknown-axis"
-    | "layout-repeated-axis"
-    | "layout-foreign-coordinate"
-    | "empty-layout-block"
-    | "layout-too-large"
+    | "category-axis-unbound"
+    | "category-axis-inherent"
+    | "category-default-missing"
+    | "category-default-forbidden"
+    | "category-default-unbound"
+    | "category-duplicate-default"
     | "lexicographic-in-grammar"
     | "duplicate-abbreviation";
   /** Canonical key of the offending row. */
   key: string;
-  /** The feature name at fault, on an `unbound-feature` issue. */
+  /** The feature name at fault, on an `unbound-feature` or axis issue. */
   feature?: string;
   /**
    * The unbound atom, written the way UD writes it, on an `unbound-atom`
-   * issue. One row can be built on several unbound atoms, so this is part of
-   * the issue's identity rather than a decoration.
+   * issue — or the offending default on a `category-default-*` one. One row can
+   * be built on several unbound atoms, so this is part of the issue's identity
+   * rather than a decoration.
    */
   atom?: string;
 }
@@ -1809,210 +1339,89 @@ export function grammarIssues(grammar: Grammar): GrammarIssue[] {
     }
   }
 
-  for (const row of grammar.bindings ?? []) {
-    const key = tagKey(row.tag);
-    if (tagSize(row.tag) < 2) {
-      // One defect per row: a single-item row's real fix is to move it to
-      // `pos` or `values`, and saying so twice helps nobody.
-      issues.push({ kind: "single-item-binding", key });
+  // Layer 2's categories, which since ADR-0019 also carry what layer 3 used to
+  // declare on its own. Every check here is the cascade's: the category's atoms
+  // must be bound and grounded, its axis must be a bound feature it does not
+  // also declare inherent, and every annotation's default must be a bound value
+  // of that axis.
+  const boundValues = boundValueKeys(grammar);
+  const seenCategories = new Set<string>();
+  const flaggedCategories = new Set<string>();
+  for (const row of grammar.categories ?? []) {
+    const key = categoryKey(row);
+    if (seenCategories.has(key)) {
+      // A second row for one category makes its axis — and with it the whole
+      // cell space of that category — depend on array order, which is the same
+      // defect a duplicate label is.
+      if (!flaggedCategories.has(key)) {
+        flaggedCategories.add(key);
+        issues.push({ kind: "duplicate", key });
+      }
       continue;
     }
-    lexicographicInTag(key, row.tag);
-    const unbound = tagAtoms(row.tag).filter((atom) => !atoms.has(tagKey(atom)));
+    seenCategories.add(key);
+
+    lexicographicInTag(key, row.category);
+    const unbound = tagAtoms(row.category).filter((atom) => !atoms.has(tagKey(atom)));
     for (const atom of unbound) {
       issues.push({ kind: "unbound-atom", key, atom: formatTagVerbatim(atom) });
     }
     // Grounding necessarily fails when an atom is missing, so it is only worth
     // reporting once the parts are all there: otherwise one unbound atom
-    // produces two issues and the repair worklist reads as twice the work.
-    if (unbound.length === 0 && !isGroundedCombination(grammar, row.tag)) {
+    // produces two issues and the repair worklist reads as twice the work. A
+    // single-atom category has nothing to ground — the check above is the whole
+    // of its gate, which is what makes a bare part of speech a category.
+    if (
+      unbound.length === 0 &&
+      tagSize(row.category) > 1 &&
+      !isGroundedCombination(grammar, row.category)
+    ) {
       issues.push({ kind: "ungrounded-combination", key });
     }
-  }
 
-  // Layer 3. An axis is checked against layer 1 the same way everything above
-  // it is — its category's atoms and its feature name must be bound — plus the
-  // check only it can make: its *values* must be bound too. That is the
-  // cascade's mirror at this altitude, and it is what makes unbinding a value
-  // still used as an axis option show up as an orphan rather than silently
-  // shrinking a paradigm.
-  const boundValues = boundValueKeys(grammar);
-  const seenAxes = new Set<string>();
-  const flaggedAxes = new Set<string>();
-  for (const row of grammar.axes ?? []) {
-    const key = axisKey(row);
-    if (seenAxes.has(key)) {
-      // A second row for the same pair makes the value *order* depend on array
-      // order, which is the same defect a duplicate label is, and its other
-      // defects were already reported against the first row.
-      if (!flaggedAxes.has(key)) {
-        flaggedAxes.add(key);
-        issues.push({ kind: "duplicate", key });
+    if (row.axis !== undefined) {
+      if (!boundNames.has(row.axis)) {
+        issues.push({ kind: "category-axis-unbound", key, feature: row.axis });
       }
-      continue;
-    }
-    seenAxes.add(key);
-
-    if (!boundNames.has(row.feature)) {
-      issues.push({ kind: "unbound-feature", key, feature: row.feature });
-    }
-    lexicographicFeature(key, row.feature);
-    lexicographicInTag(key, row.category);
-    for (const atom of tagAtoms(row.category)) {
-      if (!atoms.has(tagKey(atom))) {
-        issues.push({ kind: "unbound-atom", key, atom: formatTagVerbatim(atom) });
+      lexicographicFeature(key, row.axis);
+      if (isInherent(grammar, row.category, row.axis)) {
+        issues.push({ kind: "category-axis-inherent", key, feature: row.axis });
       }
     }
-    for (const value of row.values) {
-      if (!boundValues.has(valueMatchKey(row.feature, value))) {
-        issues.push({
-          kind: "unbound-atom",
-          key,
-          atom: formatTagVerbatim(valueTag({ feature: row.feature, value })),
-        });
-      }
-    }
-    // Both carry the feature name: an editor reporting these should be able to
-    // say which axis is at fault without printing a canonical key at a reader.
-    if (row.values.length === 0) {
-      issues.push({ kind: "empty-axis", key, feature: row.feature });
-    }
-    if (isInherent(grammar, row.category, row.feature)) {
-      issues.push({ kind: "inherent-axis-conflict", key, feature: row.feature });
-    }
-  }
 
-  // Layer 4. A layout declares no vocabulary of its own, so every check here is
-  // the cascade's: the category's atoms must be bound, a dimension must be an
-  // axis this category declares, and a coordinate must name something the
-  // block's own grid contains.
-  //
-  // One asymmetry is deliberate. `fixed` and a list's items are required to be
-  // **bound** but not to be axis values, because pinning a constant outside the
-  // coordinate system is a legitimate thing for a table to do — a block of the
-  // definite forms in a language that never declared Definite an axis. An
-  // `exclude` coordinate outside the grid can only ever be a silent no-op, so
-  // that one is reported.
-  const seenLayouts = new Set<string>();
-  const flaggedLayouts = new Set<string>();
-  for (const row of grammar.layout ?? []) {
-    const key = layoutKey(row);
-    if (seenLayouts.has(key)) {
-      // A second layout for one category makes which one applies depend on
-      // array order, the same defect a duplicate label is.
-      if (!flaggedLayouts.has(key)) {
-        flaggedLayouts.add(key);
-        issues.push({ kind: "duplicate", key });
-      }
-      continue;
-    }
-    seenLayouts.add(key);
-
-    lexicographicInTag(key, row.category);
-    // A coordinate is checked here and not through the dimensions: a
-    // lexicographic feature cannot be a *declared* axis without the axis row
-    // itself being reported, so a dimension naming one is already covered,
-    // while `fixed`, `exclude` and a list's items reach a bound value directly
-    // and would otherwise pin a table to "archaic".
-    const coordFeatures = new Set<string>();
-    for (const block of row.blocks) {
-      const coords: LayoutCoord[] = [
-        ...(block.fixed ?? []),
-        ...(block.kind === "list" ? block.items ?? [] : block.exclude ?? []).flatMap(
-          (cell) => cell.coords,
-        ),
-      ];
-      for (const coord of coords) coordFeatures.add(coord.feature);
-    }
-    // One issue per offending feature, not one per coordinate: a block that
-    // pins the same constant in ten cells has one defect to repair.
-    for (const feature of coordFeatures) lexicographicFeature(key, feature);
-
-    const unboundCategory = tagAtoms(row.category).filter((atom) => !atoms.has(tagKey(atom)));
-    for (const atom of unboundCategory) {
-      issues.push({ kind: "unbound-atom", key, atom: formatTagVerbatim(atom) });
-    }
-    // A category the language has not declared can have no axes, so every
-    // dimension of every block would be reported "unknown" on top of the one
-    // defect that actually needs fixing — the same reason layer 2 holds back
-    // grounding until a combination's atoms are all bound.
-    if (unboundCategory.length > 0) continue;
-
-    // Declarations, not resolved axes: an axis whose values are all orphaned has
-    // already been reported as such, and calling a layout that uses it
-    // "unknown" would be a second issue for one defect.
-    const declared = new Map(
-      applicableAxisRows(grammar, [row.category]).map((axis) => [axis.feature, axis]),
-    );
-    for (let index = 0; index < row.blocks.length; index++) {
-      const block = row.blocks[index]!;
-      const blockKey = layoutBlockKey(row, index);
-
-      for (const coord of block.fixed ?? []) {
-        if (!boundValues.has(valueMatchKey(coord.feature, coord.value))) {
-          issues.push({ kind: "unbound-atom", key: blockKey, atom: formatTagVerbatim(valueTag(coord)) });
-        }
-      }
-
-      if (block.kind === "list") {
-        for (const cell of block.items ?? []) {
-          for (const coord of cell.coords) {
-            if (!boundValues.has(valueMatchKey(coord.feature, coord.value))) {
-              issues.push({
-                kind: "unbound-atom",
-                key: blockKey,
-                atom: formatTagVerbatim(valueTag(coord)),
-              });
-            }
-          }
-        }
-        if ((block.items ?? []).length === 0) {
-          issues.push({ kind: "empty-layout-block", key: blockKey });
+    // The iff rule of the annotation's `default`, and the uniqueness that makes
+    // two annotations of one category tell each other apart. Both are reported
+    // per annotation, because that is the row a contributor edits.
+    const defaults = new Set<string>();
+    for (const annotation of row.annotations ?? []) {
+      if (row.axis === undefined) {
+        if (annotation.default !== undefined) {
+          issues.push({ kind: "category-default-forbidden", key, atom: annotation.default });
         }
         continue;
       }
-
-      const dimensions = [...(block.rows ?? []), ...(block.columns ?? [])];
-      if (dimensions.length === 0) issues.push({ kind: "empty-layout-block", key: blockKey });
-      const grid = new Map<string, GrammarAxis>();
-      const seenDimensions = new Set<string>();
-      for (const feature of dimensions) {
-        if (seenDimensions.has(feature)) {
-          issues.push({ kind: "layout-repeated-axis", key: blockKey, feature });
-          continue;
-        }
-        seenDimensions.add(feature);
-        const axis = declared.get(feature);
-        if (axis === undefined) {
-          issues.push({ kind: "layout-unknown-axis", key: blockKey, feature });
-          continue;
-        }
-        grid.set(feature, axis);
+      if (annotation.default === undefined) {
+        issues.push({ kind: "category-default-missing", key, feature: row.axis });
+        continue;
       }
-
-      for (const cell of block.exclude ?? []) {
-        for (const coord of cell.coords) {
-          const axis = grid.get(coord.feature);
-          const wanted = valueMatchKey(coord.feature, coord.value);
-          const known =
-            axis !== undefined &&
-            axis.values.some((value) => valueMatchKey(coord.feature, value) === wanted);
-          if (!known) {
-            issues.push({
-              kind: "layout-foreign-coordinate",
-              key: blockKey,
-              feature: coord.feature,
-              atom: formatTagVerbatim(valueTag(coord)),
-            });
-          }
-        }
+      const valueKey = valueMatchKey(row.axis, annotation.default);
+      if (!boundValues.has(valueKey)) {
+        issues.push({
+          kind: "category-default-unbound",
+          key,
+          feature: row.axis,
+          atom: formatTagVerbatim(valueTag({ feature: row.axis, value: annotation.default })),
+        });
       }
-
-      let cells = 1;
-      for (const axis of grid.values()) cells *= axis.values.length;
-      if (grid.size > 0 && cells > MAX_LAYOUT_CELLS) {
-        issues.push({ kind: "layout-too-large", key: blockKey });
+      if (defaults.has(valueKey)) {
+        issues.push({
+          kind: "category-duplicate-default",
+          key,
+          feature: row.axis,
+          atom: annotation.default,
+        });
       }
+      defaults.add(valueKey);
     }
   }
 
@@ -2225,7 +1634,15 @@ export interface CategoryRefinement {
  */
 export function categoryRefinements(grammar: Grammar, category: Tag): CategoryRefinement[] {
   const present = new Set((category.feats ?? []).map((feat) => feat.feature));
-  const named = new Map((grammar.bindings ?? []).map((row) => [tagKey(row.tag), row.label]));
+  // Every labelled tag the language's categories produce, annotations included:
+  // a refinement lands on one of them when the language named that combination,
+  // and a category's own default-carrying annotations are labelled tags like any
+  // other (ADR-0019).
+  const named = new Map(
+    (grammar.categories ?? []).flatMap((row) =>
+      categoryTags(grammar, row).map(({ tag, label }) => [tagKey(tag), label] as const),
+    ),
+  );
 
   const refinements: CategoryRefinement[] = [];
   for (const feature of inherentFeatures(grammar, category)) {
@@ -2287,7 +1704,7 @@ function isValidNote(value: unknown): boolean {
 }
 
 /**
- * A layout coordinate is shape-checked as the feature item it stands for, so a
+ * A cell coordinate is shape-checked as the feature item it stands for, so a
  * multivalue coordinate ("Gender=Fem,Masc" for an épicène cell) is accepted on
  * exactly the terms layer 1 accepts one. A `scheme` is not read: coordinates are
  * bare by design and provenance is re-attached from the row that bound them.
@@ -2297,36 +1714,15 @@ export function isValidLayoutCoord(value: unknown): boolean {
   return isValidTagFeat({ feature: value.feature, value: value.value });
 }
 
-function isValidLayoutCoords(value: unknown): boolean {
-  return (
-    Array.isArray(value) &&
-    value.length <= GRAMMAR_LIMITS.coords &&
-    value.every(isValidLayoutCoord)
-  );
-}
-
-function isValidLayoutCells(value: unknown): boolean {
-  if (!Array.isArray(value) || value.length > GRAMMAR_LIMITS.cells) return false;
-  return value.every((cell) => isPlainObject(cell) && isValidLayoutCoords(cell.coords));
-}
-
-function isValidLayoutDimension(value: unknown): boolean {
-  if (!Array.isArray(value) || value.length > GRAMMAR_LIMITS.dimension) return false;
-  return value.every((name) => typeof name === "string" && FEATURE_NAME_PATTERN.test(name));
-}
-
-function isValidLayoutBlock(value: unknown): value is LayoutBlock {
-  if (!isPlainObject(value)) return false;
-  if (value.kind !== "table" && value.kind !== "list") return false;
-  if (value.summary !== undefined && typeof value.summary !== "boolean") return false;
-  if (value.fixed !== undefined && !isValidLayoutCoords(value.fixed)) return false;
-  if (value.rows !== undefined && !isValidLayoutDimension(value.rows)) return false;
-  if (value.columns !== undefined && !isValidLayoutDimension(value.columns)) return false;
-  if (value.exclude !== undefined && !isValidLayoutCells(value.exclude)) return false;
-  // A list's items are the block itself, so their absence is a shape failure
-  // where a table's is nothing at all.
-  if (value.kind === "list") return isValidLayoutCells(value.items);
-  return value.items === undefined || isValidLayoutCells(value.items);
+/**
+ * A bare feature **value**, on its own — a category annotation's `default`,
+ * which names no feature of its own because the category's `axis` names it.
+ * Multivalue is accepted for the reason a coordinate accepts it: a headword may
+ * legitimately span two values of its axis.
+ */
+function isValidValueString(value: unknown): boolean {
+  if (typeof value !== "string" || value === "") return false;
+  return value.split(FEATS_VALUE_SEPARATOR).every((part) => FEATURE_VALUE_PATTERN.test(part));
 }
 
 /**
@@ -2407,60 +1803,80 @@ export function isValidGrammar(value: unknown): value is Grammar {
     }
   }
 
-  // An axis naming no values is well-formed and merely says nothing, so like a
-  // single-item combination it belongs to `grammarIssues` rather than here. Both
-  // now cost the record its place in the index (ADR-0015); what the split still
-  // buys is a *diagnosis* — an issue is named, kind by kind, in the ingest log
-  // and in the editor, where "malformed grammar" could only say that something,
-  // somewhere, could not be read.
-  if (value.axes !== undefined) {
-    if (!Array.isArray(value.axes) || value.axes.length > GRAMMAR_LIMITS.axes) return false;
-    for (const row of value.axes) {
-      if (!isPlainObject(row)) return false;
-      if (!isValidTag(row.category)) return false;
-      if (typeof row.feature !== "string" || !FEATURE_NAME_PATTERN.test(row.feature)) return false;
-      if (!Array.isArray(row.values) || row.values.length > GRAMMAR_LIMITS.axisValues) return false;
-      // Each value is validated as the feature item it stands for, so a
-      // multivalue option ("Gender=Fem,Masc" for an épicène form) is accepted
-      // on exactly the terms layer 1 accepts one.
-      for (const item of row.values) {
-        if (!isValidTagFeat({ feature: row.feature, value: item })) return false;
-      }
-    }
-  }
-
-  // Layer 4. Every field present is checked, whichever kind the block claims to
-  // be, so a malformed array cannot ride along unvalidated; which fields are
-  // *meaningful* is the `kind`'s business, and a table carrying a stray `items`
-  // is ignored rather than rejected. An empty block, like an empty axis, is
-  // `grammarIssues`' to report rather than this function's to refuse.
-  if (value.layout !== undefined) {
-    if (!Array.isArray(value.layout) || value.layout.length > GRAMMAR_LIMITS.layout) return false;
-    for (const row of value.layout) {
-      if (!isPlainObject(row)) return false;
-      if (!isValidTag(row.category)) return false;
-      if (!Array.isArray(row.blocks) || row.blocks.length > GRAMMAR_LIMITS.blocks) return false;
-      for (const block of row.blocks) {
-        if (!isValidLayoutBlock(block)) return false;
-      }
-    }
-  }
-
-  // A single-item combination is well-formed and merely says something true in
-  // the wrong place, so it is `grammarIssues`' to report rather than this
-  // function's to refuse — and the one defect the binding editor has a control
-  // of its own for, since no (category, feature) pair leads to a lone atom.
-  if (value.bindings !== undefined) {
-    if (!Array.isArray(value.bindings) || value.bindings.length > GRAMMAR_LIMITS.bindings) {
+  // Layer 2's categories. An annotation whose `default` says nothing coherent —
+  // absent where the axis needs one, present where there is no axis — is
+  // well-formed and merely undecidable, so like the retired empty axis it
+  // belongs to `grammarIssues` rather than here. Both cost the record its place
+  // in the index (ADR-0015); what the split still buys is a *diagnosis* — an
+  // issue is named, kind by kind, in the ingest log and in the editor, where
+  // "malformed grammar" could only say that something, somewhere, could not be
+  // read.
+  if (value.categories !== undefined) {
+    if (!Array.isArray(value.categories) || value.categories.length > GRAMMAR_LIMITS.categories) {
       return false;
     }
-    for (const row of value.bindings) {
+    for (const row of value.categories) {
       if (!isPlainObject(row)) return false;
-      if (!isValidTag(row.tag)) return false;
-      if (!isValidLabel(row.label)) return false;
-      if (!isValidReferences(row.references)) return false;
+      if (!isValidTag(row.category)) return false;
+      if (row.axis !== undefined) {
+        if (typeof row.axis !== "string" || !FEATURE_NAME_PATTERN.test(row.axis)) return false;
+      }
+      // `annotations` is the row: a category with none names nothing at all, so
+      // unlike an undecidable default this is a shape failure, exactly as the
+      // lexicon's `minLength` says.
+      if (!Array.isArray(row.annotations)) return false;
+      if (row.annotations.length === 0 || row.annotations.length > GRAMMAR_LIMITS.annotations) {
+        return false;
+      }
+      for (const annotation of row.annotations) {
+        if (!isPlainObject(annotation)) return false;
+        if (typeof annotation.long !== "string" || annotation.long.trim() === "") return false;
+        if (annotation.short !== undefined && typeof annotation.short !== "string") return false;
+        if (annotation.default !== undefined && !isValidValueString(annotation.default)) {
+          return false;
+        }
+      }
     }
   }
 
+  // The two arrays ADR-0019 retired, refused outright rather than ignored. An
+  // unknown field is ordinarily ignored (AT Proto extensibility) and a renamed
+  // one is too, but these two are declarations whose *meaning* moved: an axis
+  // now belongs to its category and a layout to the paradigm record. A record
+  // still carrying them is asserting something this lexicon no longer defines,
+  // and indexing it would silently drop half of what its author declared.
+  //
+  // An *editor* loading such a record has the opposite problem and the opposite
+  // answer — see `withoutRetiredGrammar`.
+  for (const key of RETIRED_GRAMMAR_KEYS) {
+    if (value[key] !== undefined) return false;
+  }
   return true;
+}
+
+/**
+ * The `grammar` keys ADR-0019 retired: the standalone axis declarations, whose
+ * feature and default values moved onto the category, and the layout blocks,
+ * whose cells moved into the eu.leksis.paradigm record.
+ */
+export const RETIRED_GRAMMAR_KEYS = ["axes", "layout"] as const;
+
+/**
+ * The same object with the retired declarations removed — what an **editor**
+ * validates, where the AppView validates the record as it stands.
+ *
+ * The asymmetry is deliberate and it is the ADR-0015 rule read from both sides.
+ * The index refuses such a record, because indexing it would silently drop half
+ * of what its author declared. An editor must do the reverse: refusing to *load*
+ * it would leave every language declared before the merge permanently
+ * unrepairable through the interface, which is precisely the deadlock ADR-0015
+ * exists to prevent. So the retired keys are set aside for the shape check, the
+ * record is still handed over carrying them, and it is the editor's business to
+ * say what publishing will drop.
+ */
+export function withoutRetiredGrammar(grammar: unknown): unknown {
+  if (!isPlainObject(grammar)) return grammar;
+  const out: Record<string, unknown> = { ...grammar };
+  for (const key of RETIRED_GRAMMAR_KEYS) delete out[key];
+  return out;
 }

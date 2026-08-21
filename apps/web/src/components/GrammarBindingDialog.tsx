@@ -1,19 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  applicableAxes,
-  excludesCell,
   grammarIssues,
   grammarLookup,
   featureDocUrl,
   formatTagVerbatim,
-  parseTagInput,
   posTag,
-  resolveLayout,
   resolveTag,
-  tagAtomKeys,
   tagKey,
-  tagSize,
   uposDocUrl,
   uposGloss,
   valueTag,
@@ -27,17 +21,11 @@ import {
   type GrammarReference,
   type LabelSample,
   type LabelView,
-  type LayoutAddress,
-  type LayoutCoord,
   type LeksisLanguageRecord,
   type ParadigmView as ParadigmPointer,
-  type ResolvedLayoutBlock,
-  type ResolvedLayoutTable,
   type Tag,
 } from "@leksis/types";
-import { AddressPicker } from "./AddressPicker";
 import { ParadigmEditorDialog } from "./ParadigmEditorDialog";
-import { BlockCaption, ParadigmList, ParadigmTable } from "./ParadigmView";
 import { fetchFeatureValues, fetchFeatures, type UdFeature, type UdValue } from "@leksis/ud";
 import { useSession } from "../auth/SessionProvider";
 import {
@@ -50,47 +38,28 @@ import { fetchLanguageRecord } from "../lib/atproto-record";
 import { entryPath } from "../lib/routes";
 import {
   abbreviationRows,
-  addAxis,
-  addBlock,
   addInherent,
-  addLayout,
-  addListItem,
-  axisRows,
-  blockWithoutExclusions,
+  carriesRetiredGrammar,
+  categoryRows,
   classRows,
-  combinationRows,
+  draftFromRecord,
   findAbbreviation,
-  grammaticalFeatureRows,
-  lexicalRows,
-  removeAbbreviation,
-  upsertAbbreviation,
-  findAxis,
-  layoutRow,
-  moveAxisValue,
-  moveBlock,
-  moveBlockAxis,
-  moveListItem,
-  removeAxis,
-  removeBlock,
-  removeLayout,
-  removeListItem,
-  setBlockFixed,
-  toggleAxisValue,
-  toggleBlockAxis,
-  toggleBlockSummary,
-  toggleExcludedCell,
-  findCombination,
+  findCategory,
   findFeature,
   findPos,
   findValue,
+  grammaticalFeatureRows,
   inherentRows,
+  lexicalRows,
   posRows,
-  removeCombination,
+  removeAbbreviation,
+  removeCategory,
   removeFeature,
   removeInherent,
   removePos,
   removeValue,
-  upsertCombination,
+  upsertAbbreviation,
+  upsertCategory,
   upsertFeature,
   upsertPos,
   upsertValue,
@@ -147,29 +116,19 @@ type Path =
   | { at: "l2category"; category: Tag }
   | { at: "l2feature"; category: Tag; feature: string }
   | { at: "l2combinationForm"; category: Tag; feature: string; tag: Tag }
-  // Layer 3 — the same three levels again, one altitude across: pick a
-  // category, declare which features vary across its forms, then pick and
-  // order the values each varies over.
-  | { at: "l3root" }
-  | { at: "l3category"; category: Tag }
-  | { at: "l3feature"; category: Tag; feature: string }
-  // Layer 4 — a category, then one of its blocks. Two levels rather than three:
-  // a block is not reached through a feature, it *arranges* several of them.
-  | { at: "l4root" }
-  | { at: "l4category"; category: Tag }
-  | { at: "l4block"; category: Tag; index: number }
-  // Layer 5 — the layouts as a list, then one category's paradigms. Editing a
-  // paradigm is not a level: it is a *different record*, so it opens its own
-  // dialog with its own publish footer rather than borrowing this one's.
-  | { at: "l5root" }
-  | { at: "l5category"; category: Tag };
+  // Layer 5 — the language's paradigms. Editing one is not a level: it is a
+  // *different record*, so it opens its own dialog with its own publish footer
+  // rather than borrowing this one's.
+  //
+  // The layer-3 (axes) and layer-4 (layout) tabs that used to sit between these
+  // two are gone: an axis is declared on its category and a table's shape lives
+  // in the paradigm record (ADR-0019).
+  | { at: "l5root" };
 
 /** Which tab a path belongs to — the tab strip is derived, never stored. */
-function pathTab(path: Path): "primitives" | "combinations" | "axes" | "layout" | "paradigms" {
+function pathTab(path: Path): "primitives" | "categories" | "paradigms" {
   if (path.at.startsWith("l5")) return "paradigms";
-  if (path.at.startsWith("l4")) return "layout";
-  if (path.at.startsWith("l3")) return "axes";
-  return path.at.startsWith("l2") ? "combinations" : "primitives";
+  return path.at.startsWith("l2") ? "categories" : "primitives";
 }
 
 interface GrammarBindingDialogProps {
@@ -237,11 +196,8 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
    * riding along is what the editor's concurrency guard compares against.
    */
   const [paradigms, setParadigms] = useState<ParadigmPointer[]>([]);
-  /** The stacked editor: which selector, and the pointer when one is being rewritten. */
-  const [editing, setEditing] = useState<{
-    selector: Tag;
-    existing?: { paradigmKey: string; recordURI: string; cid: string };
-  } | null>(null);
+  /** The stacked editor: which selector it was opened on. */
+  const [editing, setEditing] = useState<{ selector: Tag } | null>(null);
   const [form, setForm] = useState<LabelDraft>(emptyLabel);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -273,7 +229,11 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
         if (cancelled) return;
         setRecord(loaded);
         setBaseline(ref === null ? null : { recordURI: ref.recordURI, cid: ref.cid });
-        setDraft(loaded?.grammar ?? {});
+        // Mapped forward, never taken verbatim: a record written before the
+        // category–axis merge carries declarations this lexicon no longer
+        // defines, and loading them into the draft would make every publish
+        // fail a gate the dialog cannot even report (see `draftFromRecord`).
+        setDraft(draftFromRecord(loaded?.grammar));
       } catch (err) {
         console.error("could not load the language record:", err);
       } finally {
@@ -376,7 +336,22 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
     if (next.at === "posForm") existing = findPos(draft, next.value);
     else if (next.at === "featureForm") existing = findFeature(draft, next.feature);
     else if (next.at === "valueForm") existing = findValue(draft, next.feature, next.value);
-    else if (next.at === "l2combinationForm") existing = findCombination(draft, next.tag);
+    else if (next.at === "l2combinationForm") {
+      // A category row, read through its first annotation: the merged model puts
+      // the label on the annotation, and this level still writes exactly one
+      // (no axis, so no default) until slice 3 builds the axis flow.
+      const row = findCategory(draft, next.tag);
+      const annotation = row?.annotations[0];
+      setForm({
+        long: annotation?.long ?? "",
+        short: annotation?.short ?? "",
+        minted: false,
+        references: [],
+        note: "",
+      });
+      setPath(next);
+      return;
+    }
     else if (next.at === "abbreviationForm") {
       // An abbreviation has no tag and so no label pair to seed from: its short
       // form came in through the path and only the expansion is being written.
@@ -477,13 +452,19 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
       );
       setPath({ at: "values", feature: path.feature });
     } else if (path.at === "l2combinationForm") {
-      // A combination is never minted: provenance rides on its items, which
-      // are already bound with their own schemes. Only the references travel.
+      // A category is never minted: provenance rides on its atoms, which are
+      // already bound with their own schemes. And it carries no references —
+      // there is nothing to document about a combination of documented items.
+      //
+      // One annotation, no axis: naming a category through this level is the
+      // ordinary case, and declaring an axis with a default per headword flavour
+      // is the Categories tab slice 3 builds.
       setDraft(
-        upsertCombination(draft, {
-          tag: path.tag,
-          label,
-          ...(references.length > 0 ? { references } : {}),
+        upsertCategory(draft, {
+          category: path.tag,
+          annotations: [
+            { long: label.long, ...(label.short !== undefined ? { short: label.short } : {}) },
+          ],
         }),
       );
       setPath({ at: "l2feature", category: path.category, feature: path.feature });
@@ -588,15 +569,11 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
     };
   }, [tab, tag]);
   const crumbs: { label: string; go: Path }[] =
-    tab === "combinations"
+    tab === "categories"
       ? [{ label: t("grammar.crumbL2Root"), go: { at: "l2root" } }]
-      : tab === "axes"
-        ? [{ label: t("grammar.crumbL3Root"), go: { at: "l3root" } }]
-        : tab === "layout"
-          ? [{ label: t("grammar.crumbL4Root"), go: { at: "l4root" } }]
-          : tab === "paradigms"
-            ? [{ label: t("grammar.crumbL5Root"), go: { at: "l5root" } }]
-            : [{ label: t("grammar.crumbRoot"), go: { at: "root" } }];
+      : tab === "paradigms"
+        ? [{ label: t("grammar.crumbL5Root"), go: { at: "l5root" } }]
+        : [{ label: t("grammar.crumbRoot"), go: { at: "root" } }];
   if (path.at === "pos" || path.at === "posForm") {
     crumbs.push({ label: t("grammar.posLevel"), go: { at: "pos" } });
     if (path.at === "posForm") crumbs.push({ label: path.value, go: path });
@@ -614,32 +591,6 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
         crumbs.push({ label: categoryText(path.tag), go: path });
       }
     }
-  } else if (path.at === "l3category" || path.at === "l3feature") {
-    crumbs.push({
-      label: categoryText(path.category),
-      go: { at: "l3category", category: path.category },
-    });
-    if (path.at === "l3feature") {
-      crumbs.push({
-        label: path.feature,
-        go: { at: "l3feature", category: path.category, feature: path.feature },
-      });
-    }
-  } else if (path.at === "l4category" || path.at === "l4block") {
-    crumbs.push({
-      label: categoryText(path.category),
-      go: { at: "l4category", category: path.category },
-    });
-    if (path.at === "l4block") {
-      const block = layoutRow(draft, path.category)?.blocks[path.index];
-      crumbs.push({
-        label:
-          block?.kind === "list" ? t("grammar.l4BlockList") : t("grammar.l4BlockTable"),
-        go: path,
-      });
-    }
-  } else if (path.at === "l5category") {
-    crumbs.push({ label: categoryText(path.category), go: path });
   } else if (path.at === "classes") {
     crumbs.push({ label: t("grammar.classesLevel"), go: { at: "classes" } });
   } else if (path.at === "lexical") {
@@ -647,13 +598,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
   } else if (path.at === "abbreviations" || path.at === "abbreviationForm") {
     crumbs.push({ label: t("grammar.abbreviationsLevel"), go: { at: "abbreviations" } });
     if (path.at === "abbreviationForm") crumbs.push({ label: path.short, go: path });
-  } else if (
-    path.at !== "root" &&
-    path.at !== "l2root" &&
-    path.at !== "l3root" &&
-    path.at !== "l4root" &&
-    path.at !== "l5root"
-  ) {
+  } else if (path.at !== "root" && path.at !== "l2root" && path.at !== "l5root") {
     // Which section a feature sits under is **derived from the row**, not
     // remembered: a lexicographic set says so on the row, a class is any other
     // minted feature, and a UD one leads back to the features level. The trail
@@ -1188,7 +1133,11 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
    */
   function renderL2Root() {
     const pos = posRows(draft);
-    const combinations = draft.bindings ?? [];
+    // Every declared category *beyond* the bare parts of speech above. A
+    // POS-only category is now legitimate (ADR-0019), so it would otherwise be
+    // listed twice — once as its part of speech and once as its own row.
+    const posKeys = new Set(pos.map((row) => tagKey(posTag(row))));
+    const declared = categoryRows(draft).filter((row) => !posKeys.has(tagKey(row.category)));
     return (
       <>
         <p className="mb-3 text-xs text-content-subtle">{t("grammar.l2RootHint")}</p>
@@ -1214,41 +1163,28 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
                 </li>
               );
             })}
-            {combinations.map((row) => (
-              <li key={tagKey(row.tag)} className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPath({ at: "l2category", category: row.tag })}
-                  className={`${levelButton} flex-1`}
-                >
-                  <span className="text-sm text-content">{row.label.short ?? row.label.long}</span>
-                  <span className="text-xs text-content-subtle">
-                    {t("grammar.l2InherentCount", { count: inherentRows(draft, row.tag).length })}
-                  </span>
-                </button>
-                {usageFor(row.tag)}
-                {/* A one-atom row is not a combination at all — it belongs in
-                    `pos` or `values` — and this is the ONLY control anywhere
-                    that can remove one: every other level reaches a
-                    combination through a (category, feature) pair, which a
-                    single atom has none of. Without it a record carrying one
-                    could never be made publishable, since ingest now refuses an
-                    incoherent grammar (ADR-0015). Hence the narrow condition:
-                    a well-formed combination is still removed where it was
-                    declared, not here. */}
-                {tagSize(row.tag) < 2 && (
+            {declared.map((row) => {
+              const annotation = row.annotations[0];
+              return (
+                <li key={tagKey(row.category)} className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setDraft(removeCombination(draft, row.tag))}
-                    title={t("grammar.issue.single-item-binding", { key: tagKey(row.tag) })}
-                    aria-label={t("grammar.unbind")}
-                    className="text-content-subtle hover:text-danger"
+                    onClick={() => setPath({ at: "l2category", category: row.category })}
+                    className={`${levelButton} flex-1`}
                   >
-                    ×
+                    <span className="text-sm text-content">
+                      {annotation?.short ?? annotation?.long ?? categoryText(row.category)}
+                    </span>
+                    <span className="text-xs text-content-subtle">
+                      {t("grammar.l2InherentCount", {
+                        count: inherentRows(draft, row.category).length,
+                      })}
+                    </span>
                   </button>
-                )}
-              </li>
-            ))}
+                  {usageFor(row.category)}
+                </li>
+              );
+            })}
           </ul>
         )}
       </>
@@ -1259,15 +1195,16 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
   function renderL2Category(category: Tag) {
     const declared = inherentRows(draft, category);
     const declaredNames = new Set(declared.map((row) => row.feature));
-    // The mirror of layer 3's gate: a feature already declared an *axis* of
-    // this category is not offered as inherent either. One rule, enforced from
-    // whichever side the contributor arrives at it.
-    const axisNames = new Set(axisRows(draft, category).map((row) => row.feature));
+    // The mirror of the axis gate: the feature this category's forms vary over
+    // is not offered as inherent to it either. One rule, enforced from whichever
+    // side the contributor arrives at it — and since ADR-0019 the axis is a
+    // field on the category's own row rather than a declaration of its own.
+    const axis = findCategory(draft, category)?.axis;
     // Lexicographic label sets are absent rather than disabled — the gate as
     // navigation again. "Archaic" is not something a word *is*, so it is never
     // an inherent feature of anything.
     const available = grammaticalFeatureRows(draft).filter(
-      (row) => !declaredNames.has(row.feature) && !axisNames.has(row.feature),
+      (row) => !declaredNames.has(row.feature) && row.feature !== axis,
     );
     return (
       <>
@@ -1286,7 +1223,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
               // would catch it at publish anyway; saying so here is kinder.
               const supported = valueRows(draft, row.feature).filter(
                 (value) =>
-                  findCombination(draft, combinationTag(category, value)) !== undefined,
+                  findCategory(draft, combinationTag(category, value)) !== undefined,
               ).length;
               return (
                 <li key={row.feature} className="flex items-center gap-2">
@@ -1358,7 +1295,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
   function renderL2Feature(category: Tag, feature: string) {
     const values = valueRows(draft, feature);
     const named = values.filter(
-      (value) => findCombination(draft, combinationTag(category, value)) !== undefined,
+      (value) => findCategory(draft, combinationTag(category, value)) !== undefined,
     ).length;
     return (
       <>
@@ -1376,7 +1313,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
           <ul className="space-y-1.5">
             {values.map((value) => {
               const combination = combinationTag(category, value);
-              const bound = findCombination(draft, combination);
+              const bound = findCategory(draft, combination)?.annotations[0];
               return (
                 <li key={tagKey(combination)} className="flex items-center gap-2">
                   <button
@@ -1395,9 +1332,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
                     {bound === undefined ? (
                       <span className="text-xs text-content-subtle">{t("grammar.l2Decomposed")}</span>
                     ) : (
-                      <span className="text-sm text-content">
-                        {bound.label.short ?? bound.label.long}
-                      </span>
+                      <span className="text-sm text-content">{bound.short ?? bound.long}</span>
                     )}
                   </button>
                   {usageFor(combination)}
@@ -1410,455 +1345,35 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
     );
   }
 
-  // ---- layer 3 ----------------------------------------------------------
-
-  /** Pick a category, exactly as layer 2 does — the same things are offered. */
-  function renderL3Root() {
-    const pos = posRows(draft);
-    const combinations = draft.bindings ?? [];
-    const categories: { tag: Tag; label: GrammarLabel }[] = [
-      ...pos.map((row) => ({ tag: posTag(row), label: row.label })),
-      ...combinations.map((row) => ({ tag: row.tag, label: row.label })),
-    ];
-    return (
-      <>
-        <p className="mb-3 text-xs text-content-subtle">{t("grammar.l3RootHint")}</p>
-        {categories.length === 0 ? (
-          <p className="text-sm text-content-muted">{t("grammar.l2NoPos")}</p>
-        ) : (
-          <ul className="space-y-1.5">
-            {categories.map((category) => (
-              <li key={tagKey(category.tag)}>
-                <button
-                  type="button"
-                  onClick={() => setPath({ at: "l3category", category: category.tag })}
-                  className={levelButton}
-                >
-                  <span className="text-sm text-content">
-                    {category.label.short ?? category.label.long}
-                  </span>
-                  <span className="text-xs text-content-subtle">
-                    {t("grammar.l3AxisCount", { count: axisRows(draft, category.tag).length })}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </>
-    );
-  }
+  // ---- layer 5 -----------------------------------------------------------
 
   /**
-   * One category: the features that vary across its forms, and the bound ones
-   * left to declare.
+   * The language's paradigms as a flat list — **a holding state while the
+   * category–axis merge lands** (ADR-0019).
    *
-   * A feature already declared *inherent* to this category is not offered —
-   * the layer-3 gate rendered as navigation, like every other gate here. A
-   * feature cannot both identify the word and vary across its forms, and the
-   * apparent counterexample resolves one level down: `Number` is an axis of
-   * `{NOUN}` and inherent to `{NOUN, Number=Ptan}`, which are different
-   * categories and never meet on this screen.
+   * This level used to be reached through the layouts, one door per table a
+   * language drew, and a new paradigm's selector was picked from the
+   * combinations falling under that layout. Both of those are gone: the table
+   * shape moved into the paradigm record and the selector is now one of the
+   * language's own declared category flavours. Rebuilding the door is slice 5's
+   * work, so what is left here lists what the index currently holds, and the
+   * editor behind it says so rather than opening on a shape it can no longer
+   * write.
    */
-  function renderL3Category(category: Tag) {
-    const declared = axisRows(draft, category);
-    const declaredNames = new Set(declared.map((row) => row.feature));
-    const inherentNames = new Set(inherentRows(draft, category).map((row) => row.feature));
-    // Absent for the reason they are absent from layer 2: a word's forms do not
-    // vary over "by extension", so it can address no cell of a paradigm.
-    const available = grammaticalFeatureRows(draft).filter(
-      (row) => !declaredNames.has(row.feature) && !inherentNames.has(row.feature),
-    );
-    return (
-      <>
-        <div className="mb-3">
-          <p className="text-sm font-medium text-content">{categoryText(category)}</p>
-          <p className="mt-1 text-xs text-content-subtle">{t("grammar.l3CategoryHint")}</p>
-        </div>
-        {declared.length === 0 ? (
-          <p className="text-sm text-content-muted">{t("grammar.l3NoAxes")}</p>
-        ) : (
-          <ul className="space-y-1.5">
-            {declared.map((row) => (
-              <li key={row.feature} className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPath({ at: "l3feature", category, feature: row.feature })}
-                  className={`${levelButton} flex-1`}
-                >
-                  <span className="flex min-w-0 items-baseline gap-2">
-                    <span className="font-mono text-sm text-content">{row.feature}</span>
-                    <span className="truncate text-xs text-content-subtle">
-                      {findFeature(draft, row.feature)?.label.long}
-                    </span>
-                  </span>
-                  <span
-                    className={
-                      row.values.length === 0
-                        ? "text-xs text-danger"
-                        : "text-xs text-content-subtle"
-                    }
-                  >
-                    {row.values.length === 0
-                      ? t("grammar.l3NoValuesPicked")
-                      : t("grammar.l3ValueCount", { count: row.values.length })}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDraft(removeAxis(draft, category, row.feature))}
-                  aria-label={t("grammar.l3Withdraw", { feature: row.feature })}
-                  className="text-content-subtle hover:text-danger"
-                >
-                  ×
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-        {available.length > 0 && (
-          <div className="mt-4 border-t pt-3">
-            <p className="text-xs font-medium text-content">{t("grammar.l3DeclareTitle")}</p>
-            <ul className="mt-2 flex flex-wrap gap-1.5">
-              {available.map((row) => (
-                <li key={row.feature}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDraft(addAxis(draft, category, row.feature));
-                      setPath({ at: "l3feature", category, feature: row.feature });
-                    }}
-                    title={row.label.long}
-                    className="rounded-full border bg-surface-muted/60 px-2.5 py-1 font-mono text-xs text-content hover:border-primary hover:text-primary"
-                  >
-                    + {row.feature}
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <p className="mt-1 text-xs text-content-subtle">{t("grammar.l3DeclareHint")}</p>
-          </div>
-        )}
-      </>
-    );
-  }
-
-  /**
-   * Pick and order the values an axis ranges over. The order is the point:
-   * it is what a table's headers will print and what the flat list of other
-   * forms is sorted by, and the alphabetical order of an identifier is not a
-   * grammatical order — nobody prints the accusative first.
-   */
-  function renderL3Feature(category: Tag, feature: string) {
-    const axis = findAxis(draft, category, feature);
-    if (axis === undefined) return null;
-    const bound = valueRows(draft, feature);
-    const chosen = axis.values;
-    const rest = bound.filter((row) => !chosen.includes(row.value));
-    return (
-      <>
-        <p className="mb-3 text-xs text-content-subtle">
-          {t("grammar.l3FeatureHint", { feature, category: categoryText(category) })}
-        </p>
-        {bound.length === 0 ? (
-          <p className="text-sm text-content-muted">{t("grammar.l2NoValues", { feature })}</p>
-        ) : (
-          <>
-            <ol className="space-y-1.5">
-              {chosen.map((value, i) => {
-                const row = bound.find((r) => r.value === value);
-                return (
-                  <li
-                    key={value}
-                    className="flex items-center gap-2 rounded-lg border bg-surface px-3 py-2"
-                  >
-                    <span className="w-5 text-xs text-content-subtle">{i + 1}.</span>
-                    <span className="flex min-w-0 flex-1 items-baseline gap-2">
-                      <span className="text-sm text-content">
-                        {row?.label.short ?? row?.label.long ?? value}
-                      </span>
-                      <span className="truncate font-mono text-xs text-content-subtle">
-                        {feature}={value}
-                      </span>
-                    </span>
-                    <button
-                      type="button"
-                      disabled={i === 0}
-                      onClick={() => setDraft(moveAxisValue(draft, category, feature, value, -1))}
-                      aria-label={t("grammar.l3MoveUp", { value })}
-                      className="px-1 text-content-subtle hover:text-primary disabled:opacity-30"
-                    >
-                      ↑
-                    </button>
-                    <button
-                      type="button"
-                      disabled={i === chosen.length - 1}
-                      onClick={() => setDraft(moveAxisValue(draft, category, feature, value, 1))}
-                      aria-label={t("grammar.l3MoveDown", { value })}
-                      className="px-1 text-content-subtle hover:text-primary disabled:opacity-30"
-                    >
-                      ↓
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDraft(toggleAxisValue(draft, category, feature, value))}
-                      aria-label={t("grammar.l3Remove", { value })}
-                      className="px-1 text-content-subtle hover:text-danger"
-                    >
-                      ×
-                    </button>
-                  </li>
-                );
-              })}
-            </ol>
-            {chosen.length === 0 && (
-              <p className="text-sm text-content-muted">{t("grammar.l3PickSomething")}</p>
-            )}
-            {rest.length > 0 && (
-              <div className="mt-4 border-t pt-3">
-                <p className="text-xs font-medium text-content">{t("grammar.l3AddValueTitle")}</p>
-                <ul className="mt-2 flex flex-wrap gap-1.5">
-                  {rest.map((row) => (
-                    <li key={row.value}>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setDraft(toggleAxisValue(draft, category, feature, row.value))
-                        }
-                        title={row.label.long}
-                        className="rounded-full border bg-surface-muted/60 px-2.5 py-1 text-xs text-content hover:border-primary hover:text-primary"
-                      >
-                        + {row.label.short ?? row.label.long}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-                <p className="mt-1 text-xs text-content-subtle">{t("grammar.l3AddValueHint")}</p>
-              </div>
-            )}
-          </>
-        )}
-      </>
-    );
-  }
-
-  // ---- layer 4 levels ---------------------------------------------------
-
-  /**
-   * The categories a layout can be declared for: exactly those with a declared
-   * axis. A layout arranges axes, so a category with none has nothing to
-   * arrange — the cascade as navigation once more, and the reason this level
-   * points at the Axes tab instead of showing an empty designer.
-   */
-  function renderL4Root() {
-    const declared = draft.layout ?? [];
-    const seen = new Set<string>();
-    const candidates: Tag[] = [];
-    for (const axis of draft.axes ?? []) {
-      const key = tagKey(axis.category);
-      if (seen.has(key) || layoutRow(draft, axis.category) !== undefined) continue;
-      seen.add(key);
-      candidates.push(axis.category);
-    }
-    return (
-      <>
-        <p className="mb-3 text-xs text-content-subtle">{t("grammar.l4RootHint")}</p>
-        {(draft.axes ?? []).length === 0 ? (
-          <p className="text-sm text-content-muted">{t("grammar.l4NoAxes")}</p>
-        ) : (
-          <>
-            {declared.length > 0 && (
-              <ul className="space-y-1.5">
-                {declared.map((row) => (
-                  <li key={tagKey(row.category)}>
-                    <button
-                      type="button"
-                      onClick={() => setPath({ at: "l4category", category: row.category })}
-                      className={levelButton}
-                    >
-                      <span className="text-sm text-content">{categoryText(row.category)}</span>
-                      <span className="text-xs text-content-subtle">
-                        {t("grammar.l4BlockCount", { count: row.blocks.length })}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {candidates.length > 0 && (
-              <div className="mt-4 border-t pt-3">
-                <p className="text-xs font-medium text-content">{t("grammar.l4AddTitle")}</p>
-                <ul className="mt-2 flex flex-wrap gap-1.5">
-                  {candidates.map((category) => (
-                    <li key={tagKey(category)}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDraft(addLayout(draft, category));
-                          setPath({ at: "l4category", category });
-                        }}
-                        className="rounded-full border bg-surface-muted/60 px-2.5 py-1 text-xs text-content hover:border-primary hover:text-primary"
-                      >
-                        + {categoryText(category)}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-                <p className="mt-1 text-xs text-content-subtle">{t("grammar.l4AddHint")}</p>
-              </div>
-            )}
-          </>
-        )}
-      </>
-    );
-  }
-
-  /**
-   * Which layout row a paradigm belongs under.
-   *
-   * A layout keys on a category; a selector is any bundle over the language's
-   * inherent vocabulary and reaches entries by **containment** — so a
-   * `{VERB, Conjugation=2}` paradigm fills the cells of the `{VERB}` layout and
-   * belongs beside it. Matching runs on **scheme-blind atom keys**, for the
-   * reason every form-to-cell join already does: a bot writes `Conjugation=2`
-   * bare where this editor writes it carrying the minting scheme, and filing a
-   * paradigm under only one of the two would hide the other from the person who
-   * has to fix it. Where several layouts are contained, the most specific wins.
-   */
-  function layoutFor(selector: Tag): Tag | undefined {
-    const atoms = new Set(tagAtomKeys(selector));
-    let best: Tag | undefined;
-    let bestSize = -1;
-    for (const row of draft.layout ?? []) {
-      const keys = tagAtomKeys(row.category);
-      if (!keys.every((key) => atoms.has(key))) continue;
-      if (keys.length > bestSize) {
-        best = row.category;
-        bestSize = keys.length;
-      }
-    }
-    return best;
-  }
-
-  function paradigmsUnder(category: Tag): ParadigmPointer[] {
-    const key = tagKey(category);
-    return paradigms.filter((row) => {
-      const under = layoutFor(row.selector);
-      return under !== undefined && tagKey(under) === key;
-    });
-  }
-
-  /** The layouts as a list — layer 5's door, one item per table a language draws. */
   function renderL5Root() {
-    const declared = draft.layout ?? [];
-    // Paradigms no layout covers. Not a defect and not diagnosed here: a
-    // selector the language never declared is a disagreement *between two
-    // records*, which the AppView indexes and contests rather than refuses. It
-    // is listed because somebody has to be able to open and fix it.
-    const uncovered = paradigms.filter((row) => layoutFor(row.selector) === undefined);
     return (
       <>
         <p className="mb-3 text-xs text-content-subtle">{t("grammar.l5RootHint")}</p>
-        {declared.length === 0 ? (
-          <p className="text-sm text-content-muted">{t("grammar.l5NoLayout")}</p>
-        ) : (
-          <ul className="space-y-1.5">
-            {declared.map((row) => (
-              <li key={tagKey(row.category)}>
-                <button
-                  type="button"
-                  onClick={() => setPath({ at: "l5category", category: row.category })}
-                  className={levelButton}
-                >
-                  <span className="text-sm text-content">{categoryText(row.category)}</span>
-                  <span className="text-xs text-content-subtle">
-                    {t("grammar.l5ParadigmCount", { count: paradigmsUnder(row.category).length })}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-        {uncovered.length > 0 && (
-          <div className="mt-4 border-t pt-3">
-            <p className="text-xs font-medium text-content">{t("grammar.l5Uncovered")}</p>
-            <p className="mt-1 text-xs text-content-subtle">{t("grammar.l5UncoveredHint")}</p>
-            <ul className="mt-2 space-y-1.5">
-              {uncovered.map((row) => (
-                <li key={row.paradigmKey}>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setEditing({
-                        selector: row.selector,
-                        existing: {
-                          paradigmKey: row.paradigmKey,
-                          recordURI: row.recordURI,
-                          cid: row.cid,
-                        },
-                      })
-                    }
-                    className={levelButton}
-                  >
-                    <span className="font-mono text-xs text-content">
-                      {formatTagVerbatim(row.selector)}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </>
-    );
-  }
-
-  /** One layout's paradigms, and the selectors a new one may take. */
-  function renderL5Category(category: Tag) {
-    const rows = paradigmsUnder(category);
-    const taken = new Set(rows.map((row) => tagKey(row.selector)));
-    // What a new paradigm may select: the layout's own category, and every
-    // combination the language has named that falls under it. The cascade
-    // supplies the narrower selectors; the manual field is the way out when it
-    // has not named the one this author needs.
-    const candidates: Tag[] = [category, ...combinationRows(draft).map((row) => row.tag)].filter(
-      (option) => {
-        const atoms = new Set(tagAtomKeys(option));
-        return (
-          !taken.has(tagKey(option)) &&
-          tagAtomKeys(category).every((key) => atoms.has(key))
-        );
-      },
-    );
-    const seen = new Set<string>();
-    const offered = candidates.filter((option) => {
-      const key = tagKey(option);
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-
-    return (
-      <>
-        <p className="mb-3 text-xs text-content-subtle">{t("grammar.l5CategoryHint")}</p>
-        {rows.length === 0 ? (
-          <p className="text-sm text-content-muted">{t("grammar.l5NoParadigms")}</p>
-        ) : (
-          <ul className="space-y-1.5">
-            {rows.map((row) => (
+        <p className="rounded-lg border border-dashed p-3 text-sm text-content-muted">
+          {t("grammar.l5Rebuilding")}
+        </p>
+        {paradigms.length > 0 && (
+          <ul className="mt-3 space-y-1.5">
+            {paradigms.map((row) => (
               <li key={row.paradigmKey}>
                 <button
                   type="button"
-                  onClick={() =>
-                    setEditing({
-                      selector: row.selector,
-                      existing: {
-                        paradigmKey: row.paradigmKey,
-                        recordURI: row.recordURI,
-                        cid: row.cid,
-                      },
-                    })
-                  }
+                  onClick={() => setEditing({ selector: row.selector })}
                   className={levelButton}
                 >
                   <span className="text-sm text-content">{categoryText(row.selector)}</span>
@@ -1870,410 +1385,9 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
             ))}
           </ul>
         )}
-        {offered.length > 0 && (
-          <div className="mt-4 border-t pt-3">
-            <p className="text-xs font-medium text-content">{t("grammar.l5AddTitle")}</p>
-            <ul className="mt-2 flex flex-wrap gap-1.5">
-              {offered.map((option) => (
-                <li key={tagKey(option)}>
-                  <button
-                    type="button"
-                    onClick={() => setEditing({ selector: option })}
-                    className="rounded-full border bg-surface-muted/60 px-2.5 py-1 text-xs text-content hover:border-primary hover:text-primary"
-                  >
-                    + {categoryText(option)}
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <p className="mt-1 text-xs text-content-subtle">{t("grammar.l5AddHint")}</p>
-          </div>
-        )}
-        <ManualSelector
-          onPick={(selector) => setEditing({ selector })}
-          disabled={(selector) => taken.has(tagKey(selector))}
-        />
       </>
     );
   }
-
-  /** One category's blocks, in order, with a preview of what a reader will see. */
-  function renderL4Category(category: Tag) {
-    const row = layoutRow(draft, category);
-    if (row === undefined) return null;
-    const resolved = resolveLayout(draft, row);
-    return (
-      <>
-        <div className="mb-3">
-          <p className="text-sm font-medium text-content">{categoryText(category)}</p>
-          <p className="mt-1 text-xs text-content-subtle">{t("grammar.l4CategoryHint")}</p>
-        </div>
-        <ol className="space-y-1.5">
-          {row.blocks.map((block, index) => (
-            <li key={index} className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setPath({ at: "l4block", category, index })}
-                className={`${levelButton} flex-1`}
-              >
-                <span className="flex min-w-0 items-baseline gap-2">
-                  <span className="text-sm text-content">
-                    {block.kind === "table" ? t("grammar.l4BlockTable") : t("grammar.l4BlockList")}
-                  </span>
-                  <span className="truncate font-mono text-xs text-content-subtle">
-                    {blockSummaryText(block)}
-                  </span>
-                </span>
-                {block.summary === true && (
-                  <span className="shrink-0 text-xs text-primary">
-                    {t("grammar.l4SummaryBadge")}
-                  </span>
-                )}
-              </button>
-              <button
-                type="button"
-                disabled={index === 0}
-                onClick={() => setDraft(moveBlock(draft, category, index, -1))}
-                aria-label={t("grammar.l4MoveEarlier")}
-                className="px-1 text-content-subtle hover:text-primary disabled:opacity-30"
-              >
-                ↑
-              </button>
-              <button
-                type="button"
-                disabled={index === row.blocks.length - 1}
-                onClick={() => setDraft(moveBlock(draft, category, index, 1))}
-                aria-label={t("grammar.l4MoveLater")}
-                className="px-1 text-content-subtle hover:text-primary disabled:opacity-30"
-              >
-                ↓
-              </button>
-            </li>
-          ))}
-        </ol>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => setDraft(addBlock(draft, category, "table"))}
-            className="rounded-lg border px-3 py-1.5 text-xs text-content hover:border-primary"
-          >
-            {t("grammar.l4AddTable")}
-          </button>
-          <button
-            type="button"
-            onClick={() => setDraft(addBlock(draft, category, "list"))}
-            className="rounded-lg border px-3 py-1.5 text-xs text-content hover:border-primary"
-          >
-            {t("grammar.l4AddList")}
-          </button>
-        </div>
-
-        {/* The preview runs through the *same* resolver the viewer will use, so
-            what is checked here is the shipped arithmetic and not a second
-            drawing of it. */}
-        <div className="mt-4 border-t pt-3">
-          <p className="text-xs font-medium text-content">{t("grammar.l4PreviewTitle")}</p>
-          <div className="mt-2 space-y-3">
-            {resolved.map((block, index) => (
-              <LayoutBlockView key={index} block={block} />
-            ))}
-          </div>
-        </div>
-
-        <div className="mt-4 border-t pt-3">
-          <button
-            type="button"
-            onClick={() => {
-              setDraft(removeLayout(draft, category));
-              setPath({ at: "l4root" });
-            }}
-            className="text-sm text-danger hover:text-danger"
-          >
-            {t("grammar.l4WithdrawLayout")}
-          </button>
-        </div>
-      </>
-    );
-  }
-
-  /** A one-line description of a block, for the list above. */
-  function blockSummaryText(block: { kind: string; rows?: string[]; columns?: string[]; items?: { coords: LayoutCoord[] }[]; fixed?: LayoutCoord[] }): string {
-    const fixed = (block.fixed ?? []).map((c) => `${c.feature}=${c.value}`).join("|");
-    const body =
-      block.kind === "table"
-        ? [...(block.rows ?? []), ...(block.columns ?? [])].join(" × ")
-        : `${(block.items ?? []).length}`;
-    const text = [fixed, body].filter((part) => part !== "" && part !== "0").join(" · ");
-    return text === "" ? t("grammar.l4BlockEmpty") : text;
-  }
-
-  /**
-   * One block's editor. The grid is resolved with the block's **exclusions set
-   * aside**, so an excluded cell is still drawn and can be put back — a designer
-   * where excluding a cell removed the only way to undo it would be a trap.
-   */
-  function renderL4Block(category: Tag, index: number) {
-    const row = layoutRow(draft, category);
-    const block = row?.blocks[index];
-    if (row === undefined || block === undefined) return null;
-    const axes = applicableAxes(draft, [category]);
-
-    const summaryToggle = (
-      <label className="mt-4 flex items-start gap-2 border-t pt-3">
-        <input
-          type="checkbox"
-          className="mt-1"
-          checked={block.summary === true}
-          onChange={() => setDraft(toggleBlockSummary(draft, category, index))}
-        />
-        <span>
-          <span className="text-sm text-content">{t("grammar.l4SummaryToggle")}</span>
-          <span className="mt-0.5 block text-xs text-content-subtle">
-            {t("grammar.l4SummaryHint")}
-          </span>
-        </span>
-      </label>
-    );
-
-    const removeBlockButton = (
-      <div className="mt-4 border-t pt-3">
-        <button
-          type="button"
-          onClick={() => {
-            setDraft(removeBlock(draft, category, index));
-            setPath(row.blocks.length === 1 ? { at: "l4root" } : { at: "l4category", category });
-          }}
-          className="text-sm text-danger hover:text-danger"
-        >
-          {t("grammar.l4RemoveBlock")}
-        </button>
-        {row.blocks.length === 1 && (
-          <p className="mt-1 text-xs text-content-subtle">{t("grammar.l4RemoveLast")}</p>
-        )}
-      </div>
-    );
-
-    if (block.kind === "list") {
-      const items = block.items ?? [];
-      return (
-        <>
-          <p className="mb-3 text-xs text-content-subtle">{t("grammar.l4ItemHint")}</p>
-          <p className="text-xs font-medium text-content">{t("grammar.l4ItemsTitle")}</p>
-          {items.length === 0 ? (
-            <p className="mt-2 text-sm text-content-muted">{t("grammar.l4NoItems")}</p>
-          ) : (
-            <ol className="mt-2 space-y-1.5">
-              {items.map((item, i) => (
-                <li
-                  key={i}
-                  className="flex items-center gap-2 rounded-lg border bg-surface px-3 py-2"
-                >
-                  <span className="w-5 text-xs text-content-subtle">{i + 1}.</span>
-                  <span className="min-w-0 flex-1 truncate font-mono text-xs text-content">
-                    {item.coords.map((c) => `${c.feature}=${c.value}`).join("|")}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={i === 0}
-                    onClick={() => setDraft(moveListItem(draft, category, index, i, -1))}
-                    aria-label={t("grammar.l4MoveEarlier")}
-                    className="px-1 text-content-subtle hover:text-primary disabled:opacity-30"
-                  >
-                    ↑
-                  </button>
-                  <button
-                    type="button"
-                    disabled={i === items.length - 1}
-                    onClick={() => setDraft(moveListItem(draft, category, index, i, 1))}
-                    aria-label={t("grammar.l4MoveLater")}
-                    className="px-1 text-content-subtle hover:text-primary disabled:opacity-30"
-                  >
-                    ↓
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDraft(removeListItem(draft, category, index, i))}
-                    aria-label={t("grammar.l4RemoveItem")}
-                    className="px-1 text-content-subtle hover:text-danger"
-                  >
-                    ×
-                  </button>
-                </li>
-              ))}
-            </ol>
-          )}
-          <AddressPicker
-            id={`layout-manual-${index}`}
-            axes={axes}
-            onAdd={(coords) => setDraft(addListItem(draft, category, index, coords))}
-          />
-          {summaryToggle}
-          {removeBlockButton}
-        </>
-      );
-    }
-
-    const onRows = block.rows ?? [];
-    const onColumns = block.columns ?? [];
-    const placed = new Set([...onRows, ...onColumns]);
-    // Resolved without exclusions: every cell of the declared product is drawn,
-    // and `excludesCell` says which of them the record removes.
-    const grid = resolveLayout(draft, {
-      category,
-      blocks: [blockWithoutExclusions(block)],
-    })[0] as ResolvedLayoutTable;
-    const fixedFeatures = new Set((block.fixed ?? []).map((coord) => coord.feature));
-    /** A cell's coordinates minus the block's constants — what an exclusion names. */
-    const axisCoords = (cell: LayoutAddress): LayoutCoord[] =>
-      cell.coords.filter((coord) => !fixedFeatures.has(coord.feature));
-
-    return (
-      <>
-        {(["rows", "columns"] as const).map((dimension) => {
-          const on = dimension === "rows" ? onRows : onColumns;
-          return (
-            <div key={dimension} className="mb-3">
-              <p className="text-xs font-medium text-content">
-                {dimension === "rows" ? t("grammar.l4RowsTitle") : t("grammar.l4ColumnsTitle")}
-              </p>
-              <ol className="mt-1 flex flex-wrap items-center gap-1.5">
-                {on.map((feature, i) => (
-                  <li key={feature} className="flex items-center gap-1 rounded-full border bg-surface px-2 py-0.5">
-                    <span className="font-mono text-xs text-content">{feature}</span>
-                    <button
-                      type="button"
-                      disabled={i === 0}
-                      onClick={() =>
-                        setDraft(moveBlockAxis(draft, category, index, dimension, feature, -1))
-                      }
-                      aria-label={t("grammar.l4MoveEarlier")}
-                      className="text-content-subtle hover:text-primary disabled:opacity-30"
-                    >
-                      ↑
-                    </button>
-                    <button
-                      type="button"
-                      disabled={i === on.length - 1}
-                      onClick={() =>
-                        setDraft(moveBlockAxis(draft, category, index, dimension, feature, 1))
-                      }
-                      aria-label={t("grammar.l4MoveLater")}
-                      className="text-content-subtle hover:text-primary disabled:opacity-30"
-                    >
-                      ↓
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setDraft(toggleBlockAxis(draft, category, index, dimension, feature))
-                      }
-                      aria-label={t("grammar.l4RemoveItem")}
-                      className="text-content-subtle hover:text-danger"
-                    >
-                      ×
-                    </button>
-                  </li>
-                ))}
-                {axes
-                  .filter((axis) => !placed.has(axis.feature.feature))
-                  .map((axis) => (
-                    <li key={axis.feature.feature}>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setDraft(
-                            toggleBlockAxis(draft, category, index, dimension, axis.feature.feature),
-                          )
-                        }
-                        title={axis.feature.label.long}
-                        className="rounded-full border border-dashed px-2.5 py-1 font-mono text-xs text-content-muted hover:border-primary hover:text-primary"
-                      >
-                        + {axis.feature.feature}
-                      </button>
-                    </li>
-                  ))}
-              </ol>
-            </div>
-          );
-        })}
-        <p className="text-xs text-content-subtle">{t("grammar.l4DimensionHint")}</p>
-
-        {/* Pinning: an axis not on a dimension may be fixed to one value, which
-            is how one paradigm becomes several tables. */}
-        {axes.some((axis) => !placed.has(axis.feature.feature)) && (
-          <div className="mt-4 border-t pt-3">
-            <p className="text-xs font-medium text-content">{t("grammar.l4FixedTitle")}</p>
-            {axes
-              .filter((axis) => !placed.has(axis.feature.feature))
-              .map((axis) => {
-                const current = (block.fixed ?? []).find(
-                  (coord) => coord.feature === axis.feature.feature,
-                );
-                return (
-                  <div key={axis.feature.feature} className="mt-2">
-                    <p className="text-xs text-content-subtle">{axis.feature.label.long}</p>
-                    <ul className="mt-1 flex flex-wrap gap-1.5">
-                      {axis.values.map((value) => {
-                        const active = current?.value === value.value;
-                        return (
-                          <li key={value.value}>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setDraft(
-                                  setBlockFixed(
-                                    draft,
-                                    category,
-                                    index,
-                                    axis.feature.feature,
-                                    active ? null : value.value,
-                                  ),
-                                )
-                              }
-                              title={value.label.long}
-                              className={
-                                active
-                                  ? "rounded-full border border-primary bg-surface px-2.5 py-1 text-xs font-medium text-primary"
-                                  : "rounded-full border border-dashed px-2.5 py-1 text-xs text-content-muted hover:border-primary hover:text-primary"
-                              }
-                            >
-                              {value.label.short ?? value.label.long}
-                            </button>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                );
-              })}
-            <p className="mt-1 text-xs text-content-subtle">{t("grammar.l4FixedHint")}</p>
-          </div>
-        )}
-
-        <div className="mt-4 border-t pt-3">
-          {placed.size === 0 ? (
-            <p className="text-sm text-content-muted">{t("grammar.l4NoDimensions")}</p>
-          ) : grid.cells.length === 0 ? (
-            <p className="text-sm text-content-muted">{t("grammar.l4TooLarge")}</p>
-          ) : (
-            <>
-              <p className="text-xs text-content-subtle">{t("grammar.l4CellHint")}</p>
-              <LayoutBlockView
-                block={grid}
-                excluded={(cell) => excludesCell(block, axisCoords(cell))}
-                onCell={(cell) =>
-                  setDraft(toggleExcludedCell(draft, category, index, axisCoords(cell)))
-                }
-              />
-            </>
-          )}
-        </div>
-        {summaryToggle}
-        {removeBlockButton}
-      </>
-    );
-  }
-
   /**
    * The abbreviation form: what a short form stands for, and nothing else.
    *
@@ -2355,7 +1469,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
           : path.at === "valueForm"
             ? findValue(draft, path.feature, path.value)
             : path.at === "l2combinationForm"
-              ? findCombination(draft, path.tag)
+              ? findCategory(draft, path.tag)
               : undefined;
     const isUdPos = path.at === "posForm" && HEADWORD_UPOS.some((u) => u.value === path.value);
     // A combination is never minted — provenance rides on its items, which
@@ -2504,9 +1618,9 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
                   setDraft(removeValue(draft, path.feature, path.value));
                   setPath({ at: "values", feature: path.feature });
                 } else if (path.at === "l2combinationForm") {
-                  // The label goes; the combination's parts stay bound, so it
-                  // simply renders by decomposition again.
-                  setDraft(removeCombination(draft, path.tag));
+                  // The label goes; the category's atoms stay bound, so the
+                  // bundle simply renders by decomposition again.
+                  setDraft(removeCategory(draft, path.tag));
                   setPath({ at: "l2feature", category: path.category, feature: path.feature });
                 }
               }}
@@ -2556,22 +1670,8 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
         return renderL2Category(path.category);
       case "l2feature":
         return renderL2Feature(path.category, path.feature);
-      case "l3root":
-        return renderL3Root();
-      case "l3category":
-        return renderL3Category(path.category);
-      case "l3feature":
-        return renderL3Feature(path.category, path.feature);
-      case "l4root":
-        return renderL4Root();
-      case "l4category":
-        return renderL4Category(path.category);
-      case "l4block":
-        return renderL4Block(path.category, path.index);
       case "l5root":
         return renderL5Root();
-      case "l5category":
-        return renderL5Category(path.category);
       default:
         return renderForm();
     }
@@ -2609,41 +1709,15 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
             <button
               type="button"
               role="tab"
-              aria-selected={tab === "combinations"}
+              aria-selected={tab === "categories"}
               onClick={() => setPath({ at: "l2root" })}
               className={
-                tab === "combinations"
+                tab === "categories"
                   ? "rounded-full border border-primary bg-surface px-3 py-1 text-xs font-medium text-primary"
                   : "rounded-full border px-3 py-1 text-xs text-content-subtle hover:border-primary hover:text-primary"
               }
             >
-              {t("grammar.tabCombinations")}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === "axes"}
-              onClick={() => setPath({ at: "l3root" })}
-              className={
-                tab === "axes"
-                  ? "rounded-full border border-primary bg-surface px-3 py-1 text-xs font-medium text-primary"
-                  : "rounded-full border px-3 py-1 text-xs text-content-subtle hover:border-primary hover:text-primary"
-              }
-            >
-              {t("grammar.tabAxes")}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === "layout"}
-              onClick={() => setPath({ at: "l4root" })}
-              className={
-                tab === "layout"
-                  ? "rounded-full border border-primary bg-surface px-3 py-1 text-xs font-medium text-primary"
-                  : "rounded-full border px-3 py-1 text-xs text-content-subtle hover:border-primary hover:text-primary"
-              }
-            >
-              {t("grammar.tabLayout")}
+              {t("grammar.tabCategories")}
             </button>
             <button
               type="button"
@@ -2692,6 +1766,13 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
             </div>
 
             <footer className="border-t px-4 py-3 sm:px-5">
+              {/* Said once, in the one place the consequence lands: this
+                  language was declared before the category–axis merge, so the
+                  draft above is a forward-mapping of its record and publishing
+                  is what commits it. */}
+              {carriesRetiredGrammar(record.grammar) && (
+                <p className="mb-2 text-sm text-content-muted">{t("grammar.migrated")}</p>
+              )}
               {defects.length > 0 && (
                 <div className="mb-2 text-sm text-danger">
                   <p>{t("grammar.errors.defects")}</p>
@@ -2740,70 +1821,10 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
           behind it is untouched by anything that happens in there. */}
       {editing !== null && (
         <ParadigmEditorDialog
-          tag={tag}
-          grammar={draft}
-          lookup={grammarLookup(draft)}
           selector={editing.selector}
-          existing={editing.existing}
           onClose={() => setEditing(null)}
-          onPublished={() => {
-            setEditing(null);
-            // The write is on the author's PDS; the AppView learns of it from
-            // the firehose, so this list catches up on the next open rather
-            // than immediately. Re-asking costs one request and is right
-            // whenever it has.
-            void fetchLanguageParadigms(tag)
-              .then(setParadigms)
-              .catch(() => undefined);
-          }}
         />
       )}
-    </div>
-  );
-}
-
-/**
- * Naming a selector the language has not combined — the degrade-to-manual path,
- * as everywhere else in this dialog. Offered always, because a paradigm may key
- * on a bundle nobody thought to name as a headword category.
- */
-function ManualSelector({
-  onPick,
-  disabled,
-}: {
-  onPick: (selector: Tag) => void;
-  disabled: (selector: Tag) => boolean;
-}) {
-  const { t } = useTranslation();
-  const [value, setValue] = useState("");
-  const parsed = parseTagInput(value.trim());
-  const valid = parsed !== null && !disabled(parsed);
-  return (
-    <div className="mt-4 border-t pt-3">
-      <label className="block text-xs text-content-subtle" htmlFor="paradigm-selector-manual">
-        {t("grammar.l5ManualLabel")}
-      </label>
-      <div className="mt-1 flex gap-2">
-        <input
-          id="paradigm-selector-manual"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder={t("grammar.l5ManualPlaceholder")}
-          className={inputClass}
-        />
-        <button
-          type="button"
-          disabled={!valid}
-          onClick={() => {
-            if (parsed === null) return;
-            onPick(parsed);
-            setValue("");
-          }}
-          className="shrink-0 rounded-lg border px-3 py-2 text-sm text-content hover:border-primary disabled:opacity-50"
-        >
-          {t("grammar.add")}
-        </button>
-      </div>
     </div>
   );
 }
@@ -2820,80 +1841,6 @@ const levelButton =
  */
 const stackedLevelButton =
   "flex w-full flex-col items-stretch gap-1 rounded-lg border bg-surface px-3 py-2 text-left hover:border-primary";
-
-/** A cell's identifier, as UD writes it — what a contributor reads in the grid. */
-function addressText(cell: LayoutAddress): string {
-  return formatTagVerbatim(cell.tag);
-}
-
-/**
- * One resolved block, drawn with identifiers in its cells — the designer's view
- * of a paradigm, as against the reader's, which puts forms there instead. Both
- * go through the same table component, so the preview cannot drift from the page
- * it previews.
- *
- * `excluded`/`onCell` are the block editor's: clicking a cell is how a language
- * says it has no such form.
- */
-function LayoutBlockView({
-  block,
-  excluded,
-  onCell,
-}: {
-  block: ResolvedLayoutBlock;
-  excluded?: (cell: LayoutAddress) => boolean;
-  onCell?: (cell: LayoutAddress) => void;
-}) {
-  const { t } = useTranslation();
-  if (block.kind === "list") {
-    return (
-      <ParadigmList
-        list={block}
-        item={(address) => (
-          <span className="font-mono text-xs text-content-subtle">{addressText(address)}</span>
-        )}
-      />
-    );
-  }
-  // No lines at all: dimensions naming nothing the language still declares, or a
-  // block past the cell cap. Say so rather than drawing an empty frame.
-  if (block.cells.length === 0) {
-    return (
-      <div>
-        <BlockCaption caption={block.caption} />
-        <p className="text-sm text-content-muted">{t("grammar.l4BlockEmpty")}</p>
-      </div>
-    );
-  }
-  return (
-    <ParadigmTable
-      table={block}
-      cell={(address) => {
-        const off = excluded?.(address) === true;
-        const body = (
-          <span
-            className={
-              off ? "font-mono text-[10px] line-through opacity-50" : "font-mono text-[10px]"
-            }
-          >
-            {addressText(address)}
-          </span>
-        );
-        if (onCell === undefined) return body;
-        return (
-          <button
-            type="button"
-            onClick={() => onCell(address)}
-            title={off ? t("grammar.l4CellExcluded") : addressText(address)}
-            className="text-left hover:text-primary"
-          >
-            {body}
-          </button>
-        );
-      }}
-    />
-  );
-}
 
 /**
  * What the entries did with a row, shown beside the row that declares it: how

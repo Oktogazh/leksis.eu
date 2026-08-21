@@ -19,6 +19,7 @@
 
 import {
   abbreviationKey,
+  categoryTags,
   posTag,
   tagKey,
   valueTag,
@@ -31,8 +32,8 @@ import {
 } from "@leksis/types";
 import {
   abbreviationRows,
+  categoryRows,
   classRows,
-  combinationRows,
   grammaticalFeatureRows,
   lexicalRows,
   posRows,
@@ -213,7 +214,15 @@ export function labelShelf(grammar: Grammar, labels: readonly LabelView[]): Shel
     groupTab("lexical", groupsOf(grammar, usage, lexicalRows(grammar))),
     flatTab(
       "combinations",
-      combinationRows(grammar).map((row) => shelfRow(usage, tagKey(row.tag), row.label, row.tag)),
+      // One shelf row per **annotation**, not per declaration: a category naming
+      // an axis holds one label per headword flavour of it, and each is a
+      // labelled tag of its own (ADR-0019). `categoryTags` is what re-attaches
+      // the default's provenance, so a minted headword value finds its label.
+      categoryRows(grammar).flatMap((row) =>
+        categoryTags(grammar, row).map((named) =>
+          shelfRow(usage, tagKey(named.tag), named.label, named.tag),
+        ),
+      ),
     ),
     flatTab(
       "abbreviations",

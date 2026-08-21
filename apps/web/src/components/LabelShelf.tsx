@@ -146,7 +146,7 @@ export function LabelShelf({ grammar, labels, languageTag, onEdit }: LabelShelfP
                     <span className="text-warning">{t("grammar.mintedBadge")}</span>
                   )}
                   <span className="text-content-subtle">
-                    {t("grammar.l3ValueCount", { count: one.values.length })}
+                    {t("grammar.valueCount", { count: one.values.length })}
                   </span>
                 </button>
               </li>

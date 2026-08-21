@@ -24,7 +24,7 @@
           "grammar": {
             "type": "ref",
             "ref": "#grammar",
-            "description": "The grammatical vocabulary this language uses, each atom bound to a label written in this language. Optional: a language with nothing declared stays fully usable, and unbound tags on its entries still render. It must be COHERENT to be indexed: every row above layer 1 may only name atoms, feature names and values this same object binds, no two rows may key the same, a named combination holds at least two atoms and must be reachable by removing one inherent feature at a time, a feature is inherent to a category XOR an axis of it, an axis names at least one value, a layout dimension names an axis that category declares, and a lexicographic label set is used nowhere in the grammatical layers. The AppView refuses a version that breaks any of these and keeps the previous one current — not because the vocabulary is wrong (a language may bind anything well-formed, minted or documented) but because the editing interface navigates these relations, so a row hanging off something undeclared can be neither reached nor repaired there. The declared maxLength of every array here is likewise enforced, not advisory."
+            "description": "The grammatical vocabulary this language uses, each atom bound to a label written in this language. Optional: a language with nothing declared stays fully usable, and unbound tags on its entries still render. It must be COHERENT to be indexed: every row above layer 1 may only name atoms, feature names and values this same object binds, no two rows may key the same, a category of two or more atoms must be reachable by removing one inherent feature at a time, a feature is inherent to a category XOR the axis of it, an annotation names a default value iff its category names an axis and no two share one, and a lexicographic label set is used nowhere in the grammatical layers. The retired `axes` and `layout` arrays are refused outright: what they declared now lives on the category and in the eu.leksis.paradigm record. The AppView refuses a version that breaks any of these and keeps the previous one current — not because the vocabulary is wrong (a language may bind anything well-formed, minted or documented) but because the editing interface navigates these relations, so a row hanging off something undeclared can be neither reached nor repaired there. The declared maxLength of every array here is likewise enforced, not advisory."
           },
           "createdAt": {
             "type": "string",
@@ -36,7 +36,7 @@
     },
     "grammar": {
       "type": "object",
-      "description": "A language's declared grammatical inventory. Binding is how a language declares what it uses, so these arrays are its vocabulary: what is absent is simply not offered when authoring. Only authored rows are stored — there is no skeleton of unbound atoms, since absence already means unbound. Layer 1 declares the atoms (`pos`, `features`, `values`); layer 2 declares what they combine into (`inherent`, `bindings`); layer 3 declares what a category's forms vary over (`axes`); layer 4 declares the shape of the tables printing those cells (`layout`). They all share one object because they reference each other: unbinding an atom orphans every higher row that uses it, and one self-contained object means a single write keeps the whole cascade consistent. Two further declarations here are lexicography rather than grammar and take part in no cascade: a feature flagged `lexicographic` (register, domain, editorial usage) and the plain `abbreviations`.",
+      "description": "A language's declared grammatical inventory. Binding is how a language declares what it uses, so these arrays are its vocabulary: what is absent is simply not offered when authoring. Only authored rows are stored — there is no skeleton of unbound atoms, since absence already means unbound. Layer 1 declares the atoms (`pos`, `features`, `values`); layer 2 declares the headword categories they combine into (`inherent`, `categories`), each category naming the feature its forms vary over and the value(s) its own headwords sit at. The shape of the inflection tables is NOT here: it belongs to the eu.leksis.paradigm record, which defines its cells one by one. They share one object because they reference each other: unbinding an atom orphans every higher row that uses it, and one self-contained object means a single write keeps the whole cascade consistent. Two further declarations here are lexicography rather than grammar and take part in no cascade: a feature flagged `lexicographic` (register, domain, editorial usage) and the plain `abbreviations`.",
       "properties": {
         "pos": {
           "type": "array",
@@ -62,150 +62,17 @@
           "items": { "type": "ref", "ref": "#inherentDeclaration" },
           "description": "Which features are inherent to which category — a property of the word itself, not of one of its forms: aspect is inherent to a Slavic verb, gender to a French noun, while number varies across a noun's forms and is therefore not declared here. This is what a headword can be tagged with, and what the entry editor offers one step at a time."
         },
-        "bindings": {
+        "categories": {
           "type": "array",
           "maxLength": 1024,
-          "items": { "type": "ref", "ref": "#combinationBinding" },
-          "description": "Labels for combinations of two or more atoms — French \"nf.\" for NOUN + Gender=Fem, where a language that prints \"n. f.\" simply binds the two atoms separately and never adds a row here. A one-atom label belongs in `pos` or `values`, so that every fact has exactly one home. A combination must be reachable through the `inherent` declarations that build it up."
-        },
-        "axes": {
-          "type": "array",
-          "maxLength": 512,
-          "items": { "type": "ref", "ref": "#axisDeclaration" },
-          "description": "Which features vary across a category's forms, and which values they vary over — the other half of what `inherent` declares, and together with it the coordinate system of this category's paradigm. Gender is inherent to a French noun while number varies across its forms, so number is declared here. This is what the entry editor offers when labelling another form of a word, and what `layout` arranges as a table."
-        },
-        "layout": {
-          "type": "array",
-          "maxLength": 256,
-          "items": { "type": "ref", "ref": "#layoutDeclaration" },
-          "description": "The shape of a category's inflection tables: which axis sits on which dimension, one table or several, in what order, and what is shown without asking. Axes alone underdetermine this — four axes could be one grid with nested headers or four separate tables — and where no layout is declared an entry's forms are shown as a flat list, which is the fallback this layer must never break."
+          "items": { "type": "ref", "ref": "#categoryDeclaration" },
+          "description": "The headword categories this language names: a part of speech plus the inherent feature values that identify a kind of word, each with the abbreviation a reader sees — French \"nf.\" for NOUN + Gender=Fem, where a language that prints \"n. f.\" simply binds the two atoms separately and never adds a row here. A category may also name the feature its forms vary over (its `axis`), and then each abbreviation says which value of that axis the HEADWORD carries: Breton nouns are singular by default, collective-only nouns are collective, and an anv-kadarn stroll is plural with its singulative derived. One category, several headword flavours, one abbreviation each. A category of two or more atoms must be reachable through the `inherent` declarations that build it up."
         },
         "abbreviations": {
           "type": "array",
           "maxLength": 512,
           "items": { "type": "ref", "ref": "#abbreviation" },
           "description": "Traditional dictionary abbreviations, standing for no tag at all — \"udb.\" for \"un dra bennak\". They reference nothing here and nothing references them; they live in this object because a contributor opening \"the labels of this language\" means one shelf, and splitting a dictionary's front matter across two records would buy nothing."
-        }
-      }
-    },
-    "layoutDeclaration": {
-      "type": "object",
-      "required": ["category", "blocks"],
-      "description": "How one category's forms are laid out. The category is a tag and is matched the way an axis's is — the entry's own categories or any part of them — so a layout declared on {NOUN} serves an entry declared a feminine noun, and where several match, the most specific wins. A layout carries no labels and no values of its own: everything a reader sees is resolved through the rows its axes and coordinates point at.",
-      "properties": {
-        "category": {
-          "type": "ref",
-          "ref": "eu.leksis.defs#tag",
-          "description": "The category whose forms are laid out: a single atom this language has bound (a part of speech, or a feature value), or a combination of them."
-        },
-        "blocks": {
-          "type": "array",
-          "minLength": 1,
-          "maxLength": 64,
-          "items": { "type": "ref", "ref": "#layoutBlock" },
-          "description": "The tables and lists this category's forms are shown in, in the order they are shown. Several blocks is how a paradigm stops being rectangular: a Latin conjugation is one table per mood and tense, plus a list for the infinitive, gerund and supine that no cell of the finite grid reaches."
-        }
-      }
-    },
-    "layoutBlock": {
-      "type": "object",
-      "required": ["kind"],
-      "description": "One table or list of a layout. A table assigns axes to its dimensions and derives its cells from the values those axes declared — the cells are never stored, or they could drift from the axes they came from. A list names its cells explicitly, which is what prints \"rosa, rosae\" beside a headword and what fixes the order of the flat list of forms.",
-      "properties": {
-        "kind": {
-          "type": "string",
-          "maxLength": 16,
-          "knownValues": ["table", "list"],
-          "description": "\"table\" for a grid derived from axes, \"list\" for explicitly named cells in order."
-        },
-        "summary": {
-          "type": "boolean",
-          "description": "Show this block beside the headword rather than behind the expander — a Latin dictionary prints the genitive and expects the reader to derive the rest. When no block of a layout is marked, all of them are shown: a language that has said nothing about summarising is not asking for anything to be hidden."
-        },
-        "fixed": {
-          "type": "array",
-          "maxLength": 16,
-          "items": { "type": "ref", "ref": "#layoutCoord" },
-          "description": "Coordinates constant across the whole block — \"Mood=Ind|Tense=Pres\" for one table of a conjugation. They are part of every cell's address, and they are what the block is captioned with, so a language that named the combination gets its own label for it rather than a synthesised one. Each must be bound in `values`, but need not be an axis: pinning a constant outside the paradigm's coordinate system is a legitimate thing for a table to do."
-        },
-        "rows": {
-          "type": "array",
-          "maxLength": 8,
-          "items": { "type": "string", "maxLength": 64 },
-          "description": "Feature names on the vertical dimension, outermost first — nesting is what makes a header span, and a paradigm's dimensions are not always two. Each must be an axis of this layout's category. May be empty: one axis on `columns` alone is a single-line table."
-        },
-        "columns": {
-          "type": "array",
-          "maxLength": 8,
-          "items": { "type": "string", "maxLength": 64 },
-          "description": "Feature names on the horizontal dimension, outermost first. The same feature must not appear on both dimensions, or one cell would need two of its values at once."
-        },
-        "exclude": {
-          "type": "array",
-          "maxLength": 256,
-          "items": { "type": "ref", "ref": "#layoutCell" },
-          "description": "Cells this paradigm does not have. A complete address removes one cell; an incomplete one removes every cell containing it, so a defective plural is one row rather than one per cell. A line or column left entirely excluded is dropped rather than printed empty — \"these forms do not exist\" and \"nobody has entered these forms yet\" must not look the same to a reader. Each coordinate must name a value of one of this block's own dimensions, since one that does not removes nothing at all."
-        },
-        "items": {
-          "type": "array",
-          "minLength": 1,
-          "maxLength": 256,
-          "items": { "type": "ref", "ref": "#layoutCell" },
-          "description": "For a list, the addresses to print, in the order they are printed. Each coordinate must be bound in `values`; unlike a table's dimensions they need not be axes, so a language can print a form it has never declared as varying."
-        }
-      }
-    },
-    "layoutCell": {
-      "type": "object",
-      "required": ["coords"],
-      "description": "An addressed cell. A list's item is a full address — the cell it prints — while an exclusion may be partial, and then it names a whole row, column or slice.",
-      "properties": {
-        "coords": {
-          "type": "array",
-          "minLength": 1,
-          "maxLength": 16,
-          "items": { "type": "ref", "ref": "#layoutCoord" }
-        }
-      }
-    },
-    "layoutCoord": {
-      "type": "object",
-      "required": ["feature", "value"],
-      "description": "One coordinate: a bare feature and value, carrying no provenance and no label. A layout is a selection from what this language has already declared, never a second place to declare it, so provenance is read back from the `values` row the pair names — which is how a cell of a minted value addresses the same tag a form authored through this language's own editor carries.",
-      "properties": {
-        "feature": {
-          "type": "string",
-          "maxLength": 64,
-          "description": "The feature, e.g. \"Case\". Matched by name, as everywhere else in this record."
-        },
-        "value": {
-          "type": "string",
-          "maxLength": 64,
-          "description": "The value, e.g. \"Gen\". Several comma-separated values mean one form spanning them all (\"Fem,Masc\")."
-        }
-      }
-    },
-    "axisDeclaration": {
-      "type": "object",
-      "required": ["category", "feature", "values"],
-      "description": "\"For this category, this feature varies across its forms, over these values, in this order.\" The values are named rather than inherited from everything the language has bound, because a language's inventory and one category's paradigm are not the same set: a language may distinguish three genders in its adjectives while splitting the masculine of its nouns in two, personal and non-personal. Naming them also fixes the order they are shown in — the alphabetical order of an identifier is not a grammatical order. Since the category is itself a tag, an axis can be declared on a combination, which is how a paradigm stops being rectangular: declaring person an axis of a finite verb and never of an infinitive leaves the infinitive with no person cells rather than with empty ones.",
-      "properties": {
-        "category": {
-          "type": "ref",
-          "ref": "eu.leksis.defs#tag",
-          "description": "The category whose forms vary: a single atom this language has bound (a part of speech, or a feature value), or a combination of them."
-        },
-        "feature": {
-          "type": "string",
-          "maxLength": 64,
-          "description": "Name of the varying feature, e.g. \"Number\". Must itself be bound in `features`; matched by name, exactly as an `inherent` declaration matches its own feature. The same feature must not be declared both inherent to a category and an axis of it — a paradigm cannot be built from a coordinate that is also a constant."
-        },
-        "values": {
-          "type": "array",
-          "minLength": 1,
-          "maxLength": 256,
-          "items": { "type": "string", "maxLength": 64 },
-          "description": "The values this category's forms range over, in the order they are shown. Each must be bound in `values` under this row's feature; matched by name, so a value minted on a Universal Dependencies feature needs no special case. Several comma-separated values in one item mean a form spanning them all (\"Fem,Masc\")."
         }
       }
     },
@@ -226,20 +93,51 @@
         }
       }
     },
-    "combinationBinding": {
+    "categoryDeclaration": {
       "type": "object",
-      "required": ["tag", "label"],
+      "required": ["category", "annotations"],
+      "description": "A headword category this language names, and the abbreviation(s) a reader sees for it. Where a category also names an `axis`, each annotation says which value of that axis its own headwords carry — which is how one category holds several headword flavours, each abbreviated differently: an ordinary Breton noun is cited in the singular, a collective-only noun in the collective, and an anv-kadarn stroll in the plural with its singulative derived by rule. A category never declares the axis's value INVENTORY: that is the layer-1 bound values of the feature, and a paradigm's tables enumerate the cells they print by hand.",
       "properties": {
-        "tag": {
+        "category": {
           "type": "ref",
           "ref": "eu.leksis.defs#tag",
-          "description": "The combination being named, e.g. NOUN + Gender=Fem. Two or more items: a single one is an atom, and atoms are named in `pos` and `values`."
+          "description": "The category being named, e.g. NOUN, or NOUN + Gender=Fem. A single atom is allowed — a part of speech on its own is a headword category like any other — and a combination of two or more must be reachable through the `inherent` declarations that build it up."
         },
-        "label": { "type": "ref", "ref": "#label" },
-        "references": {
+        "axis": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Name of the feature this category's forms vary over, e.g. \"Number\". Must itself be bound in `features`, matched by name exactly as an `inherent` declaration matches its own feature, and must NOT be declared inherent to this same category — a paradigm cannot be built from a coordinate that is also a constant. When present, every annotation must name the axis value its headword carries; when absent, none may."
+        },
+        "annotations": {
           "type": "array",
+          "minLength": 1,
           "maxLength": 16,
-          "items": { "type": "ref", "ref": "#reference" }
+          "items": { "type": "ref", "ref": "#categoryAnnotation" },
+          "description": "How this language names the category, once per headword flavour. One item and no axis is the ordinary case: a single label for the category. Several items each name a different `default` value of the axis, and each is a labelled tag of its own — the category plus that value — which is what an entry created through it carries."
+        }
+      }
+    },
+    "categoryAnnotation": {
+      "type": "object",
+      "required": ["long"],
+      "description": "One abbreviation of a category, and the axis value the headwords it names sit at. Same two label halves as `#label`, plus the `default` that makes them distinguishable within one category.",
+      "properties": {
+        "long": {
+          "type": "string",
+          "maxLength": 1280,
+          "maxGraphemes": 128,
+          "description": "Full form, written in this language for a reader of it — \"anv-kadarn gourel\", never \"masculine noun\"."
+        },
+        "short": {
+          "type": "string",
+          "maxLength": 320,
+          "maxGraphemes": 32,
+          "description": "Optional abbreviated display form; when present it is shown instead of the full form, which appears on hover."
+        },
+        "default": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "The value of this category's `axis` that a headword named by this annotation carries — required when the category names an axis, forbidden when it does not. Must be bound in `values` under that feature; matched by name, so a value minted on a Universal Dependencies feature needs no special case. Several comma-separated values mean a headword spanning them all. Two annotations of one category may not share it: it is what tells them apart."
         }
       }
     },
@@ -289,7 +187,7 @@
         },
         "lexicographic": {
           "type": "boolean",
-          "description": "True when this is a lexicographic label set rather than a grammatical feature: register, domain, editorial usage (\"archaic\", \"neologism\", \"by extension\"). Its values are ordinary tags an entry or a sense may carry, rendering and binding exactly like any other; the flag withholds only participation in the grammatical layers, so such a feature is never inherent to a category, never an axis of one, never a layout dimension and never part of a named combination — none of those describe it. A record saying otherwise is incoherent rather than invalid: the AppView reports it and indexes it anyway."
+          "description": "True when this is a lexicographic label set rather than a grammatical feature: register, domain, editorial usage (\"archaic\", \"neologism\", \"by extension\"). Its values are ordinary tags an entry or a sense may carry, rendering and binding exactly like any other; the flag withholds only participation in the grammatical layers, so such a feature is never inherent to a category, never the axis of one and never part of a category's own bundle — none of those describe it. A record saying otherwise is refused rather than indexed and flagged: the editing interface navigates these relations, so it could not have published one."
         },
         "references": {
           "type": "array",

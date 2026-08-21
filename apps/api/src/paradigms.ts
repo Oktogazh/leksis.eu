@@ -3,7 +3,7 @@ import type { ParadigmView } from "@leksis/types";
 import { db } from "./db";
 
 // Paradigms read path — the morphology arc's first endpoint, and the first the
-// arc has needed at all: layers 1 to 4 declared themselves inside the language
+// arc has needed at all: layers 1 to 3 declared themselves inside the language
 // record and cost the API nothing. Layer 5 breaks that streak by design, because
 // its rules are their own records and a client has to be told which ones to
 // resolve.
@@ -17,25 +17,26 @@ import { db } from "./db";
 // morphology.
 
 /**
- * Every current paradigm of one language, **most specific selector first**.
+ * Every current paradigm of one language, ordered by selector key.
  *
- * The order is the contract, not a convenience: it is the precedence the
- * expansion job applied when it generated the forms now sitting in the index,
- * so a client that walks this list in order and takes the first paradigm to
- * fill a cell reproduces exactly what search knows. Sorting it client-side
- * would be one more place for the two to drift apart.
+ * The order used to be the contract — most specific selector first, matching the
+ * precedence the expansion job applied when it generated the forms sitting in
+ * the index. ADR-0019 removed the subject: a selector is matched **exactly**, so
+ * at most one paradigm reaches any one headword bundle and there is no
+ * precedence left for a client to reproduce. What remains is stability, so two
+ * calls answer alike and a client rendering a list does not see it shuffle;
+ * `selectorKey` is the natural key for that because it is the identity the rkey
+ * hashes.
  *
- * Specificity is the selector's atom count, with the more recently indexed
- * paradigm winning a tie — `bySpecificity` in the expansion job, expressed in
- * AQL. There is no cap: a language has tens of paradigms, one per inflection
- * class, and a client that cannot render an entry without all of them should
- * not be handed a page of them.
+ * There is no cap: a language has tens of paradigms, one per inflection class,
+ * and a client that cannot render an entry without all of them should not be
+ * handed a page of them.
  */
 export async function getLanguageParadigms(tag: string): Promise<ParadigmView[]> {
   const cursor = await db.query<ParadigmView>(aql`
     FOR p IN paradigms
       FILTER p.languageID == ${tag} AND p.current == true
-      SORT LENGTH(NOT_NULL(p.selectorAtoms, [])) DESC, p.indexedAt DESC
+      SORT p.selectorKey ASC, p.indexedAt DESC
       RETURN {
         paradigmKey: p.paradigmKey,
         languageID: p.languageID,

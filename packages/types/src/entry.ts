@@ -109,14 +109,14 @@ export const ENTRY_DEFINITIONS_MAX_DEPTH = 3;
  * **One tag, not a list**, because the tag is the form's address in the
  * paradigm: a real dictionary's "gen. pl." is one coordinate in two
  * dimensions, so it is one bundle carrying `Case=Gen` and `Number=Plur`. That
- * is what layer 5 will match a generated cell against by canonical key, and
- * what layer 4 will place in a grid; a list of separate tags could not say
- * which combination it meant.
+ * is what a generated cell is matched against by canonical key, and what a
+ * paradigm's tables place in a grid; a list of separate tags could not say which
+ * combination it meant.
  *
- * Form-level altitude: these values are the ones the language declares as
- * **axes** of the entry's category. Nothing enforces that here — an axis
- * declaration is a menu, never a whitelist, and a form whose tag matches no
- * declared axis simply stays in the flat list.
+ * Form-level altitude: these values range over the feature the entry's category
+ * declares its forms vary over. Nothing enforces that here — a declaration is a
+ * menu, never a whitelist, and a form whose tag matches no cell simply stays in
+ * the flat list.
  */
 export interface EntryInflectedForm {
   tag: Tag;

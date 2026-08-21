@@ -3,7 +3,7 @@
 // are the contract: the lexicon JSON, these shapes and the ArangoDB `paradigms`
 // collection move together.
 //
-// A paradigm is one language's recipe for filling the cells layer 4 laid out.
+// A paradigm is one language's recipe for the forms of one category of words.
 // It is a record of its own rather than another sub-object on the language
 // record because rules are large, written per inflection class, and edited at a
 // different cadence than the tag bindings they address (settled at layer 2).
@@ -152,10 +152,15 @@ export interface LeksisParadigmRecord {
   /** Well-formed BCP 47 tag, lowercase. */
   languageID: string;
   /**
-   * The category these rules apply to, a bundle over what the language declared
-   * inherent. Matched against an entry by **containment**, as an axis and a
-   * layout are, so a paradigm selecting `{VERB}` reaches an entry categorised
-   * `{VERB, Conjugation=2}`.
+   * The category these rules apply to: a **full headword bundle** over what the
+   * language declared — its part of speech, its inherent features, and the
+   * default axis value where the category names one.
+   *
+   * Matched against an entry by **exact match** on that bundle since ADR-0019,
+   * not by containment: `{VERB}` reaches only entries whose headword bundle is
+   * literally a bare verb, and `{VERB, Conjugation=2}` is a different paradigm
+   * rather than a more specific one. Two paradigms can therefore never both
+   * reach one entry, which is what retired the most-specific-wins machinery.
    */
   selector: Tag;
   /** Homolingual name of the paradigm ("first declension"). */
@@ -760,6 +765,10 @@ export interface MergedForms<P> {
  * settled: **the entry's own `otherForms` win their cells**, and among
  * paradigms the earlier one in the list wins.
  *
+ * Since ADR-0019 a selector is matched exactly, so at most one paradigm reaches
+ * an entry and the precedence below is a formality — kept because the shape is
+ * a list and a caller handing it two paradigms deserves a defined answer.
+ *
  * This exists so that the AppView's expansion job and the reader's entry page
  * cannot disagree. They already share the *generator* (invariant 6); without
  * sharing this they would still be free to differ on which of two candidates
@@ -831,7 +840,7 @@ export interface ParadigmView {
   /** Stable identity across versions, and the record key: `{lang}-{hash16}`. */
   paradigmKey: string;
   languageID: string;
-  /** The category these rules fill cells for, matched against an entry by containment. */
+  /** The category these rules fill cells for, matched against an entry exactly. */
   selector: Tag;
   /** at:// URI of the current record (resolved client-side for the rules). */
   recordURI: string;
@@ -847,9 +856,12 @@ export interface ParadigmView {
 
 /**
  * Response shape of GET /languages/:tag/paradigms — every current paradigm of
- * one language, most specific selector first, so a client applying them to an
- * entry inherits the precedence the AppView used and cannot disagree with the
- * forms it indexed.
+ * one language, ordered by selector key for stability.
+ *
+ * The order carried meaning while selectors were matched by containment and the
+ * most specific one won a cell; under ADR-0019's exact match at most one
+ * paradigm reaches an entry, so there is no precedence left for a client to
+ * inherit and the sort exists only so two calls answer alike.
  */
 export interface LanguageParadigmsResponse {
   languageID: string;

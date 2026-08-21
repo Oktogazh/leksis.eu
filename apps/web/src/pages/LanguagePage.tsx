@@ -882,7 +882,7 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
             setGrammarOpen(false);
             setSyncingURI(uri);
             // The entry pages cache this language's grammar for the session, so
-            // a layout edited here would otherwise keep laying entries out the
+            // a category renamed here would otherwise keep labelling entries the
             // old way until a reload.
             forgetLanguageGrammar(tag);
           }}

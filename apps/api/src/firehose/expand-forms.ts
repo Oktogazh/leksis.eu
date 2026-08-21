@@ -1,5 +1,5 @@
 import { aql, type Database } from "arangojs";
-import { mergeParadigms } from "@leksis/types";
+import { headwordMatchKey, mergeParadigms } from "@leksis/types";
 import type { IndexedForm } from "./ingest-entry";
 import type { ParadigmDoc } from "./ingest-paradigm";
 
@@ -12,9 +12,9 @@ import type { ParadigmDoc } from "./ingest-paradigm";
 // feed search, which is the whole reason this runs at ingest rather than in the
 // reader's browser: Hunspell-shaped affix rules are not cheaply invertible, so
 // finding an entry by one of its inflected forms means the forms have to be in
-// the index before anyone searches for them. That cost was accepted at layer 3
-// and is paid here — one rule edit re-expands the slice of a language its
-// selector reaches.
+// the index before anyone searches for them. That cost was accepted when the
+// axes were designed and is paid here — one rule edit re-expands the slice of a
+// language its selector reaches.
 //
 // Three properties this module must keep:
 //
@@ -64,7 +64,7 @@ interface ExpandableEntry {
   languageID: string;
   orthography: string[];
   otherForms: IndexedForm[];
-  inherentAtoms: string[];
+  selectorKeys: string[];
 }
 
 /** The projection above, as AQL — one definition, so the queries cannot drift. */
@@ -74,7 +74,7 @@ const ENTRY_FACTS = aql`{
   languageID: e.languageID,
   orthography: NOT_NULL(e.orthography, []),
   otherForms: NOT_NULL(e.otherForms, []),
-  inherentAtoms: NOT_NULL(e.inherentAtoms, [])
+  selectorKeys: NOT_NULL(e.selectorKeys, [])
 }`;
 
 /**
@@ -97,19 +97,16 @@ export function forgetParadigms(): void {
 }
 
 /**
- * Most specific selector first, then most recently indexed.
+ * Most recently indexed first.
  *
- * Specificity is the atom count: a paradigm selecting `{VERB, Conjugation=2}`
- * beats one selecting `{VERB}` for the cells they both fill, which is the same
- * most-specific-first instinct `placeForms` already has when a form and a cell
- * address meet. The `indexedAt` tiebreak is v1's answer to two equally specific
- * selectors both matching (design note §7.5) — a rule of order, not of merit,
- * until voting makes it a principled one.
+ * Specificity used to lead this comparison, because a selector was matched by
+ * containment and `{VERB, Conjugation=2}` beat `{VERB}` for the cells they both
+ * filled. Under ADR-0019's exact match two selectors that both reach one entry
+ * are the *same* selector, so there is nothing left to be more specific about
+ * and only the tiebreak survives — a rule of order, not of merit, until voting
+ * makes it a principled one.
  */
 function bySpecificity(a: ParadigmDoc, b: ParadigmDoc): number {
-  if (a.selectorAtoms.length !== b.selectorAtoms.length) {
-    return b.selectorAtoms.length - a.selectorAtoms.length;
-  }
   return b.indexedAt.localeCompare(a.indexedAt);
 }
 
@@ -160,9 +157,14 @@ function expandOne(entry: ExpandableEntry, paradigms: readonly ParadigmDoc[]): E
   const lemma = entry.orthography[0];
   if (lemma === undefined || lemma === "") return { otherForms: asserted, formIssues: [] };
 
-  const held = new Set(entry.inherentAtoms);
+  // Exact match on the headword bundle (ADR-0019): a paradigm reaches an entry
+  // when one of the entry's headword keys *is* its selector's key, not when the
+  // bundle merely contains it. An entry carrying two categories can still be
+  // reached by two paradigms — one per bundle — which is why this is a filter
+  // and not a lookup.
+  const held = new Set(entry.selectorKeys);
   const matching = paradigms.filter((paradigm) =>
-    paradigm.selectorAtoms.every((atom) => held.has(atom)),
+    held.has(headwordMatchKey(paradigm.selector)),
   );
   if (matching.length === 0) return { otherForms: asserted, formIssues: [] };
 
@@ -256,7 +258,7 @@ async function expandEntries(
  * the version's own bundle every time.
  *
  * A withdrawn version is skipped: ingest strips its search halves and its
- * inherent bundle, and generating forms for an entry its author says should not
+ * headword bundle, and generating forms for an entry its author says should not
  * be offered would put them back into search.
  */
 export async function expandEntry(
@@ -267,7 +269,7 @@ export async function expandEntry(
     languageID: string;
     orthography: string[];
     otherForms: IndexedForm[];
-    inherentAtoms: string[];
+    selectorKeys: string[];
     deleted: boolean;
     /**
      * Whether the stored doc already carries unmet-requirement rows. Freshly
@@ -314,9 +316,10 @@ export async function expandEntry(
  * Two disjoint sets, queried separately so each can be served the way it is
  * best served:
  *
- * 1. **The entries the selector reaches now** — an indexed intersection on
- *    `inherentAtoms`, which is what that index exists for. Narrowed by the first
- *    atom (which the index can serve) and then filtered exactly.
+ * 1. **The entries the selector reaches now** — an indexed equality on
+ *    `selectorKeys`, which is what that index exists for. Under ADR-0019's exact
+ *    match this is one array lookup, where containment needed a narrowing atom
+ *    and then a precise filter behind it.
  * 2. **The entries still carrying this paradigm's output** — its generated rows
  *    or its unmet requirements. This is the sweep, and it is why a withdrawal
  *    cleans up after itself: those entries no longer match anything, so set 1
@@ -328,19 +331,15 @@ export async function expandEntry(
  */
 export async function expandForParadigm(
   database: Database,
-  paradigm: Pick<ParadigmDoc, "paradigmKey" | "languageID" | "selectorAtoms">,
+  paradigm: Pick<ParadigmDoc, "paradigmKey" | "languageID" | "selector">,
 ): Promise<void> {
-  const atoms = paradigm.selectorAtoms;
-  // A selector with no atoms at all reaches every entry of the language; there
-  // is no atom to narrow on, so the filter alone (vacuously true) does the work.
-  const narrow = atoms.length > 0 ? aql`FILTER ${atoms[0]} IN e.inherentAtoms` : aql``;
+  const selectorKey = headwordMatchKey(paradigm.selector);
   const reachedCursor = await database.query<ExpandableEntry>(aql`
     FOR e IN entries
       FILTER e.languageID == ${paradigm.languageID}
         AND e.current == true
         AND e.deleted != true
-      ${narrow}
-      FILTER LENGTH(INTERSECTION(NOT_NULL(e.inherentAtoms, []), ${atoms})) == ${atoms.length}
+      FILTER ${selectorKey} IN e.selectorKeys
       RETURN ${ENTRY_FACTS}
   `);
   const entries = new Map<string, ExpandableEntry>();

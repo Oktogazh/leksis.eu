@@ -1,6 +1,6 @@
 import {
-  inherentAtomKeys,
-  tagAtomKeys,
+  headwordKeys,
+  headwordMatchKey,
   type Grammar,
   type LeksisParadigmRecord,
   type Tag,
@@ -40,9 +40,8 @@ export interface ResolvedParadigm {
 const cache = new Map<string, Promise<ResolvedParadigm[]>>();
 
 /**
- * The current paradigms of a language, in the AppView's own precedence order
- * (most specific selector first), with the ones that could not be resolved left
- * out.
+ * The current paradigms of a language, in the order the AppView served them,
+ * with the ones that could not be resolved left out.
  *
  * **It never rejects, and an empty list is an ordinary answer.** Every caller
  * renders a paradigm, and a paradigm has a total fallback: no rules simply means
@@ -71,8 +70,10 @@ export function fetchParadigms(tag: string): Promise<ResolvedParadigm[]> {
         return record === null ? null : { paradigmKey: pointer.paradigmKey, record };
       }),
     );
-    // `Promise.all` preserves the order the AppView sorted them in, which is the
-    // precedence the generated forms in its index were produced with.
+    // `Promise.all` preserves the order the AppView sorted them in. Since
+    // ADR-0019 that order carries no precedence — a selector matches exactly, so
+    // at most one paradigm reaches a headword bundle — and it is kept only so a
+    // list of them does not shuffle between loads.
     return resolved.filter((item): item is ResolvedParadigm => item !== null);
   })().catch((error: unknown) => {
     console.warn(`could not load the paradigms of "${tag}":`, error);
@@ -90,36 +91,35 @@ export function forgetParadigms(tag: string): void {
 }
 
 /**
- * The paradigms that actually reach one entry, in the precedence order they
- * arrived in.
+ * The paradigms that actually reach one entry.
  *
- * **A paradigm matches an entry by containment**: the entry's inherent bundle
- * contains the selector (design note §1.3). Without this filter a language's
- * verb conjugation runs over its nouns, and — worse than untidy — the reader
- * shows a different set of forms from the one the AppView expanded into the
- * search index, which is the single thing one shared generator exists to
- * prevent. It uses `inherentAtomKeys`, the same function the firehose consumer
- * computes an entry's stored `inherentAtoms` with, so the two sides cannot
- * drift.
+ * **A paradigm matches an entry exactly** (ADR-0019): one of the entry's
+ * headword keys *is* the selector's key. It was containment until the merge —
+ * the entry's inherent bundle containing the selector — and the change is not
+ * cosmetic: the bundle now carries the default axis value the entry was created
+ * through, so `{NOUN}` and `{NOUN, Number=Plur}` are two kinds of headword with
+ * two paradigms rather than a general rule and a refinement of it.
  *
- * It lives here rather than inside `EntryParadigm` because only a caller
- * holding an *entry* can answer the question. The rule editor's live preview
- * has no entry — its draft is by construction the paradigm for the category
- * being previewed — so it renders the draft directly and must not be put
- * through this.
+ * Without this filter a language's verb conjugation runs over its nouns, and —
+ * worse than untidy — the reader shows a different set of forms from the one the
+ * AppView expanded into the search index, which is the single thing one shared
+ * generator exists to prevent. It uses `headwordKeys`, the same function the
+ * firehose consumer computes an entry's stored `selectorKeys` with, so the two
+ * sides cannot drift.
+ *
+ * It lives here rather than inside `EntryParadigm` because only a caller holding
+ * an *entry* can answer the question.
  *
  * With no grammar loaded it yields the part of speech alone, which is the right
- * answer for a language that has declared nothing inherent: a paradigm keyed on
- * the bare part of speech still reaches, one keyed on an inflection class does
- * not until the language says that class is something a word *is*.
+ * answer for a language that has declared nothing: a paradigm keyed on the bare
+ * part of speech still reaches, one keyed on an inflection class does not until
+ * the language says that class is something a word *is*.
  */
 export function paradigmsReaching(
   grammar: Grammar | undefined,
   categories: readonly Tag[],
   paradigms: readonly ResolvedParadigm[],
 ): ResolvedParadigm[] {
-  const held = new Set(inherentAtomKeys(grammar?.inherent ?? [], categories));
-  return paradigms.filter((paradigm) =>
-    tagAtomKeys(paradigm.record.selector).every((atom) => held.has(atom)),
-  );
+  const held = new Set(headwordKeys(grammar ?? {}, categories));
+  return paradigms.filter((paradigm) => held.has(headwordMatchKey(paradigm.record.selector)));
 }

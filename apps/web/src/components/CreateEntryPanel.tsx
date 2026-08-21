@@ -1,14 +1,11 @@
 import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  applicableAxes,
   categoryRefinements,
   categoryRoots,
   LEKSIS_ENTRY_COLLECTION,
   type LabelView,
   type Grammar,
-  type GrammarValue,
-  type ResolvedAxis,
   labelLookup,
   MAX_DEFINITION_EXAMPLES,
   normalizeOclc,
@@ -58,61 +55,31 @@ let nextAnnotationId = 0;
 const SOURCE_SEARCH_DEBOUNCE_MS = 300;
 
 /**
- * Which form this is: one value picked per declared axis, assembled into a
- * single tag — the form's address in the paradigm ("gen. pl." is one bundle
- * carrying Case=Gen and Number=Plur).
+ * Which form this is: one tag saying where it sits in the paradigm ("gen. pl."
+ * is one bundle carrying Case=Gen and Number=Plur).
  *
- * The axes are **orthogonal dimensions, not a narrowing tree**: unlike the
- * inherent features of a category, where each choice conditions what is
- * offered next, a cell address takes one value from each axis independently.
- * So this offers a selector per axis rather than reusing the category
- * editor's walk.
- *
- * When the language has declared no axis for this entry's category, it
- * degrades to the flat picker of bound tags plus manual entry — the same
- * documented degradation the category editor has, and what keeps a form
- * labellable in a language whose grammar nobody has declared.
+ * **The flat picker, plus manual entry** — the documented degradation, and for
+ * the moment the only path. It used to offer one selector per declared axis,
+ * because the axes of a category were a declaration of their own and could be
+ * resolved to their values in order; ADR-0019 moved the axis onto the category
+ * and left the value inventory to layer 1, so the selector has to be rebuilt
+ * over that instead (slice 3). Until then this is exactly what a form editor
+ * has always fallen back to in a language whose grammar nobody has declared,
+ * which is why the fallback existing was worth insisting on.
  */
 function FormTagEditor({
   tag,
   onChange,
-  axes,
   labels,
 }: {
   tag: Tag | null;
   onChange: (tag: Tag | null) => void;
-  axes: ResolvedAxis[];
   labels: LabelView[];
 }) {
   const { t } = useTranslation();
   const [manual, setManual] = useState("");
   const lookup = labelLookup(labels);
   const parsed = parseTagInput(manual);
-  const feats = tag?.feats ?? [];
-
-  /** Set or clear one axis's value, leaving the other axes alone. */
-  function pick(feature: string, value: GrammarValue | null) {
-    const rest = feats.filter((f) => f.feature !== feature);
-    const next =
-      value === null
-        ? rest
-        : [
-            ...rest,
-            {
-              feature: value.feature,
-              value: value.value,
-              ...(value.scheme !== undefined ? { scheme: value.scheme } : {}),
-            },
-          ];
-    onChange(
-      next.length === 0 && tag?.upos === undefined
-        ? null
-        : {
-            ...(tag?.upos !== undefined ? { upos: tag.upos } : {}),
-            ...(next.length > 0 ? { feats: next } : {}),
-          },
-    );
-  }
 
   const bound = labels.filter((a) => a.tag !== undefined && a.long !== undefined);
 
@@ -135,52 +102,22 @@ function FormTagEditor({
         </div>
       )}
 
-      {axes.length > 0
-        ? axes.map((axis) => {
-            const current = feats.find((f) => f.feature === axis.feature.feature);
-            return (
-              <div key={axis.feature.feature} className="mt-2">
-                <p className="text-xs text-content-subtle">{axis.feature.label.long}</p>
-                <ul className="mt-1 flex flex-wrap gap-1.5">
-                  {axis.values.map((value) => {
-                    const active = current?.value === value.value;
-                    return (
-                      <li key={value.value}>
-                        <button
-                          type="button"
-                          onClick={() => pick(axis.feature.feature, active ? null : value)}
-                          title={value.label.long}
-                          className={
-                            active
-                              ? "rounded-full border border-primary bg-surface px-2.5 py-1 font-mono text-xs font-medium text-primary"
-                              : "rounded-full border border-dashed px-2.5 py-1 font-mono text-xs text-content-muted hover:border-primary hover:text-primary"
-                          }
-                        >
-                          {value.label.short ?? value.label.long}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            );
-          })
-        : bound.length > 0 && (
-            <ul className="mt-2 flex flex-wrap gap-1.5">
-              {bound.map((option, i) => (
-                <li key={i}>
-                  <button
-                    type="button"
-                    onClick={() => onChange(option.tag!)}
-                    title={option.long}
-                    className="rounded-full border border-dashed px-2.5 py-1 font-mono text-xs text-content-muted hover:border-primary hover:text-primary"
-                  >
-                    + {option.short ?? option.long}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+      {bound.length > 0 && (
+        <ul className="mt-2 flex flex-wrap gap-1.5">
+          {bound.map((option, i) => (
+            <li key={i}>
+              <button
+                type="button"
+                onClick={() => onChange(option.tag!)}
+                title={option.long}
+                className="rounded-full border border-dashed px-2.5 py-1 font-mono text-xs text-content-muted hover:border-primary hover:text-primary"
+              >
+                + {option.short ?? option.long}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
 
       <div className="mt-2 flex gap-2">
         <input
@@ -215,12 +152,10 @@ function FormTagEditor({
 function OtherFormsEditor({
   forms,
   onChange,
-  axes,
   labels,
 }: {
   forms: OtherFormDraft[];
   onChange: (forms: OtherFormDraft[]) => void;
-  axes: ResolvedAxis[];
   labels: LabelView[];
 }) {
   const { t } = useTranslation();
@@ -254,7 +189,6 @@ function OtherFormsEditor({
           <FormTagEditor
             tag={row.tag}
             onChange={(tag) => onChange(forms.map((f) => (f.id === row.id ? { ...f, tag } : f)))}
-            axes={axes}
             labels={labels}
           />
         </div>
@@ -1118,15 +1052,6 @@ export function EntryEditorDialog({
   /** Current entries in the target language sharing a spelling with a fresh entry, for the duplicate warning. */
   const [duplicates, setDuplicates] = useState<EntryView[]>([]);
 
-  /**
-   * What this entry's forms may vary over: the axes the language declares for
-   * the categories it has been given. Empty until a category is picked — which
-   * is the cascade doing its work, since a form's dimensions follow from what
-   * kind of word it is — and empty for a language that has declared none, where
-   * the form editor falls back to its flat picker.
-   */
-  const formAxes = grammar === null ? [] : applicableAxes(grammar, categories);
-
   const target = language ?? languages.find((l) => l.tag === pickedTag) ?? null;
   const targetTag = target?.tag ?? null;
 
@@ -1587,7 +1512,6 @@ export function EntryEditorDialog({
             <OtherFormsEditor
               forms={otherForms}
               onChange={setOtherForms}
-              axes={formAxes}
               labels={labels}
             />
           </fieldset>
