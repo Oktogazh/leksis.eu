@@ -2,6 +2,8 @@ import {
   RESOLVE_URI_LIMIT,
   SEARCH_RATE_LIMIT_MS,
   type RateLimitedResponse,
+  type LabelSample,
+  type LabelSampleResponse,
   type LabelsResponse,
   type LabelView,
   type CognateNetworkResponse,
@@ -151,6 +153,34 @@ export async function fetchLabels(languageTag: string): Promise<LabelView[]> {
   }
   const body = (await res.json()) as LabelsResponse;
   return body.labels;
+}
+
+/**
+ * One entry using one row of a language's front matter, drawn at random by the
+ * AppView, or null when nothing does.
+ *
+ * `row` is the row's canonical key — `tagKey(tag)` for anything an entry can
+ * carry. Null is the ordinary answer, not a failure: a label declared before
+ * anybody applied it has no example to show, and the caller renders the same
+ * nothing whether the row is unused or unknown.
+ */
+export async function fetchLabelSample(
+  languageTag: string,
+  row: string,
+): Promise<LabelSample | null> {
+  const params = new URLSearchParams({ row });
+  const res = await fetch(
+    `${API_BASE}/languages/${encodeURIComponent(languageTag)}/labels/random?${params.toString()}`,
+  );
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`GET /languages/${languageTag}/labels/random failed: ${res.status}`);
+  }
+  const drawn = ((await res.json()) as LabelSampleResponse).entry;
+  // A body without a usable entry is treated as no entry rather than trusted
+  // into a link: this one is rendered as an href, so a missing key would ship
+  // the reader to /entry/undefined.
+  return drawn?.key ? drawn : null;
 }
 
 /**

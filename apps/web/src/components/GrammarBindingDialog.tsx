@@ -25,6 +25,8 @@ import {
   type Grammar,
   type GrammarLabel,
   type GrammarReference,
+  type LabelSample,
+  type LabelView,
   type LayoutAddress,
   type LayoutCoord,
   type LeksisLanguageRecord,
@@ -38,8 +40,14 @@ import { ParadigmEditorDialog } from "./ParadigmEditorDialog";
 import { BlockCaption, ParadigmList, ParadigmTable } from "./ParadigmView";
 import { fetchFeatureValues, fetchFeatures, type UdFeature, type UdValue } from "@leksis/ud";
 import { useSession } from "../auth/SessionProvider";
-import { fetchCurrentLanguageRecord, fetchLanguageParadigms } from "../lib/api";
+import {
+  fetchCurrentLanguageRecord,
+  fetchLabelSample,
+  fetchLabels,
+  fetchLanguageParadigms,
+} from "../lib/api";
 import { fetchLanguageRecord } from "../lib/atproto-record";
+import { entryPath } from "../lib/routes";
 import {
   abbreviationRows,
   addAxis,
@@ -246,6 +254,15 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
   const [udFeatures, setUdFeatures] = useState<UdFeature[]>([]);
   const [udValues, setUdValues] = useState<UdValue[]>([]);
   const [udLoading, setUdLoading] = useState(false);
+  /**
+   * The indexed label rows, for their usage counts alone — what the entries of
+   * this language have actually done with the vocabulary being declared here.
+   *
+   * Side data in the strictest sense: an empty list is indistinguishable from a
+   * dictionary where nothing is used yet, and both render the same nothing, so
+   * a failure needs no handling beyond not having the counts.
+   */
+  const [labels, setLabels] = useState<LabelView[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -263,10 +280,48 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
         if (!cancelled) setLoading(false);
       }
     })();
+    fetchLabels(tag)
+      .then((rows) => {
+        if (!cancelled) setLabels(rows);
+      })
+      // Logged rather than swallowed: with no counts every row renders as
+      // unused, which is exactly what a young dictionary looks like — so a
+      // failure here is invisible in the interface and needs to be visible
+      // somewhere.
+      .catch((err: unknown) => console.error("could not load usage counts:", err));
     return () => {
       cancelled = true;
     };
   }, [tag]);
+
+  /**
+   * Usage by canonical tag key. Only rows standing for a tag are indexed here,
+   * which costs nothing: usage reaches this model from entries, an entry
+   * carries tags and nothing else, so a row with no tag — a feature *name*, a
+   * plain abbreviation — is at zero by construction.
+   */
+  const usage = useMemo(() => {
+    const index = new Map<string, number>();
+    for (const row of labels) {
+      if (row.tag !== undefined) index.set(tagKey(row.tag), row.count);
+    }
+    return index;
+  }, [labels]);
+
+  /**
+   * The usage control for one row, or nothing where nothing uses it.
+   *
+   * Keyed on the tag, not left to position: the drawn word is state inside the
+   * control, and every level here renders its rows from a list whose items are
+   * keyed only within that level. Two levels whose rows land at the same index
+   * (`Mood=Ind` where `Definite=Ind` was) would otherwise reconcile onto one
+   * another and carry a word across from a tag it belongs to into one it does
+   * not.
+   */
+  function usageFor(rowTag: Tag) {
+    const key = tagKey(rowTag);
+    return <Usage key={key} languageTag={tag} tag={rowTag} count={usage.get(key) ?? 0} />;
+  }
 
   // Candidates are fetched when a level that shows them is opened, not on
   // mount: a contributor who only edits a label never touches the network.
@@ -842,12 +897,18 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
         <ul className="space-y-1.5">
           {HEADWORD_UPOS.map((upos) => {
             const bound = findPos(draft, upos.value);
+            // An unbound part of speech still has usage to report — entries may
+            // carry NOUN in a language that never said what to call it, and
+            // that gap is exactly what the naming worklist is about. So the tag
+            // is built from the row where there is one and from the identifier
+            // where there is not; with no scheme either way, they key alike.
+            const rowTag = posTag(bound ?? { value: upos.value });
             return (
-              <li key={upos.value}>
+              <li key={upos.value} className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => openForm({ at: "posForm", value: upos.value })}
-                  className={levelButton}
+                  className={`${levelButton} flex-1`}
                 >
                   <span className="flex min-w-0 items-baseline gap-2">
                     <span className="font-mono text-sm text-content">{upos.value}</span>
@@ -863,15 +924,16 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
                     </span>
                   )}
                 </button>
+                {usageFor(rowTag)}
               </li>
             );
           })}
           {minted.map((row) => (
-            <li key={row.value}>
+            <li key={row.value} className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => openForm({ at: "posForm", value: row.value })}
-                className={levelButton}
+                className={`${levelButton} flex-1`}
               >
                 <span className="flex min-w-0 items-baseline gap-2">
                   <span className="font-mono text-sm text-content">{row.value}</span>
@@ -879,6 +941,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
                 </span>
                 <span className="text-sm text-content">{row.label.short ?? row.label.long}</span>
               </button>
+              {usageFor(posTag(row))}
             </li>
           ))}
         </ul>
@@ -1057,11 +1120,11 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
             {values.map((row) => {
               const note = row.note?.trim() ?? "";
               return (
-                <li key={row.value}>
+                <li key={row.value} className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() => openForm({ at: "valueForm", feature, value: row.value })}
-                    className={stackedLevelButton}
+                    className={`${stackedLevelButton} flex-1`}
                   >
                     <span className="flex w-full items-center justify-between gap-3">
                       <span className="flex min-w-0 items-baseline gap-2">
@@ -1088,6 +1151,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
                       </span>
                     )}
                   </button>
+                  {usageFor(valueTag(row))}
                 </li>
               );
             })}
@@ -1135,17 +1199,18 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
             {pos.map((row) => {
               const category = posTag(row);
               return (
-                <li key={tagKey(category)}>
+                <li key={tagKey(category)} className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() => setPath({ at: "l2category", category })}
-                    className={levelButton}
+                    className={`${levelButton} flex-1`}
                   >
                     <span className="text-sm text-content">{row.label.short ?? row.label.long}</span>
                     <span className="text-xs text-content-subtle">
                       {t("grammar.l2InherentCount", { count: inherentRows(draft, category).length })}
                     </span>
                   </button>
+                  {usageFor(category)}
                 </li>
               );
             })}
@@ -1161,6 +1226,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
                     {t("grammar.l2InherentCount", { count: inherentRows(draft, row.tag).length })}
                   </span>
                 </button>
+                {usageFor(row.tag)}
                 {/* A one-atom row is not a combination at all — it belongs in
                     `pos` or `values` — and this is the ONLY control anywhere
                     that can remove one: every other level reaches a
@@ -1312,13 +1378,13 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
               const combination = combinationTag(category, value);
               const bound = findCombination(draft, combination);
               return (
-                <li key={tagKey(combination)}>
+                <li key={tagKey(combination)} className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() =>
                       openForm({ at: "l2combinationForm", category, feature, tag: combination })
                     }
-                    className={levelButton}
+                    className={`${levelButton} flex-1`}
                   >
                     <span className="flex min-w-0 items-baseline gap-2">
                       <span className="text-sm text-content">{categoryText(combination)}</span>
@@ -1334,6 +1400,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
                       </span>
                     )}
                   </button>
+                  {usageFor(combination)}
                 </li>
               );
             })}
@@ -2825,6 +2892,108 @@ function LayoutBlockView({
         );
       }}
     />
+  );
+}
+
+/**
+ * What the entries did with a row, shown beside the row that declares it: how
+ * many of them carry the tag, and one of those, drawn at random.
+ *
+ * The count rides along with the labels response the dialog already loaded. The
+ * **example is fetched on demand**, one request per click — a values level can
+ * run to hundreds of rows (an imported abbreviation list awaiting a decision
+ * each does exactly that), and pre-fetching an example for every one of them
+ * would be hundreds of requests nobody asked for.
+ *
+ * Two things it deliberately does not do. It says nothing at zero, because in a
+ * young dictionary most rows are at zero and printing it on each would bury the
+ * counts that mean something — the dashboard's shelf prints them because there
+ * every row is a declaration. And it opens the entry in a **new tab**: this
+ * dialog holds an unpublished draft, so following a link in place would throw
+ * away the contributor's work to answer a question they asked *about* that work.
+ *
+ * It describes the **indexed** grammar, never the draft: a row added in this
+ * session has no usage until it is published and comes back round the firehose.
+ */
+function Usage({ languageTag, tag, count }: { languageTag: string; tag: Tag; count: number }) {
+  const { t } = useTranslation();
+  const [sample, setSample] = useState<LabelSample | null>(null);
+  const [loading, setLoading] = useState(false);
+  /**
+   * How the last draw went, when it did not produce a word.
+   *
+   * `empty` and `failed` are worth telling apart even though both end in no
+   * link: the count comes from a response fetched when the dialog opened, so a
+   * row can say ×3 and have nothing left to show — every one of them withdrawn
+   * since, or reindexed under another tag. Collapsing that into "could not
+   * reach the index" would blame the network for the truth, and collapsing it
+   * the other way would tell a contributor their tag is unused when the
+   * request simply failed. A click that produced neither a word nor a reason
+   * would be worse than both.
+   */
+  const [outcome, setOutcome] = useState<"idle" | "empty" | "failed">("idle");
+
+  function roll() {
+    setLoading(true);
+    setOutcome("idle");
+    fetchLabelSample(languageTag, tagKey(tag))
+      .then((drawn) => {
+        setSample(drawn);
+        if (drawn === null) setOutcome("empty");
+      })
+      .catch((err: unknown) => {
+        console.error("could not sample an entry for a label row:", err);
+        setOutcome("failed");
+      })
+      .finally(() => setLoading(false));
+  }
+
+  if (count === 0) return null;
+  const action = sample === null ? t("grammar.usageSample") : t("grammar.usageReroll");
+  return (
+    <span className="flex shrink-0 items-center gap-1.5 text-xs">
+      <span className="text-content-subtle" title={t("grammar.usageCount", { count })}>
+        ×{count}
+      </span>
+      {sample !== null && (
+        <a
+          href={entryPath(sample.key)}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={sample.orthography}
+          className="max-w-[7rem] truncate text-primary hover:text-primary-hover"
+        >
+          {sample.orthography}
+        </a>
+      )}
+      {/* Announced, because the failure of a draw is otherwise invisible to a
+          reader who cannot see that the word beside the button did not change
+          — and after a successful draw, that word is still there. */}
+      {/* Present even when it says nothing — a live region has to exist before
+          its content changes to be announced — but taken out of the flow while
+          idle, or the flex gap would leave a hole beside every row. */}
+      <span
+        role="status"
+        aria-live="polite"
+        className={outcome === "idle" ? "sr-only" : "text-content-subtle"}
+      >
+        {outcome === "idle"
+          ? ""
+          : outcome === "empty"
+            ? t("grammar.usageSampleEmpty")
+            : t("grammar.usageSampleFailed")}
+      </span>
+      <button
+        type="button"
+        onClick={roll}
+        disabled={loading}
+        title={action}
+        aria-label={action}
+        className="text-content-subtle hover:text-primary disabled:opacity-50"
+      >
+        ↻
+      </button>
+    </span>
   );
 }
 

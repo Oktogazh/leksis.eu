@@ -533,6 +533,28 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
           {syncingURI !== null && (
             <p className="mt-6 text-sm text-content-subtle">{t("languagePage.namesSyncing")}</p>
           )}
+
+          {/* The record everything above is a view of — the dashboard's
+              counterpart to the entry page's footer link, and the only place a
+              reader can see *which* record currently names this language and
+              declares its grammar. At the bottom for the reason it is at the
+              bottom of an entry: this is provenance, not content. It points at
+              the accepted version, so following it after somebody else's
+              record wins is how you find out who that was. */}
+          <footer className="mt-8 border-t pt-4">
+            <p className="text-xs">
+              {/* The record URI goes into the path verbatim — atproto.at
+                  expects the raw at:// form, so no percent-encoding. */}
+              <a
+                href={`https://atproto.at/uri/${dashboard.language.recordURI}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="break-all text-primary hover:text-primary-hover"
+              >
+                {t("languagePage.viewRecord")}
+              </a>
+            </p>
+          </footer>
         </article>
       )}
 

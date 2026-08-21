@@ -6,6 +6,7 @@ import {
   normalizeOclc,
   RESOLVE_URI_LIMIT,
   TRANSLATE_DEFAULT_DEPTH,
+  type LabelSampleResponse,
   type LabelsResponse,
   type EntriesResponse,
   type EntryResolveResponse,
@@ -15,7 +16,7 @@ import {
   type LanguagesResponse,
   type SourcesResponse,
 } from "@leksis/types";
-import { listLabels } from "./labels";
+import { listLabels, sampleLabelEntry } from "./labels";
 import { getCognateNetwork } from "./cognates";
 import { getLanguageDashboard } from "./dashboard";
 import { pingDb } from "./db";
@@ -102,6 +103,32 @@ app.get("/languages/:tag/labels", async (c) => {
     return c.json(body);
   } catch (err) {
     console.error("GET /languages/:tag/labels failed:", err);
+    return c.json({ error: "database unavailable" }, 503);
+  }
+});
+
+// One entry using one row of a language's front matter, at random. The row is
+// named in the query string rather than in the path because a canonical row key
+// is not a path segment: it carries `=`, `|` and, on a layered feature name,
+// brackets. Deliberately unmetered, like the labels list it reads from — see
+// the reasoning on `sampleLabelEntry`.
+app.get("/languages/:tag/labels/random", async (c) => {
+  const requested = normalizeLanguageTag(c.req.param("tag"));
+  if (!isValidLanguageTag(requested)) {
+    return c.json({ error: "invalid language tag" }, 400);
+  }
+  const row = c.req.query("row") ?? "";
+  if (row === "") return c.json({ error: "missing row key" }, 400);
+  try {
+    const entry = await sampleLabelEntry(requested, row);
+    // 404 covers all three ways this comes up empty — unknown row, nothing
+    // using it, everything using it withdrawn — because the caller renders the
+    // same nothing for each.
+    if (!entry) return c.json({ error: "no entry uses this row" }, 404);
+    const body: LabelSampleResponse = { languageID: requested, row, entry };
+    return c.json(body);
+  } catch (err) {
+    console.error("GET /languages/:tag/labels/random failed:", err);
     return c.json({ error: "database unavailable" }, 503);
   }
 });

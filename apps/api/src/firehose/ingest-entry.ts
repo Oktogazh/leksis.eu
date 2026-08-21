@@ -693,6 +693,13 @@ export async function ingestEntryDelete(recordURI: string): Promise<void> {
   // The entry's usage follows its new current version — or vanishes with the
   // entry. Versions indexed before tags were stored carry none and contribute
   // again once re-published.
+  //
+  // A promoted **withdrawal** declares none, exactly as a published one does
+  // (see the ingest path above): the two routes to becoming current must leave
+  // the read models in the same state, or the index would record something no
+  // sequence of records could have said. A withdrawn version keeps its `tags`
+  // on the doc — a restoration needs them back — so this is the guard that
+  // stops them being counted as usage again.
   if (promoted) {
     // A promotion makes a different version's forms the ones search holds, so
     // generation is re-run over it exactly as it is over a newly ingested
@@ -708,7 +715,12 @@ export async function ingestEntryDelete(recordURI: string): Promise<void> {
       deleted: promoted.deleted,
       hadIssues: (promoted.formIssues ?? []).length > 0,
     });
-    await syncEntryTags(db, entryKey, promoted.languageID, promoted.tags ?? []);
+    await syncEntryTags(
+      db,
+      entryKey,
+      promoted.languageID,
+      promoted.deleted ? [] : (promoted.tags ?? []),
+    );
     // Same for its senses, and with them the relations pinning this entry: a
     // reversion to a version whose tree matches an assertion revives it, a
     // reversion away from it parks it. Versions indexed before `places` was

@@ -77,6 +77,31 @@ export interface LabelsResponse {
   labels: LabelView[];
 }
 
+/** One entry using a row — the smallest thing that can be linked to. */
+export interface LabelSample {
+  /** The stable entry key its page lives at. */
+  key: string;
+  /** Its canonical orthography, so the link has something to say. */
+  orthography: string;
+}
+
+/**
+ * Response shape of GET /languages/:tag/labels/random?row=… — **one** entry
+ * using that row, drawn at random, or 404 when none does.
+ *
+ * One at a time, deliberately. The entries behind a row stay in the database
+ * (see the header of this file): what a contributor declaring a tag needs is an
+ * example of it in use — "what did I bind this to, actually" — and that is one
+ * word, re-rollable. Serving the list would turn the front matter into an index
+ * of the dictionary, which is precisely what the read model refuses to be.
+ */
+export interface LabelSampleResponse {
+  languageID: string;
+  /** Canonical key of the row that was sampled, echoed back. */
+  row: string;
+  entry: LabelSample;
+}
+
 /**
  * The tag → label map the viewer's resolution chain consumes, built from the
  * labels response a page has already fetched. No extra request and no PDS round
