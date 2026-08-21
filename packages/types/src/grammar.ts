@@ -1618,6 +1618,67 @@ export function inherentFeatures(grammar: Grammar, category: Tag): GrammarFeatur
 export interface CategoryRefinement {
   feature: GrammarFeature;
   options: CategoryOption[];
+  /**
+   * Which of the two declarations put this step in the tree.
+   *
+   * `inherent` asks what the word **is** — its gender, its conjugation group —
+   * and its options are every bound value of the feature, because a language
+   * binding a value has said a word can have it. `axis` asks which form of it
+   * the dictionary **cites**, and its options are only the flavours the
+   * category itself named: an axis has no declared inventory (that is layer 1's
+   * business), so what makes `Number=Plur` a headword rather than a form is the
+   * annotation saying so. Kept apart because the two read differently to a
+   * contributor and the entry editor labels them differently.
+   */
+  kind: "inherent" | "axis";
+}
+
+/** A feature an entry's forms vary over, with the values it can take. */
+export interface CategoryAxis {
+  feature: GrammarFeature;
+  /** Every value layer 1 bound under it, in record order. */
+  values: GrammarValue[];
+}
+
+/**
+ * The axes reaching these category bundles — what the `otherForms` editor
+ * offers one selector per.
+ *
+ * Read **by containment**, exactly as `headwordKeys` reads the same rows: a
+ * category declared on `{NOUN}` reaches an entry categorised
+ * `{NOUN, Gender=Fem}`, and one declared on `{NOUN, Gender=Masc}` reaches an
+ * *anv-kadarn stroll* whose bundle also carries the `Number=Plur` that named
+ * it. That is what lets a language declare the axis once, at the depth it
+ * belongs to, instead of on every flavour beneath it.
+ *
+ * The value inventory is layer 1's and not the category's (ADR-0019): a
+ * category says only which feature varies, so what a form can be is every
+ * bound value of it. A cell address is not the same thing as a headword
+ * flavour, which is why the annotations' `default`s are deliberately not what
+ * is offered here.
+ *
+ * An axis naming an unbound feature, or a lexicographic label set, is skipped
+ * rather than shown unnamed — the same rule `inherentFeatures` applies, for the
+ * same reason: an orphan is repaired in the binding editor, never worked around
+ * in the entry editor.
+ */
+export function categoryAxes(grammar: Grammar, categories: readonly Tag[]): CategoryAxis[] {
+  const held = heldKeys(categories);
+  const features = grammar.features ?? [];
+  const seen = new Set<string>();
+  const out: CategoryAxis[] = [];
+  for (const row of grammar.categories ?? []) {
+    if (row.axis === undefined || seen.has(row.axis)) continue;
+    if (!held.has(tagKey(row.category))) continue;
+    const feature = features.find((f) => f.feature === row.axis);
+    if (feature === undefined || feature.lexicographic === true) continue;
+    seen.add(row.axis);
+    out.push({
+      feature,
+      values: (grammar.values ?? []).filter((value) => value.feature === row.axis),
+    });
+  }
+  return out.filter((axis) => axis.values.length > 0);
 }
 
 /**
@@ -1631,6 +1692,16 @@ export interface CategoryRefinement {
  * their tag renders by decomposition, and the alternative — hiding them —
  * would turn layer 2 into a whitelist, which is exactly what it must not be.
  * A feature already present in the category is not offered again.
+ *
+ * Since ADR-0019 the category's own **axis** is one more step of the same walk,
+ * appended last because it asks the last question: which form of the word this
+ * dictionary cites. Its options are the category's annotations rather than the
+ * feature's bound values — the reverse of the rule above, and deliberately so.
+ * An inherent feature has a value inventory; an axis does not, so the only
+ * thing that makes `Number=Plur` a headword rather than a form is an annotation
+ * saying so, with the abbreviation that names it. Choosing one emits the full
+ * bundle **including that value**, which is what makes an anv-kadarn stroll
+ * self-describing on its own record and what a paradigm's selector matches.
  */
 export function categoryRefinements(grammar: Grammar, category: Tag): CategoryRefinement[] {
   const present = new Set((category.feats ?? []).map((feat) => feat.feature));
@@ -1661,7 +1732,22 @@ export function categoryRefinements(grammar: Grammar, category: Tag): CategoryRe
         named: label !== undefined,
       });
     }
-    if (options.length > 0) refinements.push({ feature, options });
+    if (options.length > 0) refinements.push({ feature, options, kind: "inherent" });
+  }
+
+  // The axis, last. Skipped when the bundle already carries that feature — a
+  // walk cannot ask twice — and when the feature is unbound or lexicographic,
+  // for the reason `inherentFeatures` skips those: an orphan is repaired in the
+  // binding editor, not routed around here.
+  const row = categoryRow(grammar, category);
+  if (row?.axis !== undefined && !present.has(row.axis)) {
+    const feature = (grammar.features ?? []).find((f) => f.feature === row.axis);
+    if (feature !== undefined && feature.lexicographic !== true) {
+      const options = categoryTags(grammar, row)
+        .filter(({ annotation }) => annotation.default !== undefined)
+        .map(({ tag, label }) => ({ tag, label, named: true }));
+      if (options.length > 0) refinements.push({ feature, options, kind: "axis" });
+    }
   }
   return refinements;
 }

@@ -6,6 +6,7 @@ import {
   valueTag,
   type Grammar,
   type GrammarAbbreviation,
+  type GrammarAnnotation,
   type GrammarCategory,
   type GrammarFeature,
   type GrammarInherent,
@@ -300,6 +301,87 @@ export function upsertCategory(grammar: Grammar, row: GrammarCategory): Grammar 
   const at = rows.findIndex((r) => categoryKey(r) === key);
   const categories = at === -1 ? [...rows, row] : rows.map((r, i) => (i === at ? row : r));
   return tidy({ ...grammar, categories });
+}
+
+/**
+ * Declare, or change, the feature a category's forms vary over.
+ *
+ * **Every annotation loses its `default`**, whichever way the axis moved. A
+ * default is an address under one particular feature, so carrying `Sing` across
+ * from `Number` to `Case` would keep a string and lose its meaning — and
+ * `grammarIssues` would then report an unbound value where what actually
+ * happened is that nobody has said yet where these headwords sit. The labels
+ * are the contributor's writing and are kept; the addresses are the editor's
+ * and are asked for again.
+ *
+ * A no-op when the category has no row yet: a declaration is carried by its
+ * annotations (the lexicon requires at least one), so there is nothing for an
+ * axis to ride on until the category is named. The dialog holds a *pending*
+ * axis for that case and passes it to `upsertAnnotation`, which is what keeps
+ * the draft shape-valid at every moment rather than only at publish time.
+ */
+export function setCategoryAxis(
+  grammar: Grammar,
+  category: Tag,
+  axis: string | undefined,
+): Grammar {
+  const row = findCategory(grammar, category);
+  if (row === undefined || row.axis === axis) return grammar;
+  return upsertCategory(grammar, {
+    category,
+    ...(axis !== undefined ? { axis } : {}),
+    annotations: row.annotations.map(({ long, short }) => ({
+      long,
+      ...(short !== undefined ? { short } : {}),
+    })),
+  });
+}
+
+/**
+ * Write one annotation of a category, creating the declaration when this is its
+ * first — an index past the end appends, which is how "add another abbreviation"
+ * and "edit this one" are the same call.
+ *
+ * `axis` is used **only when the row is being created**: an existing row's own
+ * axis wins, because changing it is `setCategoryAxis`' business and doing it
+ * here as a side effect of naming would silently drop the other annotations'
+ * defaults.
+ */
+export function upsertAnnotation(
+  grammar: Grammar,
+  category: Tag,
+  index: number,
+  annotation: GrammarAnnotation,
+  axis?: string,
+): Grammar {
+  const row = findCategory(grammar, category);
+  const annotations = row === undefined ? [] : [...row.annotations];
+  if (index >= 0 && index < annotations.length) annotations[index] = annotation;
+  else annotations.push(annotation);
+  const declared = row?.axis ?? axis;
+  return upsertCategory(grammar, {
+    category,
+    ...(declared !== undefined ? { axis: declared } : {}),
+    annotations,
+  });
+}
+
+/**
+ * Remove one annotation. Removing the **last** one withdraws the declaration
+ * itself: a category with no annotation names nothing, and the lexicon refuses
+ * it outright (`minLength: 1`), so leaving an empty row behind would be leaving
+ * a draft that publishes into silence.
+ */
+export function removeAnnotation(grammar: Grammar, category: Tag, index: number): Grammar {
+  const row = findCategory(grammar, category);
+  if (row === undefined) return grammar;
+  const annotations = row.annotations.filter((_, i) => i !== index);
+  if (annotations.length === 0) return removeCategory(grammar, category);
+  return upsertCategory(grammar, {
+    category,
+    ...(row.axis !== undefined ? { axis: row.axis } : {}),
+    annotations,
+  });
 }
 
 /**

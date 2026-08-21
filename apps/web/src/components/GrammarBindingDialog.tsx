@@ -17,6 +17,7 @@ import {
   LEKSIS_LANGUAGE_COLLECTION,
   POS_VALUE_PATTERN,
   type Grammar,
+  type GrammarCategory,
   type GrammarLabel,
   type GrammarReference,
   type LabelSample,
@@ -53,13 +54,14 @@ import {
   lexicalRows,
   posRows,
   removeAbbreviation,
-  removeCategory,
+  removeAnnotation,
   removeFeature,
   removeInherent,
   removePos,
   removeValue,
+  setCategoryAxis,
   upsertAbbreviation,
-  upsertCategory,
+  upsertAnnotation,
   upsertFeature,
   upsertPos,
   upsertValue,
@@ -83,6 +85,18 @@ import {
  * Everything is edited against a draft and published as one full rewrite of
  * the language record — which is why both guards live here (see `onPublish`).
  */
+
+/**
+ * Where a category was reached from, kept for the breadcrumb trail alone.
+ *
+ * The category itself is the whole of a level's identity — a bundle names one
+ * thing however it was arrived at — so this is display state, never a key: two
+ * routes to `{NOUN, Gender=Masc}` open the same editor on the same row.
+ */
+interface L2Origin {
+  category: Tag;
+  feature: string;
+}
 
 type Path =
   | { at: "root" }
@@ -109,13 +123,18 @@ type Path =
   // short form is its identity.
   | { at: "abbreviations" }
   | { at: "abbreviationForm"; short: string }
-  // Layer 2 — the same shape one level up: pick a category, declare which
-  // features are inherent to it, then the combinations for a declared feature
-  // become available to name.
+  // Layer 2 — one level per category, and since ADR-0019 that level is the
+  // category's own editor: which feature its forms vary over, and the
+  // abbreviation(s) naming its headword flavours. `l2feature` is the
+  // enumeration prompt under an inherent feature, and each of its rows leads to
+  // another category's editor — which is what lets the walk go as deep as the
+  // language's declarations do without anything having to be named on the way
+  // down. (Before the merge it led to a naming form instead, so a combination
+  // had to be named before it could be refined.)
   | { at: "l2root" }
-  | { at: "l2category"; category: Tag }
+  | { at: "l2category"; category: Tag; from?: L2Origin }
   | { at: "l2feature"; category: Tag; feature: string }
-  | { at: "l2combinationForm"; category: Tag; feature: string; tag: Tag }
+  | { at: "l2annotationForm"; category: Tag; index: number; from?: L2Origin }
   // Layer 5 — the language's paradigms. Editing one is not a level: it is a
   // *different record*, so it opens its own dialog with its own publish footer
   // rather than borrowing this one's.
@@ -152,9 +171,27 @@ interface LabelDraft {
    * is its parts', and an abbreviation's expansion IS its explanation.
    */
   note: string;
+  /**
+   * The axis value a category's headwords sit at, on the annotation form alone
+   * — bare, as the record stores it, and empty where nothing is picked.
+   *
+   * Carried on the one draft shape for the reason `note` is: the form state is
+   * one object and each level writes back only the fields its rows have. What
+   * makes this one different is that "empty" is a *reportable* state rather
+   * than an absent optional — a category naming an axis owes every annotation a
+   * default, and `grammarIssues` says so.
+   */
+  defaultValue: string;
 }
 
-const emptyLabel: LabelDraft = { long: "", short: "", minted: false, references: [], note: "" };
+const emptyLabel: LabelDraft = {
+  long: "",
+  short: "",
+  minted: false,
+  references: [],
+  note: "",
+  defaultValue: "",
+};
 
 /** The two levels whose rows carry a note — features and their values. */
 function notable(path: Path): boolean {
@@ -198,6 +235,19 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
   const [paradigms, setParadigms] = useState<ParadigmPointer[]>([]);
   /** The stacked editor: which selector it was opened on. */
   const [editing, setEditing] = useState<{ selector: Tag } | null>(null);
+  /**
+   * An axis picked for a category **nobody has named yet**, held here until the
+   * first annotation carries it into the draft.
+   *
+   * A declaration is carried by its annotations — the lexicon requires at least
+   * one — so there is no row for an axis to live on before the category has a
+   * name, and writing an annotation-less row would put a shape the AppView
+   * refuses into the draft with nothing in the footer to say so. The authoring
+   * order is still the one on screen (the bundle, then what its forms vary
+   * over, then the name); only the *storage* waits. Keyed by the category so it
+   * cannot leak onto another one, and dropped the moment it is written.
+   */
+  const [pendingAxis, setPendingAxis] = useState<{ key: string; axis: string } | null>(null);
   const [form, setForm] = useState<LabelDraft>(emptyLabel);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -336,18 +386,17 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
     if (next.at === "posForm") existing = findPos(draft, next.value);
     else if (next.at === "featureForm") existing = findFeature(draft, next.feature);
     else if (next.at === "valueForm") existing = findValue(draft, next.feature, next.value);
-    else if (next.at === "l2combinationForm") {
-      // A category row, read through its first annotation: the merged model puts
-      // the label on the annotation, and this level still writes exactly one
-      // (no axis, so no default) until slice 3 builds the axis flow.
-      const row = findCategory(draft, next.tag);
-      const annotation = row?.annotations[0];
+    else if (next.at === "l2annotationForm") {
+      // One annotation of a category — the labelled tag itself, since ADR-0019
+      // put the label on the annotation rather than on the row. An index past
+      // the end is a new one, which is how "add another abbreviation" and
+      // "edit this one" reach the same form.
+      const annotation = findCategory(draft, next.category)?.annotations[next.index];
       setForm({
+        ...emptyLabel,
         long: annotation?.long ?? "",
         short: annotation?.short ?? "",
-        minted: false,
-        references: [],
-        note: "",
+        defaultValue: annotation?.default ?? "",
       });
       setPath(next);
       return;
@@ -357,11 +406,10 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
       // form came in through the path and only the expansion is being written.
       const row = findAbbreviation(draft, next.short);
       setForm({
+        ...emptyLabel,
         long: row?.long ?? "",
         short: next.short,
-        minted: false,
         references: row?.references ?? [],
-        note: "",
       });
       setPath(next);
       return;
@@ -378,6 +426,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
       existing === undefined
         ? { ...emptyLabel, minted: mintedByDefault }
         : {
+            ...emptyLabel,
             long: existing.label.long,
             short: existing.label.short ?? "",
             minted: "scheme" in existing && existing.scheme !== undefined,
@@ -451,23 +500,32 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
         upsertValue(draft, { feature: path.feature, value: path.value, label, ...extra, ...noted }),
       );
       setPath({ at: "values", feature: path.feature });
-    } else if (path.at === "l2combinationForm") {
+    } else if (path.at === "l2annotationForm") {
       // A category is never minted: provenance rides on its atoms, which are
       // already bound with their own schemes. And it carries no references —
       // there is nothing to document about a combination of documented items.
       //
-      // One annotation, no axis: naming a category through this level is the
-      // ordinary case, and declaring an axis with a default per headword flavour
-      // is the Categories tab slice 3 builds.
+      // The default is written only where the category names an axis — the iff
+      // rule of the merge, enforced at the one place a default can be authored.
+      // With no axis there is no feature for the value to belong to, so saving
+      // here is also the repair for `category-default-forbidden`.
+      const axis = axisOf(path.category);
+      const value = form.defaultValue.trim();
       setDraft(
-        upsertCategory(draft, {
-          category: path.tag,
-          annotations: [
-            { long: label.long, ...(label.short !== undefined ? { short: label.short } : {}) },
-          ],
-        }),
+        upsertAnnotation(
+          draft,
+          path.category,
+          path.index,
+          {
+            long: label.long,
+            ...(label.short !== undefined ? { short: label.short } : {}),
+            ...(axis !== undefined && value !== "" ? { default: value } : {}),
+          },
+          axis,
+        ),
       );
-      setPath({ at: "l2feature", category: path.category, feature: path.feature });
+      setPendingAxis(null);
+      setPath({ at: "l2category", category: path.category, from: path.from });
     }
   }
 
@@ -494,6 +552,61 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
       ...(category.upos !== undefined ? { upos: category.upos } : {}),
       feats: [...(category.feats ?? []), valueTag(value).feats![0]!],
     };
+  }
+
+  /**
+   * The feature this category's forms vary over — the declared one, or the one
+   * picked for a category not yet named (see `pendingAxis`). Both answers are
+   * the same answer to the contributor, which is the point of reading them
+   * through one function rather than at each call site.
+   */
+  function axisOf(category: Tag): string | undefined {
+    const row = findCategory(draft, category);
+    if (row !== undefined) return row.axis;
+    return pendingAxis?.key === tagKey(category) ? pendingAxis.axis : undefined;
+  }
+
+  /** Declare, change or clear the axis, whether or not the category has a row. */
+  function chooseAxis(category: Tag, axis: string | undefined) {
+    if (findCategory(draft, category) === undefined) {
+      setPendingAxis(axis === undefined ? null : { key: tagKey(category), axis });
+      return;
+    }
+    setDraft(setCategoryAxis(draft, category, axis));
+    setPendingAxis(null);
+  }
+
+  /**
+   * The features this category's forms could vary over: bound, grammatical, and
+   * **not inherent to this same category** — the mirror of the gate
+   * `renderL2Category` applies from the other side, since a paradigm cannot be
+   * built from a coordinate that is also a constant.
+   *
+   * The axis in force is appended when the filters do not already offer it,
+   * which is the whole of the repair path for `category-axis-unbound` and
+   * `category-axis-inherent`: a defect a contributor cannot see on the row it
+   * belongs to is a defect they cannot fix, so the offending choice is shown
+   * selected, beside the choices that would replace it.
+   */
+  function axisCandidates(category: Tag): { feature: string; label?: string; orphan: boolean }[] {
+    const inherent = new Set(inherentRows(draft, category).map((row) => row.feature));
+    const rows = grammaticalFeatureRows(draft).filter((row) => !inherent.has(row.feature));
+    const options: { feature: string; label?: string; orphan: boolean }[] = rows.map((row) => ({
+      feature: row.feature,
+      label: row.label.long,
+      orphan: false,
+    }));
+    const axis = axisOf(category);
+    if (axis !== undefined && !options.some((option) => option.feature === axis)) {
+      options.push({ feature: axis, label: findFeature(draft, axis)?.label.long, orphan: true });
+    }
+    return options;
+  }
+
+  /** How a bare axis value reads: its bound label, or the value itself. */
+  function defaultLabel(axis: string, value: string): string {
+    const row = findValue(draft, axis, value);
+    return row?.label.short ?? row?.label.long ?? value;
   }
 
   async function onPublish() {
@@ -577,18 +690,36 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
   if (path.at === "pos" || path.at === "posForm") {
     crumbs.push({ label: t("grammar.posLevel"), go: { at: "pos" } });
     if (path.at === "posForm") crumbs.push({ label: path.value, go: path });
-  } else if (path.at === "l2category" || path.at === "l2feature" || path.at === "l2combinationForm") {
-    crumbs.push({
-      label: categoryText(path.category),
-      go: { at: "l2category", category: path.category },
-    });
-    if (path.at !== "l2category") {
+  } else if (
+    path.at === "l2category" ||
+    path.at === "l2feature" ||
+    path.at === "l2annotationForm"
+  ) {
+    // The trail is read off the level itself, except for the one hop a category
+    // bundle cannot state: which feature it was refined through. `from` carries
+    // exactly that, and only for display — see `L2Origin`.
+    const origin = path.at === "l2feature" ? { category: path.category, feature: path.feature } : path.from;
+    if (origin !== undefined) {
       crumbs.push({
-        label: path.feature,
-        go: { at: "l2feature", category: path.category, feature: path.feature },
+        label: categoryText(origin.category),
+        go: { at: "l2category", category: origin.category },
       });
-      if (path.at === "l2combinationForm") {
-        crumbs.push({ label: categoryText(path.tag), go: path });
+      crumbs.push({
+        label: origin.feature,
+        go: { at: "l2feature", category: origin.category, feature: origin.feature },
+      });
+    }
+    if (path.at !== "l2feature") {
+      crumbs.push({
+        label: categoryText(path.category),
+        go: { at: "l2category", category: path.category, from: path.from },
+      });
+      if (path.at === "l2annotationForm") {
+        const annotation = findCategory(draft, path.category)?.annotations[path.index];
+        crumbs.push({
+          label: annotation?.short ?? annotation?.long ?? t("grammar.l2AnnotationNew"),
+          go: path,
+        });
       }
     }
   } else if (path.at === "classes") {
@@ -1131,6 +1262,24 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
    * standing on the one before. The gate as navigation: an unbound category
    * simply is not offered.
    */
+  /**
+   * How a category is named, in one line: every annotation, each with the
+   * headword value it stands for where the category has an axis.
+   *
+   * The value is worth printing beside the abbreviation because it is what
+   * tells two of them apart — "anv-kadarn gourel" and *anv-kadarn stroll* are
+   * one category and differ only in where their headwords sit.
+   */
+  function categorySummary(row: GrammarCategory): string {
+    return row.annotations
+      .map((annotation) => {
+        const name = annotation.short ?? annotation.long;
+        if (row.axis === undefined || annotation.default === undefined) return name;
+        return `${name} (${defaultLabel(row.axis, annotation.default)})`;
+      })
+      .join(" · ");
+  }
+
   function renderL2Root() {
     const pos = posRows(draft);
     // Every declared category *beyond* the bare parts of speech above. A
@@ -1138,6 +1287,13 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
     // listed twice — once as its part of speech and once as its own row.
     const posKeys = new Set(pos.map((row) => tagKey(posTag(row))));
     const declared = categoryRows(draft).filter((row) => !posKeys.has(tagKey(row.category)));
+    const rows = [
+      ...pos.map((row) => ({
+        category: posTag(row),
+        heading: row.label.short ?? row.label.long,
+      })),
+      ...declared.map((row) => ({ category: row.category, heading: categoryText(row.category) })),
+    ];
     return (
       <>
         <p className="mb-3 text-xs text-content-subtle">{t("grammar.l2RootHint")}</p>
@@ -1145,152 +1301,270 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
           <p className="text-sm text-content-muted">{t("grammar.l2NoPos")}</p>
         ) : (
           <ul className="space-y-1.5">
-            {pos.map((row) => {
-              const category = posTag(row);
+            {rows.map(({ category, heading }) => {
+              const row = findCategory(draft, category);
+              const summary = row === undefined ? "" : categorySummary(row);
               return (
                 <li key={tagKey(category)} className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() => setPath({ at: "l2category", category })}
-                    className={`${levelButton} flex-1`}
+                    className={`${stackedLevelButton} min-w-0 flex-1`}
                   >
-                    <span className="text-sm text-content">{row.label.short ?? row.label.long}</span>
-                    <span className="text-xs text-content-subtle">
-                      {t("grammar.l2InherentCount", { count: inherentRows(draft, category).length })}
+                    <span className="flex items-baseline justify-between gap-3">
+                      <span className="truncate text-sm text-content">{heading}</span>
+                      <span className="shrink-0 text-xs text-content-subtle">
+                        {t("grammar.l2InherentCount", {
+                          count: inherentRows(draft, category).length,
+                        })}
+                      </span>
                     </span>
+                    {summary !== "" && (
+                      <span className="truncate text-xs text-content-subtle">{summary}</span>
+                    )}
                   </button>
                   {usageFor(category)}
                 </li>
               );
             })}
-            {declared.map((row) => {
-              const annotation = row.annotations[0];
-              return (
-                <li key={tagKey(row.category)} className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setPath({ at: "l2category", category: row.category })}
-                    className={`${levelButton} flex-1`}
-                  >
-                    <span className="text-sm text-content">
-                      {annotation?.short ?? annotation?.long ?? categoryText(row.category)}
-                    </span>
-                    <span className="text-xs text-content-subtle">
-                      {t("grammar.l2InherentCount", {
-                        count: inherentRows(draft, row.category).length,
-                      })}
-                    </span>
-                  </button>
-                  {usageFor(row.category)}
-                </li>
-              );
-            })}
           </ul>
-        )}
-      </>
-    );
-  }
-
-  /** One category: its inherent features, and the bound features left to declare. */
-  function renderL2Category(category: Tag) {
-    const declared = inherentRows(draft, category);
-    const declaredNames = new Set(declared.map((row) => row.feature));
-    // The mirror of the axis gate: the feature this category's forms vary over
-    // is not offered as inherent to it either. One rule, enforced from whichever
-    // side the contributor arrives at it — and since ADR-0019 the axis is a
-    // field on the category's own row rather than a declaration of its own.
-    const axis = findCategory(draft, category)?.axis;
-    // Lexicographic label sets are absent rather than disabled — the gate as
-    // navigation again. "Archaic" is not something a word *is*, so it is never
-    // an inherent feature of anything.
-    const available = grammaticalFeatureRows(draft).filter(
-      (row) => !declaredNames.has(row.feature) && row.feature !== axis,
-    );
-    return (
-      <>
-        <div className="mb-3">
-          <p className="text-sm font-medium text-content">{categoryText(category)}</p>
-          <p className="mt-1 text-xs text-content-subtle">{t("grammar.l2CategoryHint")}</p>
-        </div>
-        {declared.length === 0 ? (
-          <p className="text-sm text-content-muted">{t("grammar.l2NoInherent")}</p>
-        ) : (
-          <ul className="space-y-1.5">
-            {declared.map((row) => {
-              // Withdrawing is blocked while a named combination stands on
-              // this declaration — the same disabled-with-a-reason pattern as
-              // unbinding a feature name whose values are bound. `grammarDiff`
-              // would catch it at publish anyway; saying so here is kinder.
-              const supported = valueRows(draft, row.feature).filter(
-                (value) =>
-                  findCategory(draft, combinationTag(category, value)) !== undefined,
-              ).length;
-              return (
-                <li key={row.feature} className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setPath({ at: "l2feature", category, feature: row.feature })
-                    }
-                    className={`${levelButton} flex-1`}
-                  >
-                    <span className="flex min-w-0 items-baseline gap-2">
-                      <span className="font-mono text-sm text-content">{row.feature}</span>
-                      <span className="truncate text-xs text-content-subtle">
-                        {findFeature(draft, row.feature)?.label.long}
-                      </span>
-                    </span>
-                    <span className="text-xs text-content-subtle">
-                      {t("grammar.l2CombinedCount", {
-                        bound: supported,
-                        total: valueRows(draft, row.feature).length,
-                      })}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    disabled={supported > 0}
-                    title={supported > 0 ? t("grammar.l2WithdrawBlocked") : undefined}
-                    onClick={() => setDraft(removeInherent(draft, row))}
-                    aria-label={t("grammar.l2Withdraw", { feature: row.feature })}
-                    className="text-content-subtle hover:text-danger disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    ×
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-        {available.length > 0 && (
-          <div className="mt-4 border-t pt-3">
-            <p className="text-xs font-medium text-content">{t("grammar.l2DeclareTitle")}</p>
-            <ul className="mt-2 flex flex-wrap gap-1.5">
-              {available.map((row) => (
-                <li key={row.feature}>
-                  <button
-                    type="button"
-                    onClick={() => setDraft(addInherent(draft, { category, feature: row.feature }))}
-                    title={row.label.long}
-                    className="rounded-full border bg-surface-muted/60 px-2.5 py-1 font-mono text-xs text-content hover:border-primary hover:text-primary"
-                  >
-                    + {row.feature}
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <p className="mt-1 text-xs text-content-subtle">{t("grammar.l2DeclareHint")}</p>
-          </div>
         )}
       </>
     );
   }
 
   /**
+   * One category, whole: what its forms vary over, what this dictionary calls
+   * its headwords, and which features are inherent to it.
+   *
+   * The three sit on one level because they are three halves of one
+   * declaration since ADR-0019 — a category that names an axis and the value
+   * each of its abbreviations stands at is what replaced the standalone axis
+   * list. The order on screen is the order of the decisions: the bundle came in
+   * with the path, then what varies, then the names, then how much deeper the
+   * language wants to go.
+   */
+  function renderL2Category(category: Tag, from?: L2Origin) {
+    const row = findCategory(draft, category);
+    const axis = axisOf(category);
+    const declared = inherentRows(draft, category);
+    const declaredNames = new Set(declared.map((r) => r.feature));
+    // The mirror of the axis gate: the feature this category's forms vary over
+    // is not offered as inherent to it either. One rule, enforced from whichever
+    // side the contributor arrives at it — and since ADR-0019 the axis is a
+    // field on the category's own row rather than a declaration of its own.
+    //
+    // Lexicographic label sets are absent rather than disabled — the gate as
+    // navigation again. "Archaic" is not something a word *is*, so it is never
+    // an inherent feature of anything.
+    const available = grammaticalFeatureRows(draft).filter(
+      (r) => !declaredNames.has(r.feature) && r.feature !== axis,
+    );
+    const candidates = axisCandidates(category);
+    /** The labelled tag one annotation stands for — the category plus its value. */
+    function annotationTag(annotation: { default?: string }): Tag {
+      if (axis === undefined || annotation.default === undefined) return category;
+      const scheme = findValue(draft, axis, annotation.default)?.scheme;
+      return combinationTag(category, {
+        feature: axis,
+        value: annotation.default,
+        ...(scheme !== undefined ? { scheme } : {}),
+      });
+    }
+    // A bare part of speech is already named by its `pos` row, so naming it
+    // again here would be two labels for one tag — reported as `duplicate`, and
+    // worth saying before rather than after. With an axis it is a different tag
+    // each time, which is exactly what dropping the two-atom floor was for.
+    const posOnly = category.upos !== undefined && (category.feats ?? []).length === 0;
+
+    return (
+      <>
+        <div className="mb-3">
+          <p className="text-sm font-medium text-content">{categoryText(category)}</p>
+          <p className="mt-0.5 font-mono text-xs text-content-subtle">
+            {formatTagVerbatim(category)}
+          </p>
+        </div>
+
+        <p className="text-xs font-medium text-content">{t("grammar.l2AxisTitle")}</p>
+        <p className="mt-0.5 text-xs text-content-subtle">{t("grammar.l2AxisHint")}</p>
+        {candidates.length === 0 ? (
+          <p className="mt-2 text-sm text-content-muted">{t("grammar.l2AxisNoFeatures")}</p>
+        ) : (
+          <ul className="mt-2 flex flex-wrap gap-1.5">
+            <li>
+              <button
+                type="button"
+                onClick={() => chooseAxis(category, undefined)}
+                className={axis === undefined ? chipButtonActive : chipButton}
+              >
+                {t("grammar.l2AxisNone")}
+              </button>
+            </li>
+            {candidates.map((option) => (
+              <li key={option.feature}>
+                <button
+                  type="button"
+                  onClick={() => chooseAxis(category, option.feature)}
+                  title={option.label ?? t("grammar.l2AxisOrphan")}
+                  className={option.feature === axis ? chipButtonActive : chipButton}
+                >
+                  {option.feature}
+                  {option.orphan && <span className="ml-1 text-danger">!</span>}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <div className="mt-4 border-t pt-3">
+          <p className="text-xs font-medium text-content">{t("grammar.l2NamesTitle")}</p>
+          <p className="mt-0.5 text-xs text-content-subtle">
+            {axis === undefined
+              ? t("grammar.l2NamesHint")
+              : t("grammar.l2NamesAxisHint", { feature: axis })}
+          </p>
+          {posOnly && axis === undefined && findPos(draft, category.upos!.value) !== undefined && (
+            <p className="mt-1 text-xs text-content-subtle">{t("grammar.l2NamesPosHint")}</p>
+          )}
+          {row === undefined ? (
+            <p className="mt-2 text-sm text-content-muted">{t("grammar.l2NoName")}</p>
+          ) : (
+            <ul className="mt-2 space-y-1.5">
+              {row.annotations.map((annotation, index) => (
+                <li key={index} className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openForm({ at: "l2annotationForm", category, index, from })}
+                    className={`${levelButton} min-w-0 flex-1`}
+                  >
+                    <span className="flex min-w-0 items-baseline gap-2">
+                      <span className="truncate text-sm text-content">
+                        {annotation.short ?? annotation.long}
+                      </span>
+                      {annotation.short !== undefined && (
+                        <span className="truncate text-xs text-content-subtle">
+                          {annotation.long}
+                        </span>
+                      )}
+                    </span>
+                    <span className="shrink-0 text-xs text-content-subtle">
+                      {axis === undefined
+                        ? ""
+                        : annotation.default === undefined
+                          ? t("grammar.l2DefaultMissing")
+                          : defaultLabel(axis, annotation.default)}
+                    </span>
+                  </button>
+                  {usageFor(annotationTag(annotation))}
+                </li>
+              ))}
+            </ul>
+          )}
+          <button
+            type="button"
+            onClick={() =>
+              openForm({
+                at: "l2annotationForm",
+                category,
+                index: row?.annotations.length ?? 0,
+                from,
+              })
+            }
+            className="mt-2 text-sm text-primary hover:text-primary-hover"
+          >
+            {row === undefined ? t("grammar.l2AddName") : t("grammar.l2AddAnotherName")}
+          </button>
+        </div>
+
+        <div className="mt-4 border-t pt-3">
+          <p className="text-xs font-medium text-content">{t("grammar.l2InherentTitle")}</p>
+          <p className="mt-0.5 text-xs text-content-subtle">{t("grammar.l2CategoryHint")}</p>
+          {declared.length === 0 ? (
+            <p className="mt-2 text-sm text-content-muted">{t("grammar.l2NoInherent")}</p>
+          ) : (
+            <ul className="mt-2 space-y-1.5">
+              {declared.map((inherent) => {
+                // Withdrawing is blocked while a named combination stands on
+                // this declaration — the same disabled-with-a-reason pattern as
+                // unbinding a feature name whose values are bound. `grammarIssues`
+                // would catch it at publish anyway; saying so here is kinder.
+                const supported = valueRows(draft, inherent.feature).filter(
+                  (value) => findCategory(draft, combinationTag(category, value)) !== undefined,
+                ).length;
+                return (
+                  <li key={inherent.feature} className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPath({ at: "l2feature", category, feature: inherent.feature })
+                      }
+                      className={`${levelButton} min-w-0 flex-1`}
+                    >
+                      <span className="flex min-w-0 items-baseline gap-2">
+                        <span className="font-mono text-sm text-content">{inherent.feature}</span>
+                        <span className="truncate text-xs text-content-subtle">
+                          {findFeature(draft, inherent.feature)?.label.long}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-xs text-content-subtle">
+                        {t("grammar.l2CombinedCount", {
+                          bound: supported,
+                          total: valueRows(draft, inherent.feature).length,
+                        })}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={supported > 0}
+                      title={supported > 0 ? t("grammar.l2WithdrawBlocked") : undefined}
+                      onClick={() => setDraft(removeInherent(draft, inherent))}
+                      aria-label={t("grammar.l2Withdraw", { feature: inherent.feature })}
+                      className="text-content-subtle hover:text-danger disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      ×
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {available.length > 0 && (
+            <>
+              <ul className="mt-3 flex flex-wrap gap-1.5">
+                {available.map((feature) => (
+                  <li key={feature.feature}>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDraft(addInherent(draft, { category, feature: feature.feature }))
+                      }
+                      title={feature.label.long}
+                      className={chipButton}
+                    >
+                      + {feature.feature}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1 text-xs text-content-subtle">{t("grammar.l2DeclareHint")}</p>
+            </>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  /**
    * The enumeration prompt: one combination per bound value of the feature,
-   * each nameable. A counter, never a constraint — an incomplete set is
+   * each its own category. A counter, never a constraint — an incomplete set is
    * legitimate (a language may bind a value for another category's sake) and
    * nothing here blocks a save.
+   *
+   * Every row opens that category's editor rather than a naming form, which is
+   * what makes the walk go as deep as the declarations do: before ADR-0019 a
+   * combination had to be named before anything could be declared about it,
+   * because the root list showed only named ones.
    */
   function renderL2Feature(category: Tag, feature: string) {
     const values = valueRows(draft, feature);
@@ -1313,15 +1587,19 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
           <ul className="space-y-1.5">
             {values.map((value) => {
               const combination = combinationTag(category, value);
-              const bound = findCategory(draft, combination)?.annotations[0];
+              const bound = findCategory(draft, combination);
               return (
                 <li key={tagKey(combination)} className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() =>
-                      openForm({ at: "l2combinationForm", category, feature, tag: combination })
+                      setPath({
+                        at: "l2category",
+                        category: combination,
+                        from: { category, feature },
+                      })
                     }
-                    className={`${levelButton} flex-1`}
+                    className={`${levelButton} min-w-0 flex-1`}
                   >
                     <span className="flex min-w-0 items-baseline gap-2">
                       <span className="text-sm text-content">{categoryText(combination)}</span>
@@ -1330,9 +1608,13 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
                       </span>
                     </span>
                     {bound === undefined ? (
-                      <span className="text-xs text-content-subtle">{t("grammar.l2Decomposed")}</span>
+                      <span className="shrink-0 text-xs text-content-subtle">
+                        {t("grammar.l2Decomposed")}
+                      </span>
                     ) : (
-                      <span className="text-sm text-content">{bound.short ?? bound.long}</span>
+                      <span className="shrink-0 truncate text-sm text-content">
+                        {categorySummary(bound)}
+                      </span>
                     )}
                   </button>
                   {usageFor(combination)}
@@ -1388,6 +1670,143 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
       </>
     );
   }
+  /**
+   * One annotation of a category: what this dictionary calls it, and — where
+   * the category names an axis — which value of that axis its headwords carry.
+   *
+   * Separate from `renderForm` for the reason the abbreviation form is: nothing
+   * it asks is the same. A category is never minted (provenance rides on its
+   * atoms, each already bound with its own scheme) and documents no source, so
+   * the whole mint section is absent; what it has instead is the default
+   * picker, and that is the one control on which the merge turns.
+   */
+  function renderAnnotationForm(category: Tag, index: number, from?: L2Origin) {
+    const existing = findCategory(draft, category)?.annotations[index];
+    const axis = axisOf(category);
+    const values = axis === undefined ? [] : valueRows(draft, axis);
+    const current = form.defaultValue.trim();
+    // A default naming a value nobody bound: shown rather than silently
+    // dropped, because `category-default-unbound` is reported against this row
+    // and a defect a contributor cannot see here is one they cannot repair.
+    const picked = axis === undefined || current === "" ? undefined : findValue(draft, axis, current);
+    const orphaned = current !== "" && axis !== undefined && picked === undefined;
+
+    return (
+      <>
+        <div className="mb-3">
+          <p className="text-sm font-medium text-content">{categoryText(category)}</p>
+          <p className="mt-0.5 font-mono text-xs text-content-subtle">
+            {formatTagVerbatim(category)}
+          </p>
+        </div>
+
+        <label className="block text-sm font-medium text-content" htmlFor="grammar-annotation-long">
+          {t("grammar.longLabel")}
+        </label>
+        <p className="mt-0.5 text-xs text-content-subtle">{t("grammar.homolingualHint")}</p>
+        <input
+          id="grammar-annotation-long"
+          value={form.long}
+          onChange={(e) => setForm({ ...form, long: e.target.value })}
+          placeholder={t("grammar.longPlaceholder")}
+          className={`${inputClass} mt-1`}
+        />
+
+        <label
+          className="mt-3 block text-sm font-medium text-content"
+          htmlFor="grammar-annotation-short"
+        >
+          {t("grammar.shortLabel")}
+        </label>
+        <input
+          id="grammar-annotation-short"
+          value={form.short}
+          onChange={(e) => setForm({ ...form, short: e.target.value })}
+          placeholder={t("grammar.shortPlaceholder")}
+          className={`${inputClass} mt-1`}
+        />
+
+        {axis !== undefined && (
+          <div className="mt-4 rounded-lg border bg-surface-muted/40 p-3">
+            <p className="text-sm text-content">{t("grammar.l2DefaultLabel", { feature: axis })}</p>
+            <p className="mt-0.5 text-xs text-content-subtle">{t("grammar.l2DefaultHint")}</p>
+            {values.length === 0 && !orphaned ? (
+              <p className="mt-2 text-sm text-content-muted">
+                {t("grammar.l2NoValues", { feature: axis })}
+              </p>
+            ) : (
+              <ul className="mt-2 flex flex-wrap gap-1.5">
+                {values.map((value) => {
+                  const active = picked === value;
+                  return (
+                    <li key={value.value}>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setForm({ ...form, defaultValue: active ? "" : value.value })
+                        }
+                        title={value.label.long}
+                        className={active ? chipButtonActive : chipButton}
+                      >
+                        {value.label.short ?? value.label.long}
+                      </button>
+                    </li>
+                  );
+                })}
+                {orphaned && (
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => setForm({ ...form, defaultValue: "" })}
+                      title={t("grammar.l2DefaultUnbound", { value: current })}
+                      className="rounded-full border border-danger bg-surface px-2.5 py-1 font-mono text-xs font-medium text-danger"
+                    >
+                      {current} !
+                    </button>
+                  </li>
+                )}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {/* The mirror, and the repair for `category-default-forbidden`: a value
+            picked before the axis was cleared belongs to no feature at all, so
+            saying so is the only honest thing to do before saving drops it. */}
+        {axis === undefined && current !== "" && (
+          <p className="mt-3 text-xs text-danger">
+            {t("grammar.l2DefaultForbidden", { value: current })}
+          </p>
+        )}
+
+        <div className="mt-4 flex items-center justify-between gap-3 border-t pt-3">
+          {existing !== undefined ? (
+            <button
+              type="button"
+              onClick={() => {
+                setDraft(removeAnnotation(draft, category, index));
+                setPath({ at: "l2category", category, from });
+              }}
+              className="text-sm text-danger hover:text-danger"
+            >
+              {t("grammar.l2RemoveName")}
+            </button>
+          ) : (
+            <span />
+          )}
+          <button
+            type="button"
+            onClick={saveForm}
+            disabled={form.long.trim() === ""}
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-fg hover:bg-primary-hover disabled:opacity-50"
+          >
+            {t("grammar.bind")}
+          </button>
+        </div>
+      </>
+    );
+  }
+
   /**
    * The abbreviation form: what a short form stands for, and nothing else.
    *
@@ -1451,9 +1870,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
           ? path.feature
           : path.at === "valueForm"
             ? `${path.feature}=${path.value}`
-            : path.at === "l2combinationForm"
-              ? formatTagVerbatim(path.tag)
-              : "";
+            : "";
     const gloss = path.at === "posForm" ? uposGloss(path.value) : undefined;
     const docs =
       path.at === "posForm" && !form.minted
@@ -1468,14 +1885,9 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
           ? findFeature(draft, path.feature)
           : path.at === "valueForm"
             ? findValue(draft, path.feature, path.value)
-            : path.at === "l2combinationForm"
-              ? findCategory(draft, path.tag)
-              : undefined;
+            : undefined;
     const isUdPos = path.at === "posForm" && HEADWORD_UPOS.some((u) => u.value === path.value);
-    // A combination is never minted — provenance rides on its items, which
-    // are already bound each with its own scheme — so the mint section is
-    // simply not offered.
-    const mintable = !isUdPos && path.at !== "l2combinationForm";
+    const mintable = !isUdPos;
 
     return (
       <>
@@ -1617,11 +2029,6 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
                 } else if (path.at === "valueForm") {
                   setDraft(removeValue(draft, path.feature, path.value));
                   setPath({ at: "values", feature: path.feature });
-                } else if (path.at === "l2combinationForm") {
-                  // The label goes; the category's atoms stay bound, so the
-                  // bundle simply renders by decomposition again.
-                  setDraft(removeCategory(draft, path.tag));
-                  setPath({ at: "l2feature", category: path.category, feature: path.feature });
                 }
               }}
               className="text-sm text-danger hover:text-danger"
@@ -1667,9 +2074,11 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
       case "l2root":
         return renderL2Root();
       case "l2category":
-        return renderL2Category(path.category);
+        return renderL2Category(path.category, path.from);
       case "l2feature":
         return renderL2Feature(path.category, path.feature);
+      case "l2annotationForm":
+        return renderAnnotationForm(path.category, path.index, path.from);
       case "l5root":
         return renderL5Root();
       default:
@@ -1831,6 +2240,19 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
 
 const levelButton =
   "flex w-full items-center justify-between gap-3 rounded-lg border bg-surface px-3 py-2 text-left hover:border-primary";
+
+/**
+ * A pickable option: one of a small set where the choice itself is the control,
+ * rather than a level to walk into. The active variant is a *pair* with the
+ * plain one and not an override of it, for the reason `stackedLevelButton` is
+ * not one either — two utilities of equal specificity would resolve by
+ * Tailwind's emission order rather than by the order they are written.
+ */
+const chipButton =
+  "rounded-full border bg-surface-muted/60 px-2.5 py-1 font-mono text-xs text-content hover:border-primary hover:text-primary";
+
+const chipButtonActive =
+  "rounded-full border border-primary bg-surface px-2.5 py-1 font-mono text-xs font-medium text-primary";
 
 /**
  * The same row with its content stacked, for a level whose rows carry a note
