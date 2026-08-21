@@ -49,11 +49,120 @@ Update the checkbox and the state note at the end of each session. One slice = o
   (`paradigmIssues`/`generateForms` v2, exact-match reach), ingest + API, basic table reader.
   Ingest gate removed; both verification harnesses rebuilt. **The browser pass is deferred to
   slice 6** — see the state note. *Done 2026-08-21.*
-- [ ] **Slice 5** — the paradigm table editor (grid, merges, per-cell rules) + entry-page polish.
+- [x] **Slice 5** — the paradigm table editor (grid, merges, per-cell rules), the selector walk, the
+  identity guard, and the reader's third form state. *Done 2026-08-21.* It also closed slice 4's
+  deferred browser pass.
 - [ ] **Slice 6** — testset pass, docker build gate, lexicon republish, CHANGELOG, skills update,
   finalize this ADR, bump packages to **0.28.0**, propose tag `v0.28.0`.
 
 ### State after last session
+
+**2026-08-21, slice 5 — built, typechecked, linted and driven end to end in a
+browser against the quarantined `qtl` fixture, which was torn down after.**
+
+A paradigm's tables are now authored. `ParadigmEditorDialog` is a grid editor:
+the selectors are picked by walking the language's own categories, each table is
+a rectangle whose rows and columns are inserted and removed at a position, a
+cell is a heading, a form or filler, and a form cell carries its address and the
+ordered rules that fill it. `lib/paradigm-draft.ts` is the model behind it, and
+the Paradigms level of the grammar dialog finally has a door — *Declare a
+paradigm* — plus one row per published record.
+
+Eleven decisions worth reading before touching this area:
+
+- **The grid is edited as the rectangle it draws, not as the rows the record
+  stores.** A record writes a spanned cell once and omits the positions it
+  covers — right for storage, wrong for editing, where inserting a column means
+  adding a cell to some rows and widening a span in others. `gridFromTable` /
+  `tableFromGrid` convert, and the round trip is exact because `paradigmGrid`
+  places each cell at the first free position of its row.
+- **Two invariants hold over every operation, and they make `ragged-table`
+  unreachable from the interface** — the way the old editor made `unknown-base`
+  unreachable by offering only valid bases. The grid always tiles its rectangle,
+  and **every row keeps a cell of its own**. The second was found while
+  building: a row covered from end to end by spans from above serializes to
+  `[]`, which `isValidTable` refuses, so `mergeDown`, `removeColumn` and
+  `insertRow` decline instead of producing it.
+- **Merge ergonomics (design note §6, decided here):** one column or one row at
+  a time, absorbing **only filler**, plus unmerge. Predictable — a wide merge is
+  repeated clicks — and no merge can quietly discard a heading somebody wrote or
+  a cell's rules. Clearing a cell first is one click; a silent loss is not
+  recoverable.
+- **`Cell.kind: "empty"` earns its place (§6, decided).** It is the blank corner
+  of a header grid, and it has to be a different thing from a heading with no
+  text: the latter renders as a `<th>`, which assistive technology announces as
+  a column header for the column under it.
+- **A selector is picked with the entry editor's own walk**
+  (`categoryRoots` / `categoryRefinements`), not from a flat list of
+  `categoryTags` as the note proposed. The two nearly agree, and where they
+  differ the walk is right: it produces exactly the bundles an entry can be
+  created with — a bare part of speech included, which a language that has
+  declared no category still has — and a selector no entry can carry reaches
+  nothing. The axis step reads *Cited as (niver)*, which is the merge stated in
+  the interface.
+- **A new paradigm whose categories already have one is refused, with a door to
+  the published record.** The concurrency guard is skipped while creating,
+  precisely because there is then nobody else's work to lose — so publishing a
+  "new" paradigm onto an existing identity would be the one rewrite with no
+  guard behind it. `paradigmRkey` is computed from the draft and compared with
+  the pointers the level already holds; *Open the published tables* remounts the
+  editor on that record.
+- **The editor addresses the *published* grammar, never the grammar dialog's
+  draft.** A paradigm is a different record with its own publish button, so a
+  cell address built from a value that exists only in an unsaved draft would be
+  publishable *and* pointing at nothing the moment the draft was abandoned.
+- **The cell-address picker offers every bound grammatical feature**, not the
+  category's axis. A conjugation cell is addressed by person, number, tense and
+  mood at once, and one paradigm may serve several categories; the axis is the
+  single feature whose default identifies the *headword*, which is a different
+  question. Several values of one feature select together — the settled spelling
+  of syncretism.
+- **The preview's specimen is a real word.** *Draw one* fills the lemma from
+  slice 1's random-entry endpoint, keyed on the first selector, because a
+  category's annotation is a labelled tag like any other. That is what the note
+  called the reroll, and it is worth more than a reroll: rules written against
+  an invented lemma test the author's own spelling.
+- **The list waits for the index, but only for a new paradigm.** A rewrite keeps
+  its identity, so its row is already on screen and nothing visible changes when
+  the new version lands — a notice about it would be a notice about nothing.
+- **The reader gained a third form state.** A form the entry asserts **over** a
+  generated one is marked and named in the legend. Only the containment case can
+  reach it — `mergeParadigms` already suppresses a generated form at the *same*
+  address — and it is the case that matters: without it, a rule that is wrong
+  for one word and a rule that is wrong for the language look identical.
+
+**Verification.** Full `npm run typecheck` (8/8) and `npm run lint` (5/5). The
+browser pass ran against the local API with `scripts/slice4-fixture.tmp.ts`'s
+`qtl` fixture, and covered: a v2 record loading into the grid with its merged
+title cell intact; the inspector's kind toggle, address picker and rule row; a
+column added and its new cell addressed `Number=Ptan` as manual-only, published,
+and the entry's off-table form **moving out of the leftover list into that
+cell**; the selector walk (`an.` → `g.` → *Cited as (niver)* → `str.` / `g.`);
+the identity guard firing on `str.` and its door loading the published tables;
+a second paradigm declared for the singular flavour, which reaches `kambr` and
+**does not reach** `bezhin` — exact match, seen from the authoring side; the
+override marking, driven by giving `kambr` a form tagged
+`Gender=Masc|Number=Plur` against a cell addressed `Number=Plur`; merge and
+unmerge with their gating (*Merge right* offered only where the neighbour is
+filler); and *Draw one* filling the lemma with `bezhin` and the preview
+generating `bezhinenn` from it. The fixture was torn down afterwards and the
+local index confirmed empty of it.
+
+**Slice 4's browser pass is therefore done, not carried.** The reader drew the
+authored spans, the language's labels over each cell, a generated form, an
+asserted one, both absent states and a leftover — the whole of what that slice
+deferred.
+
+**Carried into slice 6:** the `otherForms` picker still offers only the
+category's axis feature values (§6's second open question). It bit exactly once
+in this pass — addressing `Gender=Masc|Number=Plur` needed the manual field —
+which is evidence for widening it to the features a matching paradigm's cells
+use, and not enough to design it against a fixture with no conjugation in it.
+Left open deliberately. Also noted while working: the local index still carries
+`qaa-x-s2`, `x-gate` and `x-para` from earlier slices, which the fixture-set
+rewrite should sweep.
+
+### State after slice 4
 
 **2026-08-21, slice 4 — built, typechecked, linted and driven through both
 verification harnesses; the browser pass is deliberately deferred to slice 6.**
@@ -180,16 +289,15 @@ labelled. The reader is real now, so the editor has something to preview against
   `verify-paradigms.ts` (ingest, identity, exact-match reach, expansion, the missing-form queue)
   50/50, `verify-paradigm-reader.ts` (grid geometry, issues, generation, placement) 37/37. They
   are temporary by design and go at slice 6, together with `scripts/slice4-fixture.tmp.ts`.
-- [ ] **Slice 5 owes the rule-row UI**, deleted with `ParadigmEditorDialog`'s body and
-  `lib/paradigm-draft.ts`. Also recoverable at 343516e, as is the reader's table geometry
-  (`mergeCellSpans` survives in `packages/types`) and the `entry.*` copy for the two absent states.
+- [x] **Slice 5's rule-row UI is rebuilt** (2026-08-21), recovered from 343516e and re-hosted
+  inside the cell it fills: base, condition, both affix pairs, reordering, removal. It sits in the
+  cell inspector rather than in a flat list, because a rule no longer carries an address of its own.
 - [x] **Slice 2's paradigm-ingest gate is gone** (2026-08-21). `PARADIGM_INGEST_GATED` is deleted
   and the function it guarded now speaks v2: rkey recompute, `paradigmIssues` gate, tables cached
   for the expansion job.
-- [ ] **Slice 6 owes slice 4's browser pass**, deferred deliberately rather than skipped: the
-  reader has never been driven in a browser, only through `verify-paradigm-reader.ts`.
-  `scripts/slice4-fixture.tmp.ts` is written for it — it publishes a quarantined `qtl` (merged
-  grammar with two headword flavours of one category, an anv-stroll entry, the sibling singular
-  headword the paradigm must not reach, and a two-table paradigm with a minted `Sgv` cell, a
-  declining rule, a manual-only cell and an off-table form) against a local API, and tears down
-  after. Fold it into the testset slice, which has to publish fixtures anyway.
+- [x] **Slice 4's browser pass is done** (2026-08-21), inside slice 5 rather than deferred to the
+  testset slice: the same `scripts/slice4-fixture.tmp.ts` fixture the editor had to be built
+  against is the one the reader needed, so driving one drove both. Titles, authored spans, the
+  minted `Sgv` cell's label, a generated form, an asserted one, both absent states and a leftover
+  all render as the harness said they would. The script still goes at slice 6 with the two
+  harnesses.

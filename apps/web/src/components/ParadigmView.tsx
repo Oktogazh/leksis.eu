@@ -29,8 +29,8 @@ import { TagLabel } from "./EntryPreview";
 // which form lands in which of them is `resolveParadigmTables` and `placeForms`
 // in packages/types; here it is only drawn.
 //
-// Two honest distinctions survive the rewrite, both from ADR-0009 and both
-// re-hosted onto the new shape:
+// Three honest distinctions are drawn here, two of them ADR-0009's re-hosted
+// onto the new shape and the third the one an authored table makes worth having:
 //
 //   * a **derived** form is not a claim the entry's author made, so it is
 //     marked, and the marks are explained in a legend rather than in a tooltip
@@ -39,7 +39,11 @@ import { TagLabel } from "./EntryPreview";
 //     simply produced nothing for this word. The first is waiting for somebody
 //     to write the form into an entry; the second is the language's own rules
 //     declining, and inviting a contributor to "fill it in" would be asking
-//     them to fix the wrong record.
+//     them to fix the wrong record;
+//   * a form the entry asserts **over** a rule that also filled the cell is
+//     marked as such. The word and the rules are two records by two people, and
+//     a cell where they disagree is where a rule author finds out that a rule
+//     wrong for one word looks nothing like a rule wrong for the language.
 //
 // Generation itself is untouched — the merger and the generator in
 // packages/types are what search ran over the same forms, and the one thing
@@ -58,12 +62,37 @@ interface DisplayForm extends EntryInflectedForm {
   id: number;
 }
 
-/** A form's spelling, marked as derived when a rule produced it. */
-function FormText({ form }: { form: DisplayForm }) {
+/**
+ * What one cell holds: the forms shown in it, and whether showing them meant
+ * dropping a generated one the entry's own author overrode.
+ */
+interface CellForms {
+  forms: readonly DisplayForm[];
+  overridden: boolean;
+}
+
+/**
+ * A form's spelling, marked as derived when a rule produced it — and as an
+ * **override** when the author's own form took a cell a rule also filled.
+ *
+ * The third state is the one ADR-0019's editor made worth showing. The rules
+ * and the word are written by different people, in different records, and a
+ * cell where they disagree is exactly where a reader (and a rule author) wants
+ * to know that the entry won: without it, a rule that is wrong for one word and
+ * a rule that is wrong for the language look identical.
+ */
+function FormText({ form, overridden = false }: { form: DisplayForm; overridden?: boolean }) {
   const { t } = useTranslation();
-  if (!form.generated) return <>{form.form}</>;
+  if (form.generated) {
+    return (
+      <span className="italic" title={t("entry.formGenerated")}>
+        {form.form}
+      </span>
+    );
+  }
+  if (!overridden) return <>{form.form}</>;
   return (
-    <span className="italic" title={t("entry.formGenerated")}>
+    <span className="underline decoration-dotted" title={t("entry.formOverridden")}>
       {form.form}
     </span>
   );
@@ -244,20 +273,23 @@ export function EntryParadigm({
   if (tables.length === 0) return <FlatForms forms={all} lookup={lookup} />;
 
   /**
-   * The forms in one cell, with the entry's own winning it.
+   * The forms in one cell, with the entry's own winning it — and whether
+   * winning it meant displacing something.
    *
    * `mergeParadigms` already settles the case where an asserted form and a
    * generated one carry the *same* address. This settles the other one, which
    * only a table can see: a form the entry asserts at a more specific address
    * lands in the same cell as a generated one by containment, and the author's
    * word wins. Dropping the generated form rather than printing both is what
-   * keeps a cell one answer.
+   * keeps a cell one answer; saying that it happened is what keeps the cell
+   * honest about which record a reader is looking at.
    */
-  const held = (key: string): readonly DisplayForm[] | undefined => {
+  const held = (key: string): CellForms | undefined => {
     const there = placement.placed.get(key);
     if (there === undefined || there.length === 0) return undefined;
     const asserted = there.filter((form) => !form.generated);
-    return asserted.length > 0 ? asserted : there;
+    if (asserted.length === 0) return { forms: there, overridden: false };
+    return { forms: asserted, overridden: asserted.length < there.length };
   };
 
   const cellText = (
@@ -286,10 +318,10 @@ export function EntryParadigm({
     // written. What is *not* printed twice is one form spanning several cells:
     // that is one object landing in each of them, and the record draws those
     // cells merged.
-    return there.map((form, i) => (
+    return there.forms.map((form, i) => (
       <span key={form.id}>
         {i > 0 ? ", " : ""}
-        <FormText form={form} />
+        <FormText form={form} overridden={there.overridden} />
       </span>
     ));
   };
@@ -332,17 +364,23 @@ function ParadigmLegend({
   forms,
 }: {
   tables: readonly ResolvedParadigmTable[];
-  held: (key: string) => readonly DisplayForm[] | undefined;
+  held: (key: string) => CellForms | undefined;
   forms: readonly DisplayForm[];
 }): ReactNode {
   const { t } = useTranslation();
 
   let manual = false;
   let ungenerated = false;
+  let overridden = false;
   for (const table of tables) {
     for (const row of table.rows) {
       for (const cell of row) {
-        if (cell.kind !== "form" || held(cell.address.key) !== undefined) continue;
+        if (cell.kind !== "form") continue;
+        const there = held(cell.address.key);
+        if (there !== undefined) {
+          if (there.overridden) overridden = true;
+          continue;
+        }
         if (cell.rules.length === 0) manual = true;
         else ungenerated = true;
       }
@@ -357,6 +395,12 @@ function ParadigmLegend({
   if (derived && asserted) {
     rows.push({ mark: <span className="italic">abc</span>, text: t("entry.legendDerived") });
     rows.push({ mark: <span>abc</span>, text: t("entry.legendAsserted") });
+  }
+  if (overridden) {
+    rows.push({
+      mark: <span className="underline decoration-dotted">abc</span>,
+      text: t("entry.legendOverridden"),
+    });
   }
   if (manual) rows.push({ mark: <span>·</span>, text: t("entry.legendEmpty") });
   if (ungenerated) rows.push({ mark: <span>—</span>, text: t("entry.legendNotGenerated") });

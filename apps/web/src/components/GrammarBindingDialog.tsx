@@ -98,6 +98,15 @@ interface L2Origin {
   feature: string;
 }
 
+/**
+ * How long the paradigm list waits for a just-published record, and how often.
+ *
+ * The path is PDS → Jetstream → ArangoDB, so seconds; the cap is the source
+ * page's, which is the longest that path has been observed to take.
+ */
+const PARADIGM_SYNC_POLL_MS = 3_000;
+const PARADIGM_SYNC_MAX_TRIES = 20;
+
 type Path =
   | { at: "root" }
   | { at: "pos" }
@@ -233,8 +242,26 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
    * riding along is what the editor's concurrency guard compares against.
    */
   const [paradigms, setParadigms] = useState<ParadigmPointer[]>([]);
-  /** The stacked editor: which headword categories it was opened on. */
-  const [editing, setEditing] = useState<{ selectors: Tag[] } | null>(null);
+  /**
+   * The stacked paradigm editor: null while closed, `{}` while a new paradigm
+   * is being declared, and carrying a pointer while one is being rewritten.
+   *
+   * The pointer and not merely its categories, because the editor needs the
+   * `cid` for its concurrency guard and the record URI to resolve the tables
+   * from their author's PDS — a paradigm's blast radius is every entry of a
+   * category, so a copy loaded ten minutes ago must not overwrite one published
+   * since.
+   */
+  const [editing, setEditing] = useState<{ pointer?: ParadigmPointer } | null>(null);
+  /**
+   * A paradigm published from this dialog, until the index has it.
+   *
+   * The list here is the AppView's, and a record reaches it through the author's
+   * PDS and Jetstream — seconds, not milliseconds. Without this the author
+   * publishes, the dialog closes, and their own paradigm is missing from the
+   * list they are looking at.
+   */
+  const [syncing, setSyncing] = useState<string | null>(null);
   /**
    * An axis picked for a category **nobody has named yet**, held here until the
    * first annotation carries it into the draft.
@@ -538,6 +565,51 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
    * always something to show.
    */
   const draftLookup = useMemo(() => grammarLookup(draft), [draft]);
+
+  /**
+   * The language's declarations **as published**, which is what the paradigm
+   * editor addresses — not the draft this dialog is editing.
+   *
+   * A paradigm is a different record with its own publish button, so a cell
+   * address built from a value that exists only in an unsaved grammar draft
+   * would be publishable *and* pointing at nothing the moment the draft was
+   * abandoned. Same mapping as the draft's own initial state, so a record
+   * written before the merge reads coherently here too.
+   */
+  const savedGrammar = useMemo(() => draftFromRecord(record?.grammar), [record]);
+  const savedLookup = useMemo(() => grammarLookup(savedGrammar), [savedGrammar]);
+
+  /**
+   * Wait for a just-published paradigm to reach the index, then show it.
+   *
+   * The same shape as the source page's sync poll and for the same reason: the
+   * record went to a PDS, and this list is the AppView's. Giving up after the
+   * cap leaves the notice off and the list as the index has it — a paradigm that
+   * never arrives is a firehose problem, not something to keep asking about.
+   */
+  useEffect(() => {
+    if (syncing === null) return;
+    let tries = 0;
+    const timer = setInterval(() => {
+      tries += 1;
+      fetchLanguageParadigms(tag)
+        .then((rows) => {
+          setParadigms(rows);
+          if (rows.some((row) => row.paradigmKey === syncing)) {
+            setSyncing(null);
+            clearInterval(timer);
+          } else if (tries >= PARADIGM_SYNC_MAX_TRIES) {
+            console.warn(`paradigm ${syncing} not indexed after polling; giving up`);
+            setSyncing(null);
+            clearInterval(timer);
+          }
+        })
+        .catch(() => {
+          /* transient — keep polling */
+        });
+    }, PARADIGM_SYNC_POLL_MS);
+    return () => clearInterval(timer);
+  }, [syncing, tag]);
 
   /** Display text of a category: bound labels where they exist, else verbatim. */
   function categoryText(category: Tag): string {
@@ -1630,32 +1702,40 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
   // ---- layer 5 -----------------------------------------------------------
 
   /**
-   * The language's paradigms as a flat list — **a holding state while the
-   * category–axis merge lands** (ADR-0019).
+   * The language's paradigms: one row per record, naming every headword
+   * category it serves, plus the door to a new one.
    *
-   * This level used to be reached through the layouts, one door per table a
-   * language drew, and a new paradigm's selector was picked from the
-   * combinations falling under that layout. Both of those are gone: the table
-   * shape moved into the paradigm record and a selector is now one of the
-   * language's own declared category flavours. Rebuilding the door is slice 5's
-   * work, so what is left here lists what the index currently holds — one row
-   * per paradigm, naming every category it serves — and the editor behind it
-   * says so rather than opening on a shape it cannot yet write.
+   * A flat list and not a tree, which is the shape ADR-0019 left it. This level
+   * used to be reached through the layouts — one door per table the *language*
+   * drew — and a paradigm's selector was picked from the combinations falling
+   * under that layout. Both are gone: the table moved into the paradigm record,
+   * and a selector is now a headword category matched exactly, so a paradigm no
+   * longer hangs under anything. Editing one opens its own dialog, because it is
+   * its own record with its own publish footer (see `ParadigmEditorDialog`).
    */
   function renderL5Root() {
     return (
       <>
         <p className="mb-3 text-xs text-content-subtle">{t("grammar.l5RootHint")}</p>
-        <p className="rounded-lg border border-dashed p-3 text-sm text-content-muted">
-          {t("grammar.l5Rebuilding")}
-        </p>
-        {paradigms.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setEditing({})}
+          className="rounded-lg border px-3 py-2 text-sm text-content hover:border-primary"
+        >
+          {t("grammar.l5New")}
+        </button>
+        {syncing !== null && (
+          <p className="mt-3 text-xs text-content-subtle">{t("grammar.l5Syncing")}</p>
+        )}
+        {paradigms.length === 0 ? (
+          <p className="mt-3 text-sm text-content-muted">{t("grammar.l5Empty")}</p>
+        ) : (
           <ul className="mt-3 space-y-1.5">
             {paradigms.map((row) => (
               <li key={row.paradigmKey}>
                 <button
                   type="button"
-                  onClick={() => setEditing({ selectors: row.selectors })}
+                  onClick={() => setEditing({ pointer: row })}
                   className={levelButton}
                 >
                   <span className="text-sm text-content">
@@ -2232,8 +2312,27 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
           behind it is untouched by anything that happens in there. */}
       {editing !== null && (
         <ParadigmEditorDialog
-          selectors={editing.selectors}
+          // Keyed on the paradigm, so opening another one — including the
+          // published record a colliding identity sends the author to —
+          // remounts rather than reusing a draft loaded for a different record.
+          key={editing.pointer?.paradigmKey ?? "new"}
+          tag={tag}
+          grammar={savedGrammar}
+          lookup={savedLookup}
+          pointers={paradigms}
+          {...(editing.pointer !== undefined ? { existing: editing.pointer } : {})}
+          onOpenExisting={(pointer) => setEditing({ pointer })}
           onClose={() => setEditing(null)}
+          onPublished={(paradigmKey) => {
+            setEditing(null);
+            // Only a *new* paradigm is worth waiting for. A rewrite keeps its
+            // identity, so its row is already in this list and nothing visible
+            // changes when the new version lands — a notice about it would be a
+            // notice about nothing.
+            setSyncing(
+              paradigms.some((row) => row.paradigmKey === paradigmKey) ? null : paradigmKey,
+            );
+          }}
         />
       )}
     </div>
