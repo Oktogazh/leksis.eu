@@ -65,6 +65,21 @@ and every row keeps a cell of its own.
 - **Syncretism is one merged cell** addressed by a multivalue coordinate, never
   the same form printed twice.
 
+### A paradigm indexed before the merge is skipped, not served
+
+A version stored before the tables moved into the paradigm record carries one
+`selector` and no `selectors`, and nothing rebuilds it: `db:init` reconstructs
+the read models from records it holds, and a paradigm's content lives on its
+author's PDS. The endpoint projected the missing field anyway, so it served
+`selectors: null` into a response whose type promises a list — and the grammar
+dialog crashed naming the categories such a paradigm serves.
+
+It is skipped now. The consumer already treated one as **inert** — it reaches no
+entry and generates no form — and this is the same decision one surface later:
+what is skipped is exactly what is unusable everywhere else, since the merged
+lexicon makes the old shape unpublishable and the editor needs a selector set to
+open one.
+
 ### Also in this release
 
 - **Usage counts and a specimen beside every declaration.** Each part of speech,

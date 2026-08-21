@@ -41,8 +41,8 @@ Update the checkbox and the state note at the end of each session. One slice = o
   the dashboard footer. (Non-breaking.) *Done 2026-08-21.*
 - [x] **Slice 2** — grammar merge: language lexicon (`categories` replaces `bindings`; `axes` +
   `layout` removed), types rework, ingest (`selectorKeys`, index swap, validation), minimal web
-  compile pass (old tabs removed, paradigm surfaces stubbed). **`br` is not republished** — see the
-  state note. *Done 2026-08-21.*
+  compile pass (old tabs removed, paradigm surfaces stubbed). `br` was **not** republished here; it
+  was republished at slice 6 — see that state note. *Done 2026-08-21.*
 - [x] **Slice 3** — the categories editor (axis + default-value annotations) and the entry
   editor (narrowing emits the full bundle; otherForms picker over the axis feature's bound
   values). *Done 2026-08-21.*
@@ -106,11 +106,41 @@ carries no `qt*` tag in production.
 and are recorded in the Consequences**: the sample endpoint takes the row key as
 `?row=`, not as a path segment, and a row at zero shows no chip at all.
 
+**Two things the merged `br` record found, after the testset pass.**
+
+- **A legacy paradigm doc crashed the Paradigms level, and the fix is on the
+  read path.** A version indexed before slice 4 carries a single `selector` and
+  no `selectors`; `getLanguageParadigms` projected the missing field, so the
+  endpoint served `selectors: null` into a response whose type says `Tag[]`, and
+  `GrammarBindingDialog` crashed mapping over it. Nothing rebuilds such a doc —
+  `db:init` reconstructs read models from records it holds, and a paradigm's
+  content lives on its author's PDS — so this was not stale data waiting to age
+  out: it was a class of crash the arc introduced, sitting in the **production**
+  index, and the tag would have shipped it. `FILTER IS_LIST(p.selectors)` makes
+  the read path agree with the write path, which already treats such a doc as
+  **inert** (`selectorKeysOf` tolerates the absence rather than throwing). What
+  is skipped is exactly what is unusable everywhere else: the v2 lexicon makes
+  the old shape unpublishable, and the editor needs a selector set to open one.
+- **`br` is republished in the merged shape**, from the copy the user supplied
+  rather than from the accepted version, which had drifted poorer (2 parts of
+  speech against 14, no `Implij`, no `Degree`). Built by
+  `scripts/republish-br.tmp.ts`: everything but the `Todo` scaffold written out
+  from that copy, the scaffold's 205 surviving rows lifted verbatim from the
+  accepted record and filtered to the ids the copy still carries (25 had been
+  triaged away). `axes` and `layout` are dropped — the merged lexicon rejects
+  them, and an axis now needs the value each headword flavour is *cited at*,
+  which is the language's judgement and one pass in the new Categories tab.
+  `bindings` became `categories` **losslessly**: a named combination with no
+  axis is a category with one annotation and no `default`, so both
+  abbreviations survive and no new claim is made. `grammarIssues` empty; the
+  version indexed, and the dashboard shows all fourteen parts of speech and both
+  categories with their usage chips.
+
 **Verification.** Full `npm run typecheck` (8/8), `npm run lint` (5/5),
 `npx tsc -p scripts/tsconfig.json` clean, `publish-fixtures.ts --check` green
 over all four validators, `verify-paradigms.ts` 50/50, `verify-paradigm-reader.ts`
 37/37, and `PDS_ADMIN_PASSWORD=x PDS_JWT_SECRET=x PDS_PLC_ROTATION_KEY=x docker
-compose build api web` — both images built.
+compose build api web` — both images built, re-run after the read-path fix.
 
 ### State after slice 5
 

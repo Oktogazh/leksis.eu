@@ -31,11 +31,25 @@ import { db } from "./db";
  * There is no cap: a language has tens of paradigms, one per inflection class,
  * and a client that cannot render an entry without all of them should not be
  * handed a page of them.
+ *
+ * **A version indexed before ADR-0019 is skipped, not served.** Such a doc
+ * carries a single `selector` and no `selectors` at all, and nothing rebuilds
+ * it: `db:init` reconstructs the derived read models from records it holds, and
+ * a paradigm's content lives on its author's PDS. The consumer already treats
+ * one as **inert** — `selectorKeysOf` tolerates the absence rather than
+ * throwing, so it reaches no entry and generates no form — and this is the same
+ * decision one surface later. Projecting the missing field instead would put
+ * `selectors: null` into a response whose type says `Tag[]`, and the client
+ * that maps over it to name the categories a paradigm serves would crash on a
+ * pointer to a record it could not have opened anyway: the editor needs a
+ * selector set, and the v2 lexicon makes the old shape unpublishable. What is
+ * skipped here is exactly what is unusable everywhere else.
  */
 export async function getLanguageParadigms(tag: string): Promise<ParadigmView[]> {
   const cursor = await db.query<ParadigmView>(aql`
     FOR p IN paradigms
       FILTER p.languageID == ${tag} AND p.current == true
+      FILTER IS_LIST(p.selectors)
       SORT p.selectorKey ASC, p.indexedAt DESC
       RETURN {
         paradigmKey: p.paradigmKey,
