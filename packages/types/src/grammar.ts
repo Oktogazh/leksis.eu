@@ -970,7 +970,17 @@ export interface PlacedForms<T> {
  * number cannot know which number a form tagged only for case belongs to, and
  * guessing would put a word in a reader's mouth.
  *
- * Nothing is ever dropped. Layer 5 will override generated cells from this same
+ * **Multivalue spans from both sides** (ADR-0019). A form written
+ * `Gender=Fem,Masc` has always covered every address it names; since the table
+ * moved into the paradigm record a *cell* may be written the same way, and a
+ * syncretic cell is now the ordinary way to draw one. So each side is expanded
+ * to the addresses it spans before they meet, and a cell keeps its own key
+ * whichever of its addresses a form landed on — which is what keeps the
+ * placement map keyed by the cell the viewer draws. While cells were derived
+ * from a layout they were single-valued by construction, so this expansion is a
+ * no-op on everything written before it.
+ *
+ * Nothing is ever dropped. A generated cell is overridden from this same
  * placement, and an `otherForm` matching no declared cell has to keep rendering
  * somewhere — that is the failure the flat list exists to absorb.
  */
@@ -978,7 +988,20 @@ export function placeForms<T extends { tag: Tag }>(
   cells: readonly CellAddress[],
   forms: readonly T[],
 ): PlacedForms<T> {
-  const byKey = new Set(cells.map((cell) => cell.key));
+  /** Every address each cell spans, each still carrying the cell's own key. */
+  const spread = cells.flatMap((cell) =>
+    spannedTags({ feats: cell.coords.map((coord) => ({ ...coord })) }).map((address) => ({
+      key: cell.key,
+      coords: (address.feats ?? []) as LayoutCoord[],
+      matchKey: featsMatchKey(address),
+    })),
+  );
+  // First cell wins a shared address: two cells claiming one is a defect the
+  // record is refused for, and a draft that has one still has to render.
+  const byKey = new Map<string, string>();
+  for (const address of spread) {
+    if (!byKey.has(address.matchKey)) byKey.set(address.matchKey, address.key);
+  }
   const placed = new Map<string, T[]>();
   const leftover: T[] = [];
   const put = (key: string, form: T): void => {
@@ -994,14 +1017,14 @@ export function placeForms<T extends { tag: Tag }>(
     // always was.
     const claimed = new Set<string>();
     for (const address of spannedTags(form.tag)) {
-      const key = featsMatchKey(address);
-      if (byKey.has(key)) {
-        claimed.add(key);
+      const exact = byKey.get(featsMatchKey(address));
+      if (exact !== undefined) {
+        claimed.add(exact);
         continue;
       }
       const held = featKeySet(address);
-      let best: CellAddress | undefined;
-      for (const cell of cells) {
+      let best: (typeof spread)[number] | undefined;
+      for (const cell of spread) {
         if (cell.coords.length === 0 || !coordsContained(cell.coords, held)) continue;
         if (best === undefined || cell.coords.length > best.coords.length) best = cell;
       }

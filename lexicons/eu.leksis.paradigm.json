@@ -4,21 +4,23 @@
   "defs": {
     "main": {
       "type": "record",
-      "description": "One language's generation recipe for one category of words: affix rules that fill the cells the language's `grammar.layout` laid out, starting from an entry's lemma. It is a record of its own rather than a field on the language record because rules are large, written per inflection class, and edited at a different cadence than the tag bindings they address. Records prove authorship, not ownership: any user may publish a paradigm for any language and category, and the AppView treats the latest record for a given (language, category) as current, archiving the previous ones. By convention the record key is `{languageID}-{16 hex characters}`, the hexadecimal being a hash of the canonical key of `selector` — computed from this record's own fields, exactly as an eu.leksis.source record's key is computed from its OCLC number. Identity therefore comes from the key: every author's paradigm for one category shares one key by construction, no repository can hold two paradigms for the same category, and `selector` is immutable for a given identity — changing the category is publishing a different paradigm, not editing this one. An entry never stores a generated form: it stores its category and its irregular forms, and a form it asserts itself overrides whatever a rule here would produce for the same cell. That is what lets a language fix a wrong rule once and re-render every entry that uses it, without anybody republishing a record.",
+      "description": "One language's generation recipe for one kind of headword: the tables its forms are printed in, and the affix rules that fill their cells starting from an entry's lemma. It is a record of its own rather than a field on the language record because rules and tables are large, written per inflection class, and edited at a different cadence than the tag bindings they address. Records prove authorship, not ownership: any user may publish a paradigm for any language and category, and the AppView treats the latest record for a given set of selectors as current, archiving the previous ones. By convention the record key is `{languageID}-{16 hex characters}`, the hexadecimal being a hash of this record's own sorted canonical selector keys — exactly as an eu.leksis.source record's key is computed from its OCLC number. Identity therefore comes from the key: every author's paradigm for one set of categories shares one key by construction, no repository can hold two paradigms for the same set, and `selectors` is immutable for a given identity — changing the categories is publishing a different paradigm, not editing this one. The tables live here rather than on the language record because a real conjugation table is not the cartesian product of a category's axes: it has explanatory headings, cells no combination of features names, and merged cells, so it is authored cell by cell. An entry never stores a generated form: it stores its category and its irregular forms, and a form it asserts itself overrides whatever a rule here would produce for the same cell. That is what lets a language fix a wrong rule once and re-render every entry that uses it, without anybody republishing a record.",
       "key": "any",
       "record": {
         "type": "object",
-        "required": ["languageID", "selector", "rules", "createdAt"],
+        "required": ["languageID", "selectors", "tables", "createdAt"],
         "properties": {
           "languageID": {
             "type": "string",
             "maxLength": 64,
             "description": "Well-formed IETF BCP 47 tag of the language these rules belong to, normalized to lowercase (e.g. \"br\", \"br-gw\"). It is repeated here rather than read from the record key alone because the key is a derived string, and a reader holding the record must be able to say which language it describes."
           },
-          "selector": {
-            "type": "ref",
-            "ref": "eu.leksis.defs#tag",
-            "description": "The category these rules apply to — a bundle over what this language declared as inherent, e.g. {NOUN, Declension=1} or {VERB, Conjugation=2}. It is matched against an entry by containment, the way an axis and a layout are: a paradigm selecting {VERB} reaches an entry categorised {VERB, Conjugation=2}, and where several paradigms match one entry the most specific selector wins the cells they both fill. Immutable for one record key, since the key is derived from it."
+          "selectors": {
+            "type": "array",
+            "minLength": 1,
+            "maxLength": 8,
+            "items": { "type": "ref", "ref": "eu.leksis.defs#tag" },
+            "description": "The headword categories these rules apply to — full bundles over what this language declared: a part of speech, the features it calls inherent, and the default value of the category's axis where it names one, e.g. {NOUN, Gender=Masc, Number=Plur} for a Breton anv-kadarn stroll. Each is matched against an entry's own headword bundle by EXACT equality, not by containment: a paradigm selecting {VERB} reaches only entries whose bundle is literally a bare verb, and {VERB, Conjugation=2} is a different paradigm rather than a more specific one. Two paradigms can therefore never both reach one entry. Several selectors are listed here when one set of tables genuinely serves several categories — a declension shared by two genders — which is the only reason this is a list. Immutable for one record key, since the key is derived from it."
           },
           "label": {
             "type": "ref",
@@ -31,12 +33,12 @@
             "items": { "type": "ref", "ref": "#requirement" },
             "description": "Base forms an entry must supply for these rules to run, beyond the lemma. Many languages cannot generate a paradigm from the citation form alone — a Latin noun needs its genitive, a strong Germanic verb its preterite — and this is where a paradigm says so. An entry missing one of these is skipped by this paradigm rather than half-generated, and lands on the language dashboard's missing-forms queue carrying the row's own message."
           },
-          "rules": {
+          "tables": {
             "type": "array",
             "minLength": 1,
-            "maxLength": 512,
-            "items": { "type": "ref", "ref": "#rule" },
-            "description": "The generation rules, one row per cell or set of cells, in the order they are applied. Several rows may target the same cell with different conditions — the ordinary Hunspell shape, where one suffix takes -ies and another -s — and the FIRST row whose condition matches wins that cell. A cell no row matches for a given lemma is simply not generated: an empty cell is not an error, and the only error state a paradigm has is a missing required base form."
+            "maxLength": 16,
+            "items": { "type": "ref", "ref": "#table" },
+            "description": "The tables this paradigm is printed in, in the order a reader meets them. Several because one kind of word is often laid out in several grids — the finite forms in one, the participles in another — and because a grid that tried to hold both would need cells for combinations the language does not have."
           },
           "notes": {
             "type": "array",
@@ -53,7 +55,7 @@
           "subject": {
             "type": "string",
             "format": "at-uri",
-            "description": "AT URI of the paradigm record version this record rewrites. An audit trail only: identity comes from the record key, so a rewrite is recognised whether or not this is present, and a `subject` pointing at a record for a different category changes nothing."
+            "description": "AT URI of the paradigm record version this record rewrites. An audit trail only: identity comes from the record key, so a rewrite is recognised whether or not this is present, and a `subject` pointing at a record for different categories changes nothing."
           },
           "createdAt": {
             "type": "string",
@@ -63,10 +65,81 @@
         }
       }
     },
+    "table": {
+      "type": "object",
+      "required": ["rows"],
+      "description": "One grid of the paradigm, authored cell by cell. It must tile a rectangle once its cells' spans are accounted for — a row short of a column, or two cells claiming one position, is a table nobody can draw, and the AppView refuses the record for it.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 1280,
+          "maxGraphemes": 128,
+          "description": "Caption printed above the grid, in this language — \"present indicative\". Optional: a paradigm with one table often needs no caption at all."
+        },
+        "rows": {
+          "type": "array",
+          "minLength": 1,
+          "maxLength": 128,
+          "items": { "type": "ref", "ref": "#row" },
+          "description": "The rows of the grid, top to bottom. A cell spanning several rows appears once, in the row it starts at, exactly as an HTML table writes it — the rows below simply do not repeat it."
+        }
+      }
+    },
+    "row": {
+      "type": "array",
+      "minLength": 1,
+      "maxLength": 64,
+      "items": { "type": "ref", "ref": "#cell" },
+      "description": "One row of a grid, left to right, skipping the positions cells above already span."
+    },
+    "cell": {
+      "type": "object",
+      "required": ["kind"],
+      "description": "One cell of a table. A `title` cell is prose explaining the rows or columns beside it; a `form` cell is an address in the paradigm and the rules that fill it; an `empty` cell is structural filler, the corner where a row heading meets a column heading. Merging is authored rather than inferred: a cell says how many rows and columns it covers, and a form spanning several cells is written as one cell with a multivalue coordinate rather than as several cells that happen to agree.",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "knownValues": ["title", "empty", "form"],
+          "maxLength": 32,
+          "description": "Which of the three kinds of cell this is. Unknown kinds are drawn as empty rather than refused, so a later kind of cell does not break a reader written before it."
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 1280,
+          "maxGraphemes": 128,
+          "description": "A title cell's text, in this language. Meaningless on the other kinds, which carry no prose of their own: a form cell's heading is the language's label for its coordinates."
+        },
+        "coords": {
+          "type": "array",
+          "minLength": 1,
+          "maxLength": 16,
+          "items": { "type": "ref", "ref": "#coord" },
+          "description": "A form cell's address: which combination of features this cell holds the form of. Required on a form cell and ignored on the others. A coordinate carrying several comma-separated values (\"Gender=Fem,Masc\") means ONE form covering every cell it names, which is how syncretism is written — the cell is then drawn with a span rather than the form being printed twice. Two form cells of one record must not share an address."
+        },
+        "rules": {
+          "type": "array",
+          "maxLength": 32,
+          "items": { "type": "ref", "ref": "#rule" },
+          "description": "How this cell's form is built, in the order the rules are tried: the FIRST row whose condition matches wins the cell — the ordinary Hunspell shape, where one ending takes -ies and another -s. Absent or empty means the cell is manual-only: no rule can fill it, and it is waiting for an entry to write its form out. That is deliberately distinct from a cell whose rules all decline for a given lemma, and a reader is shown the difference."
+        },
+        "rowSpan": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64,
+          "description": "How many rows this cell covers. Absent means one."
+        },
+        "colSpan": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64,
+          "description": "How many columns this cell covers. Absent means one."
+        }
+      }
+    },
     "requirement": {
       "type": "object",
       "required": ["coords", "message"],
-      "description": "\"To run these rules, an entry must have supplied this form.\" It names a cell of the language's layout, and the error a contributor sees when the entry has not filled it in.",
+      "description": "\"To run these rules, an entry must have supplied this form.\" It names an address, and the error a contributor sees when the entry has not filled it in.",
       "properties": {
         "coords": {
           "type": "array",
@@ -86,21 +159,13 @@
     },
     "rule": {
       "type": "object",
-      "required": ["coords"],
-      "description": "One generation rule: which cell it fills, which form it starts from, the condition that form must satisfy, and the affixes to exchange. A row with no condition and no affixes is legitimate and means the cell is identical to its base.",
+      "description": "One way of building the form of the cell this rule sits in: which form it starts from, the condition that form must satisfy, and the affixes to exchange. A rule with no condition and no affixes is legitimate and means the cell is identical to its base. It carries no address of its own — the cell is the address.",
       "properties": {
-        "coords": {
-          "type": "array",
-          "minLength": 1,
-          "maxLength": 16,
-          "items": { "type": "ref", "ref": "#coord" },
-          "description": "The cell this rule fills. A coordinate carrying several comma-separated values (\"Gender=Fem,Masc\") spans every cell it names with ONE form, which is how syncretism is written: the table then merges those cells under one heading instead of printing the form again in each. That is deliberately not a wildcard — a form covering an axis and a form nobody has entered must never look the same to a reader."
-        },
         "base": {
           "type": "array",
           "maxLength": 16,
           "items": { "type": "ref", "ref": "#coord" },
-          "description": "The form this rule transforms. Absent means the lemma — the entry's canonical orthography — which is the ordinary case. Otherwise it addresses another cell: either one the entry supplies (a `requires` row) or one an earlier rule generates, so a paradigm can build a stem once and inflect it many times. A base that names neither, or a chain of bases that loops, is a defect the AppView refuses the record for."
+          "description": "The form this rule transforms. Absent means the lemma — the entry's canonical orthography — which is the ordinary case. Otherwise it addresses another cell: either one the entry supplies (a `requires` row) or one another cell generates, so a paradigm can build a stem once and inflect it many times. A base that names neither, or a chain of bases that loops, is a defect the AppView refuses the record for."
         },
         "match": {
           "type": "string",
@@ -147,7 +212,7 @@
     "coord": {
       "type": "object",
       "required": ["feature", "value"],
-      "description": "One coordinate of a cell address: a bare feature and value, carrying no provenance and no label. Bare for the same reason a layout's coordinates are — a paradigm is a selection from what the language has already declared, never a second place to declare it — so provenance is read back from the language's own `values` row before the address is displayed or matched against a form.",
+      "description": "One coordinate of a cell address: a bare feature and value, carrying no provenance and no label. Bare because a paradigm is a selection from what the language has already declared, never a second place to declare it — so provenance is read back from the language's own `values` row before the address is displayed or matched against a form.",
       "properties": {
         "feature": {
           "type": "string",

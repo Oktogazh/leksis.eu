@@ -17,7 +17,7 @@ import { db } from "./db";
 // morphology.
 
 /**
- * Every current paradigm of one language, ordered by selector key.
+ * Every current paradigm of one language, ordered by identity key.
  *
  * The order used to be the contract — most specific selector first, matching the
  * precedence the expansion job applied when it generated the forms sitting in
@@ -25,8 +25,8 @@ import { db } from "./db";
  * at most one paradigm reaches any one headword bundle and there is no
  * precedence left for a client to reproduce. What remains is stability, so two
  * calls answer alike and a client rendering a list does not see it shuffle;
- * `selectorKey` is the natural key for that because it is the identity the rkey
- * hashes.
+ * `selectorKey` is the natural key for that because it is the string the rkey
+ * hashes — the paradigm's sorted selector keys, joined.
  *
  * There is no cap: a language has tens of paradigms, one per inflection class,
  * and a client that cannot render an entry without all of them should not be
@@ -40,7 +40,7 @@ export async function getLanguageParadigms(tag: string): Promise<ParadigmView[]>
       RETURN {
         paradigmKey: p.paradigmKey,
         languageID: p.languageID,
-        selector: p.selector,
+        selectors: p.selectors,
         recordURI: p.recordURI,
         cid: p.cid,
         authorDID: p.authorDID

@@ -197,12 +197,13 @@ export async function fetchLanguageDashboard(
 }
 
 /**
- * The pointers to a language's current paradigms, most specific selector first.
+ * The pointers to a language's current paradigms, ordered by identity key.
  *
- * Pointers only — the rules live on their authors' PDSs, and `lib/paradigms.ts`
- * is what resolves them. The order is the AppView's own precedence, so a caller
- * applying the first paradigm that fills a cell reproduces exactly what the
- * search index holds.
+ * Pointers only — the tables and rules live on their authors' PDSs, and
+ * `lib/paradigms.ts` is what resolves them. The order carried the AppView's own
+ * precedence while selectors were matched by containment; under ADR-0019's exact
+ * match at most one paradigm reaches a headword bundle, so it is now stability
+ * and nothing more.
  */
 export async function fetchLanguageParadigms(languageTag: string): Promise<ParadigmView[]> {
   const res = await fetch(`${API_BASE}/languages/${encodeURIComponent(languageTag)}/paradigms`);

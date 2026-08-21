@@ -94,11 +94,13 @@ export function forgetParadigms(tag: string): void {
  * The paradigms that actually reach one entry.
  *
  * **A paradigm matches an entry exactly** (ADR-0019): one of the entry's
- * headword keys *is* the selector's key. It was containment until the merge —
- * the entry's inherent bundle containing the selector — and the change is not
- * cosmetic: the bundle now carries the default axis value the entry was created
- * through, so `{NOUN}` and `{NOUN, Number=Plur}` are two kinds of headword with
- * two paradigms rather than a general rule and a refinement of it.
+ * headword keys *is* one of the paradigm's selector keys. It was containment
+ * until the merge — the entry's inherent bundle *containing* the selector — and
+ * the change is not cosmetic: the bundle now carries the default axis value the
+ * entry was created through, so `{NOUN}` and `{NOUN, Number=Plur}` are two kinds
+ * of headword with two paradigms rather than a general rule and a refinement of
+ * it. A paradigm lists several selectors when one set of tables serves several
+ * categories, so this is `some` over them rather than one lookup.
  *
  * Without this filter a language's verb conjugation runs over its nouns, and —
  * worse than untidy — the reader shows a different set of forms from the one the
@@ -121,5 +123,7 @@ export function paradigmsReaching(
   paradigms: readonly ResolvedParadigm[],
 ): ResolvedParadigm[] {
   const held = new Set(headwordKeys(grammar ?? {}, categories));
-  return paradigms.filter((paradigm) => held.has(headwordMatchKey(paradigm.record.selector)));
+  return paradigms.filter((paradigm) =>
+    paradigm.record.selectors.some((selector) => held.has(headwordMatchKey(selector))),
+  );
 }

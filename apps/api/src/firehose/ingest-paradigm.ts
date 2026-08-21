@@ -2,11 +2,11 @@ import { aql } from "arangojs";
 import {
   isValidParadigmRecord,
   normalizeLanguageTag,
+  paradigmIdentityKey,
   paradigmIssues,
   paradigmRkey,
-  paradigmSelectorKey,
   type ParadigmRequirement,
-  type ParadigmRule,
+  type ParadigmTable,
   type Tag,
 } from "@leksis/types";
 import { db } from "../db";
@@ -18,47 +18,50 @@ import type { IngestResult } from "./ingest-language";
 //
 // Versioned like `sources`, not like `entries`: the identity is derived from
 // the record's own fields and carried in the record key, so every author's
-// paradigm for one (language, category) shares one ladder by construction and
-// there is no `subject` chain to follow. What an OCLC number is to a source, a
-// hash of the canonical selector key is to a paradigm — a natural identity for
-// something several people describe independently.
+// paradigm for one set of headword categories shares one ladder by construction
+// and there is no `subject` chain to follow. What an OCLC number is to a source,
+// a hash of the sorted canonical selector keys is to a paradigm — a natural
+// identity for something several people describe independently.
 //
-// The doc is a reference, with **one cache**: the rules themselves. That is a
+// The doc is a reference, with **one cache**: the tables themselves. That is a
 // departure from the design note's "the doc is reference-only", and it is
 // forced by the same constraint that put `inherent` (and now `categories`) on
-// the language doc — the expansion job runs inside the firehose consumer, which is a
-// single sequential writer, and resolving a paradigm record from its author's
-// PDS once per ingested entry would put a stranger's server in the middle of
-// this AppView's write path. So the consumer reads rules from here; readers
-// still resolve the record (GET /languages/:tag/paradigms serves pointers
-// only), which keeps the record the source of truth for everything a person
-// sees.
+// the language doc — the expansion job runs inside the firehose consumer, which
+// is a single sequential writer, and resolving a paradigm record from its
+// author's PDS once per ingested entry would put a stranger's server in the
+// middle of this AppView's write path. So the consumer reads tables from here;
+// readers still resolve the record (GET /languages/:tag/paradigms serves
+// pointers only), which keeps the record the source of truth for everything a
+// person sees.
 
 /**
  * One paradigm version as indexed.
  *
  * The join is an **equality** since ADR-0019: one of an entry's `selectorKeys`
- * must equal `headwordMatchKey(selector)` for this paradigm to reach that entry,
- * where it used to be a containment test over the retired `inherentAtoms`. That
- * key is derived on demand rather than stored — nothing indexes it and the AQL
- * filter is built in JS either way, so a stored copy would be a second thing to
- * keep in step for no lookup. It is scheme-blind for the reason every
- * form-to-cell join is: a bot writes `Conjugation=2` bare where the language's
- * own editor writes it carrying the minting scheme, and a paradigm reaching only
- * one of the two would be worse than one reaching both.
+ * must equal `headwordMatchKey` of one of this paradigm's selectors, where it
+ * used to be a containment test over the retired `inherentAtoms`. Those keys are
+ * derived on demand rather than stored — nothing indexes them and the AQL filter
+ * is built in JS either way, so a stored copy would be a second thing to keep in
+ * step for no lookup. They are scheme-blind for the reason every form-to-cell
+ * join is: a bot writes `Conjugation=2` bare where the language's own editor
+ * writes it carrying the minting scheme, and a paradigm reaching only one of the
+ * two would be worse than one reaching both.
  */
 export interface ParadigmDoc {
   /** Stable across versions; equal to the record key by construction. */
   paradigmKey: string;
   languageID: string;
-  selector: Tag;
+  /** The headword categories this paradigm serves, each matched exactly. */
+  selectors: Tag[];
   /**
-   * Canonical key of the selector — what the identity hash is taken over, and
-   * what `GET /languages/:tag/paradigms` sorts on.
+   * The sorted canonical selector keys, joined — what the identity hash is
+   * taken over, and what `GET /languages/:tag/paradigms` sorts on. One string
+   * rather than the list, because a sort key has to be one value and a doc
+   * carrying only the hash could be ordered by nothing a person recognises.
    */
   selectorKey: string;
   /** Cached for the expansion job — see the note at the top of this file. */
-  rules: ParadigmRule[];
+  tables: ParadigmTable[];
   requires: ParadigmRequirement[];
   /**
    * True once this version's record has been deleted from its author's PDS.
@@ -81,9 +84,9 @@ type StoredParadigm = ParadigmDoc & { _key: string };
 interface ParsedParadigm {
   paradigmKey: string;
   languageID: string;
-  selector: Tag;
+  selectors: Tag[];
   selectorKey: string;
-  rules: ParadigmRule[];
+  tables: ParadigmTable[];
   requires: ParadigmRequirement[];
   createdAt: string;
 }
@@ -99,27 +102,30 @@ interface ParsedParadigm {
  * 1. **Shape and cardinality** (`isValidParadigmRecord`) — a record that cannot
  *    be read at all.
  * 2. **The record key**, which only ingest can see: it must equal the key
- *    derived from this record's own `languageID` and `selector`. This is what
+ *    derived from this record's own `languageID` and `selectors`. This is what
  *    makes the identity scheme true rather than conventional — without it, a
- *    repository could hold two paradigms for one category, two ladders neither
- *    of which supersedes the other. The `sources` rkey check exactly.
- * 3. **Coherence** (`paradigmIssues`) — a base that grounds in nothing, a cycle,
- *    a condition that does not compile. Named row by row in the log, as an
+ *    repository could hold two paradigms for one set of categories, two ladders
+ *    neither of which supersedes the other. The `sources` rkey check exactly.
+ *    Note the derivation sorts and dedupes the selector keys, so the order they
+ *    were written in never changes where a record is filed.
+ * 3. **Coherence** (`paradigmIssues`) — a grid that does not tile a rectangle,
+ *    two cells at one address, a base that grounds in nothing, a cycle, a
+ *    condition that does not compile. Named row by row in the log, as an
  *    incoherent grammar is, because the author of a bot has nothing else to go
  *    on.
  *
  * What is deliberately *not* checked here: whether the language ever declared
- * this selector or these coordinates. That is a contradiction between two
+ * these selectors or these coordinates. That is a contradiction between two
  * records, which ADR-0015 indexes and contests rather than refuses — and
  * refusing it would create an ingest-order dependency, since Jetstream can
  * deliver a paradigm before the grammar it addresses. Such a paradigm is
- * indexed and simply inert: its selector matches no entry's headword bundle.
+ * indexed and simply inert: its selectors match no entry's headword bundle.
  */
 function parseRecord(record: unknown, recordURI: string): ParsedParadigm | null {
   if (!isValidParadigmRecord(record)) return null;
 
   const languageID = normalizeLanguageTag(record.languageID);
-  const paradigmKey = paradigmRkey({ languageID, selector: record.selector });
+  const paradigmKey = paradigmRkey({ languageID, selectors: record.selectors });
   const rkey = recordURI.split("/").pop() ?? "";
   if (rkey !== paradigmKey) return null;
 
@@ -143,40 +149,18 @@ function parseRecord(record: unknown, recordURI: string): ParsedParadigm | null 
   return {
     paradigmKey,
     languageID,
-    selector: record.selector,
-    selectorKey: paradigmSelectorKey(record.selector),
-    rules: record.rules,
+    selectors: record.selectors,
+    selectorKey: paradigmIdentityKey(record.selectors),
+    tables: record.tables,
     requires: record.requires ?? [],
     createdAt,
   };
 }
 
 /**
- * **Slice-2 stopgap: every paradigm record is refused (ADR-0019).**
- *
- * The category–axis merge lands across several commits, and this one moves the
- * language record and the entry index while `eu.leksis.paradigm` still carries
- * its pre-merge shape: a single `selector`, no tables, and — most importantly —
- * cells addressed through a `layout` that no longer exists. Indexing such a
- * record now would generate forms against a cell space nothing declares and put
- * them into search, where no editor could reach them to take them out.
- *
- * Refusing is the honest reading of ADR-0015: for the duration of this arc a
- * paradigm record is not a record of the lexicon the AppView is being taught, so
- * it is logged and skipped. Existing docs stay indexed and keep generating for
- * whatever their selector exactly matches — and slice 4 rebuilds this function
- * over the v2 shape.
- *
- * Deletion is deliberately **not** gated: withdrawing a paradigm whose rules are
- * still in the index has to keep working, or a contributor could not clean up
- * after one.
- */
-const PARADIGM_INGEST_GATED = true;
-
-/**
- * Index one eu.leksis.paradigm record: archive the current version for this
- * (language, category) and insert this one as current, then re-run generation
- * over the entries the paradigm reaches.
+ * Index one eu.leksis.paradigm record: archive the current version for this set
+ * of categories and insert this one as current, then re-run generation over the
+ * entries the paradigm reaches.
  *
  * Re-processing the same (recordURI, cid) is a no-op, so Jetstream cursor
  * overlap on reconnect is harmless. The consumer is the only writer and
@@ -188,13 +172,6 @@ export async function ingestParadigm(
   cid: string,
   record: unknown,
 ): Promise<IngestResult> {
-  if (PARADIGM_INGEST_GATED) {
-    console.warn(
-      `firehose: refused paradigm record ${recordURI} — paradigm ingest is gated ` +
-        `while the category–axis merge lands (ADR-0019, slice 2 of 6)`,
-    );
-    return "skipped-invalid";
-  }
   const parsed = parseRecord(record, recordURI);
   if (!parsed) {
     console.warn(`firehose: skipped invalid paradigm record ${recordURI}`);
@@ -216,9 +193,9 @@ export async function ingestParadigm(
   const doc: ParadigmDoc = {
     paradigmKey: parsed.paradigmKey,
     languageID: parsed.languageID,
-    selector: parsed.selector,
+    selectors: parsed.selectors,
     selectorKey: parsed.selectorKey,
-    rules: parsed.rules,
+    tables: parsed.tables,
     requires: parsed.requires,
     recordDeleted: false,
     recordURI,
@@ -239,10 +216,16 @@ export async function ingestParadigm(
       `(${current ? "new version" : "new paradigm"}) from ${authorDID}`,
   );
 
-  // The rules changed, so every form they produced is stale. This is the cost
+  // The tables changed, so every form they produced is stale. This is the cost
   // ingest-time expansion accepts: one rule edit re-expands the slice of a
-  // language the selector reaches.
+  // language the selectors reach.
   forgetParadigms();
+  // The sweep inside it is what covers the version this one replaced: entries
+  // are found by `paradigmKey`, which every version of one paradigm shares, so
+  // a row the old tables left on an entry the new ones no longer reach is still
+  // named. A rewrite cannot change which entries are reachable in the first
+  // place — the selectors are hashed into the record key, so changing them
+  // files a different paradigm rather than editing this one.
   await expandForParadigm(db, doc);
   return "indexed";
 }

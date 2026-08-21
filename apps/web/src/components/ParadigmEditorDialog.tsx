@@ -8,15 +8,16 @@ import { formatTagVerbatim, type Tag } from "@leksis/types";
 // paradigm's rules addressed cells that a `layout` on the language record
 // derived from its axes, and its `selector` reached entries by containment. Both
 // are gone — a paradigm now carries its own tables, cell by cell, and its
-// selector is one of the language's declared headword categories, matched
-// exactly. Every control in the old editor (the axis-driven address pickers, the
-// flat rule list, the live preview against a resolved layout) is a control for
-// the shape it is being replaced by.
+// selectors are the language's declared headword categories, matched exactly.
+// Every control in the old editor (the axis-driven address pickers, the flat
+// rule list, the live preview against a resolved layout) is a control for the
+// shape it is being replaced by.
 //
 // So this says so and offers nothing, rather than opening on a form whose
-// publish button would write a record the AppView refuses (paradigm ingest is
-// gated off for the duration — see `ingest-paradigm.ts`). Slice 5 rebuilds it as
-// a grid editor; the rule-row UI worth recovering is in this file at commit
+// publish button would write the shape the lexicon no longer has. Slice 4 gave
+// the record its v2 shape and taught ingest and the reader to speak it, so what
+// is missing now is only the authoring half: slice 5 rebuilds this as a grid
+// editor, and the rule-row UI worth recovering is in this file at commit
 // 343516e.
 //
 // The props are the ones the two call sites already pass, minus everything the
@@ -24,12 +25,12 @@ import { formatTagVerbatim, type Tag } from "@leksis/types";
 // its own signature.
 
 export interface ParadigmEditorDialogProps {
-  /** The category the rules fill cells for — shown, so the notice is about something. */
-  selector: Tag;
+  /** The categories the tables serve — shown, so the notice is about something. */
+  selectors: Tag[];
   onClose: () => void;
 }
 
-export function ParadigmEditorDialog({ selector, onClose }: ParadigmEditorDialogProps) {
+export function ParadigmEditorDialog({ selectors, onClose }: ParadigmEditorDialogProps) {
   const { t } = useTranslation();
   return (
     <div
@@ -44,7 +45,7 @@ export function ParadigmEditorDialog({ selector, onClose }: ParadigmEditorDialog
             {t("paradigmEditor.title")}
           </h2>
           <p className="mt-1 font-mono text-xs text-content-subtle">
-            {formatTagVerbatim(selector)}
+            {selectors.map((selector) => formatTagVerbatim(selector)).join(" · ")}
           </p>
         </header>
         <div className="p-4 sm:p-5">

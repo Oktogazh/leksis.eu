@@ -1,5 +1,5 @@
 import { aql, type Database } from "arangojs";
-import { headwordMatchKey, mergeParadigms } from "@leksis/types";
+import { headwordMatchKey, mergeParadigms, type Tag } from "@leksis/types";
 import type { IndexedForm } from "./ingest-entry";
 import type { ParadigmDoc } from "./ingest-paradigm";
 
@@ -14,7 +14,7 @@ import type { ParadigmDoc } from "./ingest-paradigm";
 // finding an entry by one of its inflected forms means the forms have to be in
 // the index before anyone searches for them. That cost was accepted when the
 // axes were designed and is paid here — one rule edit re-expands the slice of a
-// language its selector reaches.
+// language its selectors reach.
 //
 // Three properties this module must keep:
 //
@@ -97,6 +97,21 @@ export function forgetParadigms(): void {
 }
 
 /**
+ * The scheme-blind keys one paradigm doc selects entries on.
+ *
+ * It tolerates a doc with **no** selectors, and that absence is not
+ * hypothetical: versions indexed before ADR-0019 carry a single `selector`, and
+ * the v2 lexicon makes their records unpublishable — so such a doc is *inert*,
+ * reaching nothing, rather than a crash. That distinction matters more here
+ * than almost anywhere: this runs inside the firehose consumer's sequential
+ * writer and inside `db:init`, where a throw stops ingestion or a deploy over a
+ * doc nobody can republish.
+ */
+function selectorKeysOf(paradigm: { selectors?: readonly Tag[] }): string[] {
+  return (paradigm.selectors ?? []).map((selector) => headwordMatchKey(selector));
+}
+
+/**
  * Most recently indexed first.
  *
  * Specificity used to lead this comparison, because a selector was matched by
@@ -158,13 +173,13 @@ function expandOne(entry: ExpandableEntry, paradigms: readonly ParadigmDoc[]): E
   if (lemma === undefined || lemma === "") return { otherForms: asserted, formIssues: [] };
 
   // Exact match on the headword bundle (ADR-0019): a paradigm reaches an entry
-  // when one of the entry's headword keys *is* its selector's key, not when the
-  // bundle merely contains it. An entry carrying two categories can still be
-  // reached by two paradigms — one per bundle — which is why this is a filter
-  // and not a lookup.
+  // when one of the entry's headword keys *is* one of its selectors' keys, not
+  // when the bundle merely contains it. An entry carrying two categories can
+  // still be reached by two paradigms — one per bundle — which is why this is a
+  // filter and not a lookup.
   const held = new Set(entry.selectorKeys);
   const matching = paradigms.filter((paradigm) =>
-    held.has(headwordMatchKey(paradigm.selector)),
+    selectorKeysOf(paradigm).some((key) => held.has(key)),
   );
   if (matching.length === 0) return { otherForms: asserted, formIssues: [] };
 
@@ -174,7 +189,7 @@ function expandOne(entry: ExpandableEntry, paradigms: readonly ParadigmDoc[]): E
   const merged = mergeParadigms(
     matching.map((paradigm) => ({
       id: paradigm.paradigmKey,
-      rules: paradigm.rules,
+      tables: paradigm.tables,
       requires: paradigm.requires,
     })),
     {
@@ -316,10 +331,10 @@ export async function expandEntry(
  * Two disjoint sets, queried separately so each can be served the way it is
  * best served:
  *
- * 1. **The entries the selector reaches now** — an indexed equality on
+ * 1. **The entries the selectors reach now** — an indexed equality on
  *    `selectorKeys`, which is what that index exists for. Under ADR-0019's exact
- *    match this is one array lookup, where containment needed a narrowing atom
- *    and then a precise filter behind it.
+ *    match this is one array lookup per selector, where containment needed a
+ *    narrowing atom and then a precise filter behind it.
  * 2. **The entries still carrying this paradigm's output** — its generated rows
  *    or its unmet requirements. This is the sweep, and it is why a withdrawal
  *    cleans up after itself: those entries no longer match anything, so set 1
@@ -327,20 +342,26 @@ export async function expandEntry(
  *    forever.
  *
  * Passing the *archived* doc after a deletion is deliberate and correct: its
- * selector still names the slice, and its key still names the rows to sweep.
+ * selectors still name the slice, and its key still names the rows to sweep.
  */
 export async function expandForParadigm(
   database: Database,
-  paradigm: Pick<ParadigmDoc, "paradigmKey" | "languageID" | "selector">,
+  paradigm: Pick<ParadigmDoc, "paradigmKey" | "languageID" | "selectors">,
 ): Promise<void> {
-  const selectorKey = headwordMatchKey(paradigm.selector);
+  // One indexed lookup per selector rather than an INTERSECTION over the array:
+  // `key IN e.selectorKeys` is what the ["languageID", "selectorKeys[*]"] index
+  // answers, and a set operation over the whole field would give it back a
+  // scan. Repeats between selectors are harmless — the Map below is keyed by
+  // doc.
+  const selectorKeys = selectorKeysOf(paradigm);
   const reachedCursor = await database.query<ExpandableEntry>(aql`
-    FOR e IN entries
-      FILTER e.languageID == ${paradigm.languageID}
-        AND e.current == true
-        AND e.deleted != true
-      FILTER ${selectorKey} IN e.selectorKeys
-      RETURN ${ENTRY_FACTS}
+    FOR key IN ${selectorKeys}
+      FOR e IN entries
+        FILTER e.languageID == ${paradigm.languageID}
+          AND e.current == true
+          AND e.deleted != true
+        FILTER key IN e.selectorKeys
+        RETURN ${ENTRY_FACTS}
   `);
   const entries = new Map<string, ExpandableEntry>();
   for (const entry of await reachedCursor.all()) entries.set(entry.docKey, entry);

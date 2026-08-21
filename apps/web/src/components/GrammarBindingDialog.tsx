@@ -233,8 +233,8 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
    * riding along is what the editor's concurrency guard compares against.
    */
   const [paradigms, setParadigms] = useState<ParadigmPointer[]>([]);
-  /** The stacked editor: which selector it was opened on. */
-  const [editing, setEditing] = useState<{ selector: Tag } | null>(null);
+  /** The stacked editor: which headword categories it was opened on. */
+  const [editing, setEditing] = useState<{ selectors: Tag[] } | null>(null);
   /**
    * An axis picked for a category **nobody has named yet**, held here until the
    * first annotation carries it into the draft.
@@ -1636,11 +1636,11 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
    * This level used to be reached through the layouts, one door per table a
    * language drew, and a new paradigm's selector was picked from the
    * combinations falling under that layout. Both of those are gone: the table
-   * shape moved into the paradigm record and the selector is now one of the
+   * shape moved into the paradigm record and a selector is now one of the
    * language's own declared category flavours. Rebuilding the door is slice 5's
-   * work, so what is left here lists what the index currently holds, and the
-   * editor behind it says so rather than opening on a shape it can no longer
-   * write.
+   * work, so what is left here lists what the index currently holds — one row
+   * per paradigm, naming every category it serves — and the editor behind it
+   * says so rather than opening on a shape it cannot yet write.
    */
   function renderL5Root() {
     return (
@@ -1655,12 +1655,14 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
               <li key={row.paradigmKey}>
                 <button
                   type="button"
-                  onClick={() => setEditing({ selector: row.selector })}
+                  onClick={() => setEditing({ selectors: row.selectors })}
                   className={levelButton}
                 >
-                  <span className="text-sm text-content">{categoryText(row.selector)}</span>
+                  <span className="text-sm text-content">
+                    {row.selectors.map((selector) => categoryText(selector)).join(" · ")}
+                  </span>
                   <span className="font-mono text-xs text-content-subtle">
-                    {formatTagVerbatim(row.selector)}
+                    {row.selectors.map((selector) => formatTagVerbatim(selector)).join(" · ")}
                   </span>
                 </button>
               </li>
@@ -2230,7 +2232,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
           behind it is untouched by anything that happens in there. */}
       {editing !== null && (
         <ParadigmEditorDialog
-          selector={editing.selector}
+          selectors={editing.selectors}
           onClose={() => setEditing(null)}
         />
       )}

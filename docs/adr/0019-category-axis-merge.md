@@ -45,108 +45,106 @@ Update the checkbox and the state note at the end of each session. One slice = o
 - [x] **Slice 3** — the categories editor (axis + default-value annotations) and the entry
   editor (narrowing emits the full bundle; otherForms picker over the axis feature's bound
   values). *Done 2026-08-21.*
-- [ ] **Slice 4** — paradigm v2: lexicon (selectors + cell-by-cell tables), types
+- [x] **Slice 4** — paradigm v2: lexicon (selectors + cell-by-cell tables), types
   (`paradigmIssues`/`generateForms` v2, exact-match reach), ingest + API, basic table reader.
+  Ingest gate removed; both verification harnesses rebuilt. **The browser pass is deferred to
+  slice 6** — see the state note. *Done 2026-08-21.*
 - [ ] **Slice 5** — the paradigm table editor (grid, merges, per-cell rules) + entry-page polish.
 - [ ] **Slice 6** — testset pass, docker build gate, lexicon republish, CHANGELOG, skills update,
   finalize this ADR, bump packages to **0.28.0**, propose tag `v0.28.0`.
 
 ### State after last session
 
-**2026-08-21, slice 3 — built and verified; next session starts slice 4.**
+**2026-08-21, slice 4 — built, typechecked, linted and driven through both
+verification harnesses; the browser pass is deliberately deferred to slice 6.**
 
-The Categories tab is now **one level per category**, and that level is the
-category's whole declaration: what its forms vary over, what this dictionary
-calls its headwords, and which features are inherent to it. An annotation is
-edited on its own form, with a **default-value picker that appears iff an axis is
-set**. The entry editor's narrowing gained the axis as its last step, and the
-`otherForms` editor got its per-axis selectors back — derived from the category
-rows this time rather than from a standalone `axes` array.
+A paradigm now carries its own tables. `eu.leksis.paradigm` v2 replaces
+`selector` with `selectors` (1–8 full headword bundles, exact match) and `rules`
+with `tables` (1–16 grids of ≤128 rows of ≤64 cells), a cell being a `title`, an
+`empty` or a `form` — the last carrying its address and, in it, the rules that
+used to carry an address of their own. `paradigmIssues` judges the eight ways a
+record can contradict itself (`no-cells`, `ragged-table`, `duplicate-cell`,
+`unknown-base`, `base-cycle`, `invalid-match`, `empty-message`,
+`too-many-cells`), ingest recomputes the rkey over the **sorted, deduplicated**
+selector keys and refuses a mismatch, and `expand-forms` reaches an entry when
+one of its `selectorKeys` *is* one of the paradigm's — one indexed lookup per
+selector. The reader draws the stored grid: authored spans, the language's own
+labels over each cell, the entry's own form winning its cell, and the two absent
+states kept apart.
 
-Five deviations from the design note, each with its reason:
+Seven deviations from the design note, each with its reason:
 
-- **`l2combinationForm` was not renamed, it was dissolved.** §4.3 kept the
-  combinations walk and bolted an axis picker onto it; what shipped points every
-  row of the enumeration at **the sub-category's own editor** instead. The old
-  shape had a hole nobody had noticed while a combination was only a label: the
-  root list shows *declared* categories, so a combination had to be **named
-  before anything could be declared about it** — and the merge makes "what its
-  forms vary over" exactly the kind of thing one wants to declare about an
-  unnamed one. One level per category closes that, and it deleted a level rather
-  than adding one.
-- **An axis picked before the first name is held in component state, not in the
-  draft** (`pendingAxis`). A category row is carried by its annotations — the
-  lexicon says `minLength: 1` — so there is nothing for an axis to ride on until
-  the category is named. Writing an annotation-less row would have put a shape
-  `isValidGrammar` refuses into the draft with **nothing in the footer to say
-  so**, because `grammarIssues` judges coherence and not shape: Publish would
-  have been enabled and the version dropped in silence. The authoring order §4.3
-  asked for is still the one on screen; only the storage waits.
-- **`setCategoryAxis` drops every annotation's `default`, whichever way the axis
-  moves.** A default is an address under one particular feature, so carrying
-  `Sing` across from `Number` to `Case` keeps a string and loses its meaning. The
-  labels are the contributor's writing and are kept; the addresses are asked for
-  again, and `category-default-missing` is what does the asking.
-- **Two of the six new issue kinds cannot be provoked from this editor at all** —
-  `category-default-forbidden` and `category-axis-inherent` — because both gates
-  are rendered as navigation rather than validation: clearing the axis clears the
-  defaults, and a feature already inherent to a category is absent from its axis
-  picker (as the axis is absent from its inherence offers). Their repair paths
-  were still built, since a record authored elsewhere reaches them: the offending
-  axis is **kept in the picker, marked, and selected** so it can be replaced, and
-  an orphaned default is shown in red beside the bound values rather than
-  silently dropped on save. The other four were provoked and repaired in the
-  browser.
-- **`categoryRefinements` gained a `kind` discriminator** (`inherent` | `axis`)
-  rather than a second function. The two steps are the same walk but ask
-  different questions — what the word *is*, then which of its forms this
-  dictionary *cites* — and they draw their options from opposite places: an
-  inherent feature offers every bound value, while an axis offers only the
-  flavours the category named, because an axis has **no declared inventory**.
-  The entry editor labels them differently off that flag. `categoryAxes` is the
-  `otherForms` half, and it is not the old `applicableAxes` renamed: it reads the
-  **category rows by containment** and takes the value inventory from layer 1.
+- **`paradigmSelectorKey` became two functions, and the doc still stores one
+  string.** `paradigmSelectorKeys` (sorted, deduped) is what identity is
+  computed from; `paradigmIdentityKey` joins them with `;` — a character no
+  canonical tag key contains, so no two selector lists can run together into one
+  identity. `ParadigmDoc.selectorKey` keeps that joined string rather than the
+  list, because `GET /languages/:tag/paradigms` sorts on it and a sort key has to
+  be one value.
+- **`placeForms` had to learn multivalue *cells*, not merely be re-hosted.** The
+  note treats the join as a move. It is not: while cells were derived from a
+  layout they were single-valued by construction, and a syncretic cell is now the
+  ordinary way to draw one. So each side is expanded to the addresses it spans
+  before they meet, and a cell keeps its own key whichever of its addresses a
+  form landed on — otherwise the placement map would be keyed by an address the
+  viewer never draws. First cell wins a shared address, the tiebreak
+  `duplicate-cell` reports the second one under.
+- **`selectorKeysOf` tolerates a doc with no `selectors` at all.** Versions
+  indexed before this slice carry a single `selector`, and the v2 lexicon makes
+  their records unpublishable — so such a doc has to be *inert*, not a throw:
+  this code runs inside the firehose consumer's sequential writer and inside
+  `db:init`, where an exception stops ingestion or a deploy over a doc nobody can
+  republish.
+- **`expandForParadigm` does one indexed lookup per selector** rather than an
+  `INTERSECTION` over the array. `key IN e.selectorKeys` is what the
+  `["languageID", "selectorKeys[*]"]` index answers; a set operation over the
+  whole field hands it back a scan. Repeats between selectors are harmless — the
+  result map is keyed by doc.
+- **A `requires` row resolves exact-then-containment**, the `placeForms` rule read
+  from the other side: a form tagged `NOUN|Case=Gen|Number=Sing` answers a
+  requirement for `Case=Gen`, closest (fewest extra items) first, ties going to
+  the entry's own order. Without it a principal part would only ever be found
+  when the entry happened to tag it exactly as the rule author addressed it.
+- **`generateForms` iterates cells, not rules**, and memoises base chains: the
+  first rule of a cell whose `match` hits wins it, a cell with no rules generates
+  nothing *by construction* (that is what makes "manual-only" a state rather than
+  an accident), and a cycle yields nothing rather than recursing — the record is
+  refused for it, but a draft that has one still has to render.
+- **`ParadigmEditorDialog` is still the slice-2 stub.** Only its props widened
+  (`selector` → `selectors`), and the Paradigms tab now lists one row per
+  paradigm naming every category it serves. Slice 5 owes the grid editor, which
+  is exactly where the note put it.
 
-**The browser pass, and the half of it production cannot show.** Master has not
-been tagged since **v0.27.3**, which predates slice 1 — so the deployed AppView
-knows neither `categories` nor `GET /languages/:tag/labels/random`. Two
-consequences met during the pass, both the deploy lag and neither a defect: the
-`labels` model carries **no annotation rows** (an entry's bundle appears only as
-an unnamed tag in use, which is what the usage chips joined on), and the
-random-entry link 404s on every row because **the route does not exist yet** (a
-missing `row` param returns 404 rather than the 400 the route would give — that
-is how it was told apart). Both halves were checked locally instead, against the
-record the editor had just published: `grammarRows` emits the two annotation
-rows keyed `upos=ud:NOUN|ud:Gender=Masc|ud:Number=Sing` and `…|ud:Number=Plur`,
-and `headwordKeys` puts the created entry under the second of them — the exact
-key a slice-4 paradigm selector will match.
+**Verification, and the half deferred.** Full `npm run typecheck` (8/8) and
+`npm run lint` (5/5). `verify-paradigms.ts` — the ingest harness, rebuilt over v2
+— **50/50**: the identity gate (rkey mismatch, and the order selectors were
+written in not changing where a record is filed), every coherence kind refused
+with nothing indexed, a paradigm for an undeclared category indexed and inert,
+**exact match reaching only the exact bundle** (the same category *without* the
+axis default, and the bare part of speech, both index and both reach nothing),
+all three expansion trigger paths, a generated form findable by search and
+reported as generated, an asserted form winning its cell, several selectors on one
+paradigm, the missing-base-form queue appearing on the dashboard in the rule
+author's own words and clearing again, withdrawal sweeping generated rows, and a
+promoted version re-expanding. `verify-paradigm-reader.ts` — the pure display
+path — **37/37**: grid geometry and holes, every issue kind, identity over
+selector sets, minted-coordinate re-qualification (and staying bare with no
+grammar in hand), generation order, rule precedence within a cell, chained bases,
+merge precedence, and the four placement outcomes including a syncretic cell
+found by containment and a form addressing no cell staying a leftover.
 
-Verification: full `npm run typecheck` (8/8) and `npm run lint` (5/5). Browser
-against a **bare quarantined `qtl`** published by hand — `scripts/publish-fixtures.ts`
-is still on the pre-merge shape and could not run (action item below), and the
-whole point of the pass was that the *editor* declares the grammar. Driven end to
-end at 1280 px and again at 375 px: NOUN, Gender/Number and their values bound
-through Primitives; Gender declared inherent to `{NOUN}`; the axis picker on
-`{NOUN, Gender=Masc}` correctly refusing to offer Gender and the inherence offer
-correctly refusing to offer Number; **two abbreviations on one category** —
-`g.` defaulting to Sing and `str.` (anv-kadarn stroll) defaulting to Plur;
-`category-default-missing`, `category-duplicate-default`, `category-default-unbound`
-and `category-axis-unbound` each provoked, listed in the footer with Publish
-disabled, and repaired from the row they belong to; the record published and
-indexed. Then, in the entry editor, the narrowing walked `an.` → `gour.` →
-**"Cited as — niver"** → `str.`, and the entry it created carries
-`NOUN Gender=Masc|Number=Plur` **on the record** with its other form tagged
-`Number=Sing` from the rebuilt axis selector. The quarantine was torn down
-afterwards: `GET /entries?q=…&l=qtl` empty, no `qt*` tag in `GET /languages`,
-`GET /languages/qtl/currentRecord` 404.
+**The browser pass is slice 6's, by decision rather than by omission.**
+`scripts/slice4-fixture.tmp.ts` is written and ready: it publishes a quarantined
+`qtl` — the merged grammar with two headword flavours of one category, an
+anv-stroll entry whose citation form is the plural, a sibling singular headword
+the paradigm must *not* reach, and a two-table paradigm carrying a minted `Sgv`
+cell, a rule that declines for this lemma, a manual-only cell and an off-table
+form — against a local API (`web-local-api`), with a `teardown` mode. It is a
+`.tmp.ts` on purpose: it goes with the two harnesses at slice 6.
 
-**Carried into slice 4:** `ParadigmEditorDialog` and `ParadigmView` are still the
-slice-2 stubs and the Paradigms tab still lists flat. The exact-match join is
-already live on both sides (slice 2), so what slice 4 adds is the record's own
-shape — selectors and cell-by-cell tables — and the two verification harnesses
-slice 2 deleted. The selector picker slice 5 owes now has something real to draw
-from: **each annotation of each category is one candidate**, and
-`categoryTags(grammar, row)` is the function that produces them, labelled.
+**Carried into slice 5:** the grid editor and the selector picker, whose
+candidates are `categoryTags(grammar, row)` — each annotation of each category,
+labelled. The reader is real now, so the editor has something to preview against.
 
 ## Decision
 
@@ -178,12 +176,20 @@ from: **each annotation of each category is one candidate**, and
   reshaped `eu.leksis.language` (the published lexicons already lagged the code before this arc).
 - [ ] Slice 6: retire or update `docs/design/grammatical-tagging.md` layer-3/4 sections and
   `docs/design/paradigm-rules.md` with pointers here.
-- [ ] **Slice 4 owes two verification harnesses**, deleted in slice 2 because the arc removed what
-  they tested: `verify-paradigms.ts` (ingest, identity, expansion) and `verify-paradigm-reader.ts`
-  (the pure display path). Both are recoverable at commit 343516e.
+- [x] **Slice 4's two verification harnesses are rebuilt over v2** (2026-08-21):
+  `verify-paradigms.ts` (ingest, identity, exact-match reach, expansion, the missing-form queue)
+  50/50, `verify-paradigm-reader.ts` (grid geometry, issues, generation, placement) 37/37. They
+  are temporary by design and go at slice 6, together with `scripts/slice4-fixture.tmp.ts`.
 - [ ] **Slice 5 owes the rule-row UI**, deleted with `ParadigmEditorDialog`'s body and
   `lib/paradigm-draft.ts`. Also recoverable at 343516e, as is the reader's table geometry
   (`mergeCellSpans` survives in `packages/types`) and the `entry.*` copy for the two absent states.
-- [ ] **Slice 2's paradigm-ingest gate must be removed in slice 4.** `PARADIGM_INGEST_GATED` in
-  `apps/api/src/firehose/ingest-paradigm.ts` refuses every paradigm record; slice 4 replaces the
-  function it guards.
+- [x] **Slice 2's paradigm-ingest gate is gone** (2026-08-21). `PARADIGM_INGEST_GATED` is deleted
+  and the function it guarded now speaks v2: rkey recompute, `paradigmIssues` gate, tables cached
+  for the expansion job.
+- [ ] **Slice 6 owes slice 4's browser pass**, deferred deliberately rather than skipped: the
+  reader has never been driven in a browser, only through `verify-paradigm-reader.ts`.
+  `scripts/slice4-fixture.tmp.ts` is written for it — it publishes a quarantined `qtl` (merged
+  grammar with two headword flavours of one category, an anv-stroll entry, the sibling singular
+  headword the paradigm must not reach, and a two-table paradigm with a minted `Sgv` cell, a
+  declining rule, a manual-only cell and an off-table form) against a local API, and tears down
+  after. Fold it into the testset slice, which has to publish fixtures anyway.

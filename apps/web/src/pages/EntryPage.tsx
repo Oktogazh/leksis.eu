@@ -606,9 +606,8 @@ export function EntryPage({
                 what layer 5 adds. The component returns nothing when there is
                 nothing — asserted or generated. */}
             <div className="mt-3 empty:mt-0">
-              {/* A flat list while the tables are rebuilt (ADR-0019) — the
-                  fallback this layer must never break. */}
               <EntryParadigm
+                grammar={grammar}
                 lemma={record.orthography[0] ?? ""}
                 forms={record.otherForms ?? NO_FORMS}
                 paradigms={reaching}
