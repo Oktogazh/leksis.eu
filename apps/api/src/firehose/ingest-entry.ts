@@ -18,7 +18,6 @@ import {
   type EntryDefinition,
   type EntryExample,
   type EntryInflectedForm,
-  type GrammarCategory,
   type GrammarInherent,
   type Tag,
 } from "@leksis/types";
@@ -88,8 +87,8 @@ interface EntryDoc {
   /**
    * The **headword keys** of this version: one scheme-blind key per category
    * bundle it carries, each stripped to what identifies a kind of word — its
-   * part of speech, the features the language declares inherent for it, and the
-   * default axis value where the language declares one (`headwordKeys`).
+   * part of speech and the features the language declares inherent for it
+   * (`headwordKeys`).
    *
    * This is the join a paradigm reaches an entry through, and since ADR-0019 it
    * is an **equality**: a selector is keyed the same way, so "every entry this
@@ -473,32 +472,27 @@ async function mintEntryKey(languageID: string, orthography: string, recordURI: 
 }
 
 /**
- * The declarations of the language this entry is in that decide its headword
- * keys — its inherence rows and its categories — read from the caches on its
- * current language doc.
+ * The declaration of the language this entry is in that decides its headword
+ * keys — its inherence rows — read from the cache on its current language doc.
  *
  * From the index, never from a PDS: the consumer is a sequential writer, and an
  * HTTP round trip per entry would put every author's server in the middle of
  * this one's ingest. A language nobody has described yet — or one described
- * before these caches existed — yields none, which costs nothing more than the
+ * before this cache existed — yields none, which costs nothing more than the
  * entry's headword bundle shrinking to its part of speech until either record is
  * republished.
  */
 async function languageDeclarations(languageID: string): Promise<{
   inherent: GrammarInherent[];
-  categories: GrammarCategory[];
 }> {
-  const cursor = await db.query<{
-    inherent: GrammarInherent[] | null;
-    categories: GrammarCategory[] | null;
-  }>(aql`
+  const cursor = await db.query<{ inherent: GrammarInherent[] | null }>(aql`
     FOR l IN languages
       FILTER l.tag == ${languageID} AND l.current == true
       LIMIT 1
-      RETURN { inherent: l.inherent, categories: l.categories }
+      RETURN { inherent: l.inherent }
   `);
   const row = await cursor.next();
-  return { inherent: row?.inherent ?? [], categories: row?.categories ?? [] };
+  return { inherent: row?.inherent ?? [] };
 }
 
 /**

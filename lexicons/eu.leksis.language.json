@@ -36,7 +36,7 @@
     },
     "grammar": {
       "type": "object",
-      "description": "A language's declared grammatical inventory. Binding is how a language declares what it uses, so these arrays are its vocabulary: what is absent is simply not offered when authoring. Only authored rows are stored — there is no skeleton of unbound atoms, since absence already means unbound. Layer 1 declares the atoms (`pos`, `features`, `values`); layer 2 declares the headword categories they combine into (`inherent`, `categories`), each category naming the feature its forms vary over and the value(s) its own headwords sit at. The shape of the inflection tables is NOT here: it belongs to the eu.leksis.paradigm record, which defines its cells one by one. They share one object because they reference each other: unbinding an atom orphans every higher row that uses it, and one self-contained object means a single write keeps the whole cascade consistent. Two further declarations here are lexicography rather than grammar and take part in no cascade: a feature flagged `lexicographic` (register, domain, editorial usage) and the plain `abbreviations`.",
+      "description": "A language's declared grammatical inventory. Binding is how a language declares what it uses, so these arrays are its vocabulary: what is absent is simply not offered when authoring. Only authored rows are stored — there is no skeleton of unbound atoms, since absence already means unbound. Layer 1 declares the atoms (`pos`, `features`, `values`); layer 2 declares which features define a headword (`inherent`) and the categories they combine into (`categories`), one abbreviation each. What a word's forms vary over is NOT declared here at all: it belongs to the eu.leksis.paradigm record, which draws its cells one by one. They share one object because they reference each other: unbinding an atom orphans every higher row that uses it, and one self-contained object means a single write keeps the whole cascade consistent. Two further declarations here are lexicography rather than grammar and take part in no cascade: a feature flagged `lexicographic` (register, domain, editorial usage) and the plain `abbreviations`.",
       "properties": {
         "pos": {
           "type": "array",
@@ -60,13 +60,13 @@
           "type": "array",
           "maxLength": 512,
           "items": { "type": "ref", "ref": "#inherentDeclaration" },
-          "description": "Which features are inherent to which category — a property of the word itself, not of one of its forms: aspect is inherent to a Slavic verb, gender to a French noun, while number varies across a noun's forms and is therefore not declared here. This is what a headword can be tagged with, and what the entry editor offers one step at a time."
+          "description": "Which features define a headword of which category — a property of the word as it is cited, not a property of one of its forms: gender for a French noun, aspect for a Slavic verb, and number for a Breton anv-kadarn stroll, which is cited in the plural. This is what a headword can be tagged with, what the entry editor offers one step at a time, and what a paradigm's selector is matched on. A feature declared here may perfectly well also vary across the word's forms — that is the ordinary case for number, and it is the paradigm's tables that say which cells exist."
         },
         "categories": {
           "type": "array",
           "maxLength": 1024,
           "items": { "type": "ref", "ref": "#categoryDeclaration" },
-          "description": "The headword categories this language names: a part of speech plus the inherent feature values that identify a kind of word, each with the abbreviation a reader sees — French \"nf.\" for NOUN + Gender=Fem, where a language that prints \"n. f.\" simply binds the two atoms separately and never adds a row here. A category may also name the feature its forms vary over (its `axis`), and then each abbreviation says which value of that axis the HEADWORD carries: Breton nouns are singular by default, collective-only nouns are collective, and an anv-kadarn stroll is plural with its singulative derived. One category, several headword flavours, one abbreviation each. A category of two or more atoms must be reachable through the `inherent` declarations that build it up."
+          "description": "The headword categories this language names: a part of speech plus the features that identify a kind of word, each with the one abbreviation a reader sees — French \"nf.\" for NOUN + Gender=Fem, where a language that prints \"n. f.\" simply binds the two atoms separately and never adds a row here. A category of two or more atoms must be reachable through the `inherent` declarations that build it up. A category declares NOTHING about what its forms vary over: the paradigm records draw the cells that exist, one by one."
         },
         "abbreviations": {
           "type": "array",
@@ -95,49 +95,20 @@
     },
     "categoryDeclaration": {
       "type": "object",
-      "required": ["category", "annotations"],
-      "description": "A headword category this language names, and the abbreviation(s) a reader sees for it. Where a category also names an `axis`, each annotation says which value of that axis its own headwords carry — which is how one category holds several headword flavours, each abbreviated differently: an ordinary Breton noun is cited in the singular, a collective-only noun in the collective, and an anv-kadarn stroll in the plural with its singulative derived by rule. A category never declares the axis's value INVENTORY: that is the layer-1 bound values of the feature, and a paradigm's tables enumerate the cells they print by hand.",
+      "required": ["category", "label"],
+      "description": "A headword category this language names, and the one abbreviation a reader sees for it. One flavour, one category, one abbreviation: an ordinary Breton masculine noun is {NOUN, Gender=Masc} cited in the singular, and an anv-kadarn stroll — cited in the plural, its singulative derived by rule — is {NOUN, Gender=Masc, Number=Plur}, a category of its own on a row of its own. A category says nothing about what its forms vary over: the paradigm records draw the cells that exist.",
       "properties": {
         "category": {
           "type": "ref",
           "ref": "eu.leksis.defs#tag",
           "description": "The category being named, e.g. NOUN, or NOUN + Gender=Fem. A single atom is allowed — a part of speech on its own is a headword category like any other — and a combination of two or more must be reachable through the `inherent` declarations that build it up."
         },
-        "axis": {
+        "label": { "type": "ref", "ref": "#label" },
+        "note": {
           "type": "string",
-          "maxLength": 64,
-          "description": "Name of the feature this category's forms vary over, e.g. \"Number\". Must itself be bound in `features`, matched by name exactly as an `inherent` declaration matches its own feature, and must NOT be declared inherent to this same category — a paradigm cannot be built from a coordinate that is also a constant. When present, every annotation must name the axis value its headword carries; when absent, none may."
-        },
-        "annotations": {
-          "type": "array",
-          "minLength": 1,
-          "maxLength": 16,
-          "items": { "type": "ref", "ref": "#categoryAnnotation" },
-          "description": "How this language names the category, once per headword flavour. One item and no axis is the ordinary case: a single label for the category. Several items each name a different `default` value of the axis, and each is a labelled tag of its own — the category plus that value — which is what an entry created through it carries."
-        }
-      }
-    },
-    "categoryAnnotation": {
-      "type": "object",
-      "required": ["long"],
-      "description": "One abbreviation of a category, and the axis value the headwords it names sit at. Same two label halves as `#label`, plus the `default` that makes them distinguishable within one category.",
-      "properties": {
-        "long": {
-          "type": "string",
-          "maxLength": 1280,
-          "maxGraphemes": 128,
-          "description": "Full form, written in this language for a reader of it — \"anv-kadarn gourel\", never \"masculine noun\"."
-        },
-        "short": {
-          "type": "string",
-          "maxLength": 320,
-          "maxGraphemes": 32,
-          "description": "Optional abbreviated display form; when present it is shown instead of the full form, which appears on hover."
-        },
-        "default": {
-          "type": "string",
-          "maxLength": 64,
-          "description": "The value of this category's `axis` that a headword named by this annotation carries — required when the category names an axis, forbidden when it does not. Must be bound in `values` under that feature; matched by name, so a value minted on a Universal Dependencies feature needs no special case. Several comma-separated values mean a headword spanning them all. Two annotations of one category may not share it: it is what tells them apart."
+          "maxLength": 10240,
+          "maxGraphemes": 1024,
+          "description": "Free prose about this category, written in this language for a reader of it — which words fall under it, where its border with a sibling category falls, how it is cited. Distinct from `label`, which names it. Record-only content, indexed nowhere."
         }
       }
     },
@@ -156,6 +127,12 @@
           "description": "Provenance. Absent means the item is documented by Universal Dependencies; otherwise the BCP 47 tag of the language that minted it."
         },
         "label": { "type": "ref", "ref": "#label" },
+        "note": {
+          "type": "string",
+          "maxLength": 10240,
+          "maxGraphemes": 1024,
+          "description": "Free prose about this part of speech, written in this language for a reader of it — which words fall under it and how they are cited. A bare part of speech has no category row of its own (its tag is the one this row binds, so a second row would be two labels for one tag), which is why this prose lives here. Record-only content, indexed nowhere."
+        },
         "references": {
           "type": "array",
           "maxLength": 16,
@@ -231,20 +208,31 @@
     },
     "abbreviation": {
       "type": "object",
-      "required": ["short", "long"],
-      "description": "A traditional dictionary abbreviation: \"udb.\" for \"un dra bennak\", \"s.o.\" for \"someone\". A shallow primitive standing for no tag at all — not a feature, not a value, not an option to pick from a list. Its short form is its identity, which is why both halves are required where a label's short form is optional, and why it carries no provenance: the only possible answer would be this language's own lexicographic tradition.",
+      "required": ["value", "short", "long"],
+      "description": "A traditional dictionary abbreviation: \"udb.\" for \"un dra bennak\", \"s.o.\" for \"someone\". A shallow primitive standing for no tag at all — not a feature, not a value, not an option to pick from a list. Its `value` is its identity and its `short` is what is printed: an identifier is ASCII and shapeless where a printed abbreviation carries stops and its own script, and keying on the printed form made correcting it impossible. It carries no provenance: the only possible answer would be this language's own lexicographic tradition.",
       "properties": {
+        "value": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "The row's identity, unique within a language: ASCII letters and digits, [A-Za-z0-9]+. Never displayed — it is what a label lookup and a document key travel through."
+        },
         "short": {
           "type": "string",
           "maxLength": 320,
           "maxGraphemes": 32,
-          "description": "The abbreviated form — the row's identity, unique within a language."
+          "description": "The abbreviated form, exactly as this dictionary prints it."
         },
         "long": {
           "type": "string",
           "maxLength": 1280,
           "maxGraphemes": 128,
           "description": "What it stands for, written out."
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 10240,
+          "maxGraphemes": 1024,
+          "description": "Free prose about what the abbreviation covers, written in this language for a reader of it — `long` is the expansion, and an expansion is not always an explanation. Record-only content, indexed nowhere."
         },
         "references": {
           "type": "array",

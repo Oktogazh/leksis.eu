@@ -1,5 +1,15 @@
 # Design note: the category–axis merge (+ usage counts, record links)
 
+> ⚠ **The merge's central object no longer exists.** **ADR-0020 (v0.29.0, 2026-08-22)** removed
+> the per-category `axis` and its per-flavour `annotations` one revision after this note put them
+> there: a language cannot draw the line between what a headword *is* and what its forms *vary
+> over* — Breton's *anv-kadarn stroll* is cited in the plural, so `Number` is both — and the rule
+> enforcing it (`category-axis-inherent`) refused the record a lexicographer needed. A category is
+> a bundle with one label and a note; `inherent` says what defines a headword; the paradigm's
+> tables say how it varies. **Everything else this note argued stands**, including the tables
+> moving into the paradigm record, the exact-equality selector, and the entry's bundle carrying
+> what identifies it. Read §1 for the reasoning that led here, not for the shape.
+
 **Status:** **Built** — designed 2026-08-21, all six slices shipped the same day and released as
 **v0.28.0**. This file was the unified plan the build sessions executed and is kept for its
 reasoning; **`docs/adr/0019-category-axis-merge.md` is the accepted record and wins wherever the

@@ -12,18 +12,20 @@ built on the AT Protocol and ArangoDB. See [leksis.eu](https://leksis.eu).
 > straight from their own PDS, with the means to withdraw any of it
 > ([ADR-0012](docs/adr/0012-contributor-page-and-record-deletion.md)); search is
 > the unbuilt half. In parallel the **morphology arc** is through generation:
-> a language declares its grammatical primitives and the categories its
-> headwords fall into — each naming the one feature its forms vary over and
-> **the value each of its headword flavours is cited at**, so an ordinary
-> masculine noun and a collective plural-headword noun are two abbreviations of
-> one declaration — and an `eu.leksis.paradigm` record draws the inflection
-> tables cell by cell and carries the rules that fill them from the lemma. See
+> a language declares its grammatical primitives, **which features define a
+> headword** of each category, and the one abbreviation it prints for each — so
+> an ordinary masculine noun and a collective noun cited in the plural are two
+> categories, one step apart in the tree — while an `eu.leksis.paradigm` record
+> draws the inflection tables cell by cell and carries the rules that fill them
+> from the lemma. See
 > [ADR-0006](docs/adr/0006-grammar-layer-primitives.md),
 > [ADR-0007](docs/adr/0007-grammar-layer-inherent-combinations.md),
-> [ADR-0016](docs/adr/0016-grammar-layer-rules.md) and
+> [ADR-0016](docs/adr/0016-grammar-layer-rules.md),
 > [ADR-0019](docs/adr/0019-category-axis-merge.md), which merged the separate
 > axes and layout declarations ([ADR-0008](docs/adr/0008-grammar-layer-axes-and-single-sourced-labels.md),
-> [ADR-0009](docs/adr/0009-grammar-layer-layout.md)) into those two. Export —
+> [ADR-0009](docs/adr/0009-grammar-layer-layout.md)) away, and
+> [ADR-0020](docs/adr/0020-categories-without-axes.md), which removed the axis
+> from the category too: what a word's forms vary over is the tables' business. Export —
 > Hunspell, UniMorph, CoNLL-U — is the arc's last layer and is not built.
 > Beside the grammar, a language also declares the rest of a dictionary's front
 > matter — lexicographic labels (register, domain, usage) and plain

@@ -1,10 +1,10 @@
 // The three quarantined fixture languages (`leksis-testset` §1).
 //
 // `qtl` is the full one — everything the design says should work, declared
-// across layers 1 and 2 in the **merged** shape ADR-0019 settled: a category
-// carries its axis and the default value each of its headword flavours sits at,
-// and the shape of the inflection tables lives in the paradigm records rather
-// than here. `qtm` is bare: no `grammar` at all, which is the degrade path every
+// across layers 1 and 2 in the shape ADR-0020 settled: one category per
+// headword flavour, each with one abbreviation, the features that identify a
+// flavour declared inherent at the depth they belong to, and the shape of the
+// inflection tables living in the paradigm records rather than here. `qtm` is bare: no `grammar` at all, which is the degrade path every
 // viewer promises. `qto` is defective: published coherent, then rewritten with
 // one row per `GrammarIssue` kind, so the rewrite is REFUSED and the coherent
 // version stays current (ADR-0015).
@@ -41,6 +41,12 @@ const decl1 = { feature: "Declension", value: "1", scheme: "qtl" };
 const decl2 = { feature: "Declension", value: "2", scheme: "qtl" };
 const finite = { feature: "VerbForm", value: "Fin" };
 const infinitive = { feature: "VerbForm", value: "Inf" };
+const sing = { feature: "Number", value: "Sing" };
+const plur = { feature: "Number", value: "Plur" };
+// The minted singulative carries its provenance wherever it is matched as an
+// atom — a category's own bundle included (L-18).
+const sgv = { feature: "Number", value: "Sgv", scheme: "qtl" };
+const person1 = { feature: "Person", value: "1" };
 
 // ---------------------------------------------------------------------------
 // qtl — the full language
@@ -166,80 +172,96 @@ const qtlGrammar: Grammar = {
     // L-12 — inherence on a combination, which is what sets the depth of the
     // entry editor's narrowing: the class is offered only after the gender.
     { category: { upos: NOUN, feats: [fem] }, feature: "Declension" },
+    // L-17 — the citation number, declared one level below the gender. This is
+    // what ADR-0020 replaced the axis with: an ordinary masculine noun is cited
+    // in the singular and an *anv-kadarn stroll* in the plural, so the number is
+    // part of what those two headwords ARE — and it is also what their forms
+    // vary over, which the paradigm's tables say and no declaration here does.
+    { category: { upos: NOUN, feats: [masc] }, feature: "Number" },
+    { category: { upos: NOUN, feats: [fem] }, feature: "Number" },
+    // One level deeper again, so a noun of a declared class can be cited too:
+    // grounding walks one atom at a time, so each rung needs its own row.
+    { category: { upos: NOUN, feats: [fem, decl1] }, feature: "Number" },
+    { category: { upos: NOUN, feats: [fem, decl2] }, feature: "Number" },
     // What a verb lexeme *is*, which is what lets a paradigm select on it: the
     // finite and non-finite halves of this language's verbs take different
     // paradigms, so `{VERB, VerbForm=Fin}` has to be part of the headword
     // bundle rather than of a form's address.
     { category: { upos: VERB }, feature: "VerbForm" },
+    // A finite verb is cited in the first person singular, as a Latin one is.
+    { category: { upos: VERB, feats: [finite] }, feature: "Person" },
+    { category: { upos: ADJ }, feature: "Gender" },
   ],
 
   categories: [
-    // L-15 — a category of ONE atom, which ADR-0019 made legal: a bare part of
-    // speech is a headword category like any other, and it has to be, because a
-    // category is now also where an axis is declared.
-    // L-16 — an axis with exactly ONE annotation: the ordinary case, where the
-    // default rides into every entry created through it.
+    // L-16 — the ordinary case: a part of speech plus the one value its
+    // headwords are cited at, named once.
     {
-      category: { upos: ADJ },
-      axis: "Gender",
-      annotations: [{ long: "anv-gwan gourel", short: "ag.g.", default: "Masc" }],
+      category: { upos: ADJ, feats: [masc] },
+      label: { long: "anv-gwan gourel", short: "ag.g." },
     },
-    // L-17 — the merge's motivating case, and the thing two separate
-    // declarations could not express: ONE category whose headwords sit at two
-    // different values of its own axis, each with its own abbreviation. An
-    // ordinary masculine noun is cited in the singular; an *anv-kadarn stroll*
-    // is cited in the PLURAL, its singulative derived by rule.
+    // L-17 — the case the merge was for, and the case ADR-0020 declares as two
+    // categories rather than one category with two abbreviations: an ordinary
+    // masculine noun cited in the singular, and an *anv-kadarn stroll* cited in
+    // the PLURAL with its singulative derived by rule. Two flavours, two rows,
+    // two abbreviations, and each is a bundle an entry carries verbatim.
     {
-      category: { upos: NOUN, feats: [masc] },
-      axis: "Number",
-      annotations: [
-        { long: "anv-kadarn gourel", short: "ak.g.", default: "Sing" },
-        { long: "anv-kadarn stroll", short: "ak.str.", default: "Plur" },
-      ],
-    },
-    // L-18 — a default that is a MINTED value. The category stores `Sgv` bare;
-    // `categoryTags` re-attaches `scheme: "qtl"` from the `values` row that
-    // bound it, which is the only reason the chip finds its label and the
-    // selector finds the entry.
-    {
-      category: { upos: NOUN, feats: [fem] },
-      axis: "Number",
-      annotations: [
-        { long: "anv-kadarn gwregel", short: "ak.gw.", default: "Sing" },
-        { long: "anv-kadarn unanennel", short: "ak.un.", default: "Sgv" },
-      ],
-    },
-    // The two inflection classes, declared on the refined category the
-    // inherence row above made reachable. Each is a paradigm's selector.
-    {
-      category: { upos: NOUN, feats: [fem, decl1] },
-      axis: "Number",
-      annotations: [{ long: "anv-kadarn gwregel, kentañ displegadur", short: "ak.gw.1.", default: "Sing" }],
+      category: { upos: NOUN, feats: [masc, sing] },
+      label: { long: "anv-kadarn gourel", short: "ak.g." },
+      note: "An anv-kadarn gourel boutin, meneget en unander.",
     },
     {
-      category: { upos: NOUN, feats: [fem, decl2] },
-      axis: "Number",
-      annotations: [{ long: "anv-kadarn gwregel, eil displegadur", short: "ak.gw.2.", default: "Sing" }],
+      category: { upos: NOUN, feats: [masc, plur] },
+      label: { long: "anv-kadarn stroll", short: "ak.str." },
+      note: "Meneget e liester: eus ar stroll e teu an unanenn, dre reol.",
     },
-    // A finite verb is cited in the first person singular, as a Latin one is.
     {
-      category: { upos: VERB, feats: [finite] },
-      axis: "Person",
-      annotations: [{ long: "verb displeget", short: "v.disp.", default: "1" }],
+      category: { upos: NOUN, feats: [fem, sing] },
+      label: { long: "anv-kadarn gwregel", short: "ak.gw." },
     },
-    // L-13 — a category of two atoms with NO axis at all: an infinitive does
-    // not vary over anything, so it names no axis and takes exactly one
-    // annotation. An entry carrying this bundle renders as ONE chip by exact
-    // match.
+    // L-18 — a category whose own bundle carries a MINTED value. The atom is
+    // matched with its provenance, so the row writes `scheme: "qtl"` exactly as
+    // the entry editor does; a bare `Sgv` here would key differently and find no
+    // label.
+    {
+      category: { upos: NOUN, feats: [fem, sgv] },
+      label: { long: "anv-kadarn unanennel", short: "ak.un." },
+    },
+    // The two inflection classes, one level deeper again — the walk the entry
+    // editor takes: anv-kadarn, gwregel, kentañ displegadur, unander.
+    {
+      category: { upos: NOUN, feats: [fem, decl1, sing] },
+      label: { long: "anv-kadarn gwregel, kentañ displegadur", short: "ak.gw.1." },
+    },
+    {
+      category: { upos: NOUN, feats: [fem, decl2, sing] },
+      label: { long: "anv-kadarn gwregel, eil displegadur", short: "ak.gw.2." },
+    },
+    {
+      category: { upos: VERB, feats: [finite, person1] },
+      label: { long: "verb displeget", short: "v.disp." },
+    },
+    // L-13 — a category identified by a feature nothing is cited *at*: an
+    // infinitive is one form and there is no second flavour to tell it from, so
+    // its bundle is the part of speech plus the form that names it. An entry
+    // carrying it renders as ONE chip by exact match.
     {
       category: { upos: VERB, feats: [infinitive] },
-      annotations: [{ long: "anv-verb", short: "a.v." }],
+      label: { long: "anv-verb", short: "a.v." },
     },
   ],
 
+  // L-21 — the identity and the printed form are two fields (ADR-0020): `udb`
+  // keys the row, "udb." is what a reader sees, and the note says when to reach
+  // for it, which the expansion alone does not.
   abbreviations: [
-    { short: "udb.", long: "un dra bennak" },
-    { short: "u.b.", long: "unan bennak" },
+    {
+      value: "udb",
+      short: "udb.",
+      long: "un dra bennak",
+      note: "Implijet evit an traoù, n'eo ket evit an dud.",
+    },
+    { value: "ub", short: "u.b.", long: "unan bennak" },
   ],
 };
 
@@ -263,12 +285,14 @@ const qtoCoherent: Grammar = {
     value("Number", "Sing", "unan", "u."),
     value("Number", "Plur", "lies", "l."),
   ],
-  inherent: [{ category: { upos: NOUN }, feature: "Gender" }],
+  inherent: [
+    { category: { upos: NOUN }, feature: "Gender" },
+    { category: { upos: NOUN, feats: [fem] }, feature: "Number" },
+  ],
   categories: [
     {
-      category: { upos: NOUN, feats: [fem] },
-      axis: "Number",
-      annotations: [{ long: "izenn venel", short: "izb.", default: "Sing" }],
+      category: { upos: NOUN, feats: [fem, sing] },
+      label: { long: "izenn venel", short: "izb." },
     },
   ],
 };
@@ -281,9 +305,10 @@ const qtoCoherent: Grammar = {
  * reads this content, so the binding editor must list every defect and block
  * Publish.
  *
- * ADR-0019 retired eight kinds with the `axes` and `layout` arrays and added
- * six of its own, so this record is a different shape from the one that stood
- * before it: the defects now live on `categories` rather than on three arrays.
+ * The kind list has shrunk twice. ADR-0019 retired eight with the `axes` and
+ * `layout` arrays and added six of its own; ADR-0020 removed those six with the
+ * axis they were about, leaving **six kinds in total** — everything that can go
+ * wrong with a bundle, and nothing about what its forms do.
  */
 const qtoDefective: Grammar = {
   pos: [
@@ -322,67 +347,34 @@ const qtoDefective: Grammar = {
     { category: { upos: VERB }, feature: "Style" },
   ],
   categories: [
-    // L-35 `category-axis-inherent` — the same (category, feature) declared
-    // both ways: a paradigm cannot be built from a coordinate that is also a
-    // constant. Its default is bound, so this row carries that defect alone.
-    {
-      category: { upos: NOUN },
-      axis: "Gender",
-      annotations: [{ long: "izenn", short: "iz.", default: "Fem" }],
-    },
-    // L-32 `duplicate` — a second row for the same category, which would make
-    // its axis, and with it the whole cell space, depend on array order.
-    {
-      category: { upos: NOUN },
-      axis: "Number",
-      annotations: [{ long: "izenn all", short: "iza.", default: "Sing" }],
-    },
-    // L-34 `category-axis-unbound` — the axis names a feature this language
-    // never declared it uses, so nothing downstream can offer its values.
-    {
-      category: { upos: VERB },
-      axis: "Tense",
-      annotations: [{ long: "gwered", short: "gwd.", default: "Pres" }],
-    },
+    // L-32 `duplicate` — two rows for one category, which makes the label a
+    // reader sees depend on array order. A bare part of speech is a category
+    // the `pos` row above already names, so naming it here is the same defect
+    // twice over.
+    { category: { upos: NOUN }, label: { long: "izenn", short: "iz." } },
+    { category: { upos: NOUN }, label: { long: "izenn all", short: "iza." } },
     // L-33 `ungrounded-combination` — no inherence chain reaches it: nothing
     // declares Number inherent to `{NOUN, Gender=Masc}`, nor Gender to
     // `{NOUN, Number=Plur}`.
     {
-      category: {
-        upos: NOUN,
-        feats: [masc, { feature: "Number", value: "Plur" }],
-      },
-      annotations: [{ long: "izenn dadel lies", short: "iztl." }],
+      category: { upos: NOUN, feats: [masc, plur] },
+      label: { long: "izenn dadel lies", short: "iztl." },
     },
-    // L-37 `category-default-forbidden` — no axis, so there is no feature for
-    // the default to be a value of.
+    // L-31 `unbound-atom`, on a category rather than on an inherence row: the
+    // part of speech it is built on is one nobody bound.
+    { category: { upos: ADJ, feats: [fem] }, label: { long: "hanel benel", short: "hb." } },
+    // L-40 `lexicographic-in-grammar` inside a category's own bundle: "archaic"
+    // is not something a word IS, so no category can be made of it.
     {
-      category: { upos: NOUN, feats: [masc] },
-      annotations: [{ long: "izenn dadel", short: "izt.", default: "Sing" }],
-    },
-    // Three defects of the annotation list itself, on one grounded category.
-    {
-      category: { upos: NOUN, feats: [fem] },
-      axis: "Number",
-      annotations: [
-        { long: "izenn venel", short: "izb.", default: "Sing" },
-        // L-39 `category-duplicate-default` — two annotations a reader cannot
-        // tell apart, because the default is the only thing distinguishing them.
-        { long: "izenn venel all", short: "izba.", default: "Sing" },
-        // L-38 `category-default-unbound` — `Number=Dual` is not a value this
-        // language bound, so no headword can sit at it.
-        { long: "izenn venel daou", short: "izbd.", default: "Dual" },
-        // L-36 `category-default-missing` — an axis is declared and this
-        // annotation says nothing about where its headwords sit.
-        { long: "izenn venel hep", short: "izbh." },
-      ],
+      category: { upos: NOUN, feats: [fem, { feature: "Style", value: "Arch", scheme: "qto" }] },
+      label: { long: "izenn venel kozh", short: "izbk." },
     },
   ],
   // L-41 `duplicate-abbreviation` — two front-matter entries under one
-  // headword, keyed on the short form because that IS the identity.
+  // identity, which is what a lookup travels through.
   abbreviations: [
-    { short: "hz.", long: "hervez" },
-    { short: "hz.", long: "hep zaou" },
+    { value: "hz", short: "hz.", long: "hervez" },
+    { value: "hz", short: "h.z.", long: "hep zaou" },
   ],
 };
 
@@ -393,10 +385,10 @@ export const languageFixtures: LanguageFixture[] = [
     role: "full",
     covers: [
       "L-01", "L-02", "L-03", "L-04", "L-05", "L-06", "L-07", "L-08", "L-09", "L-10",
-      "L-11", "L-12", "L-13", "L-14", "L-15", "L-16", "L-17", "L-18", "L-19",
+      "L-11", "L-12", "L-13", "L-14", "L-16", "L-17", "L-18", "L-19", "L-21",
     ],
     expect:
-      "Two pairs of rows are flagged as indistinguishable on GET /languages/qtl/labels: `t.` over `troad-rener` and `troad-reiñ` (two values of one feature), and `gou.` over `gour` and `gourel` (a feature NAME against a value — the case pair-keying used to collapse). `troad-gouzañv` sits at count 0, which is legitimate: the language named it before anyone used it. The Categories level of the grammar dialog lists seven categories, of which `{NOUN, Gender=Masc}` and `{NOUN, Gender=Fem}` each carry TWO abbreviations under one declaration — the anv-stroll case — and `{VERB, VerbForm=Inf}` carries no axis at all. The Paradigms level lists seven records.",
+      "Two pairs of rows are flagged as indistinguishable on GET /languages/qtl/labels: `t.` over `troad-rener` and `troad-reiñ` (two values of one feature), and `gou.` over `gour` and `gourel` (a feature NAME against a value — the case pair-keying used to collapse). `troad-gouzañv` sits at count 0, which is legitimate: the language named it before anyone used it. The Categories level of the grammar dialog lists nine categories, one abbreviation each: `{NOUN, Gender=Masc, Number=Sing}` and `{NOUN, Gender=Masc, Number=Plur}` are the anv-stroll case as two rows, and the sidebar walking into the second reads `ak. / Gender= / Masc / Number= / Plur`. The NOUN dashboard's Gender button counts SIX categories below it, where a count of its direct children would have said none — neither `{NOUN, Gender=Masc}` nor `{NOUN, Gender=Fem}` is itself named. The Paradigms level lists seven records.",
     record: {
       tag: "qtl",
       translations: [
@@ -421,9 +413,9 @@ export const languageFixtures: LanguageFixture[] = [
   },
   {
     role: "defective",
-    covers: ["L-30", "L-31", "L-32", "L-33", "L-34", "L-35", "L-36", "L-37", "L-38", "L-39", "L-40", "L-41"],
+    covers: ["L-30", "L-31", "L-32", "L-33", "L-40", "L-41"],
     expect:
-      "GET /languages/qto/currentRecord still points at the COHERENT version — the defective rewrite was refused whole, and never entered the record's history. Opening the grammar dialog on qto reads the defective content from the PDS: Publish is disabled and the footer lists all twelve defect kinds.",
+      "GET /languages/qto/currentRecord still points at the COHERENT version — the defective rewrite was refused whole, and never entered the record's history. Opening the grammar dialog on qto reads the defective content from the PDS: Publish is disabled and the footer lists all six defect kinds.",
     record: {
       tag: "qto",
       translations: [

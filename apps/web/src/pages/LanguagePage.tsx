@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   formatTagVerbatim,
@@ -26,6 +26,7 @@ import {
 } from "../lib/api";
 import { relativeTime } from "../lib/relative-time";
 import { fetchLanguageRecord } from "../lib/atproto-record";
+import { draftFromRecord } from "../lib/grammar-draft";
 import { forgetLanguageGrammar } from "../lib/language-grammar";
 import { navigateTo, sourcePath } from "../lib/routes";
 
@@ -77,6 +78,14 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
   const [namedIn, setNamedIn] = useState<LanguageView[]>([]);
   const [record, setRecord] = useState<LeksisLanguageRecord | null>(null);
   const [state, setState] = useState<LoadState>("loading");
+
+  /**
+   * The record's grammar, read through the same forward map the editor opens on
+   * — so a language declared before ADR-0019 or ADR-0020 shows the shelf its
+   * contributor will see in the editor, rather than a shelf missing every
+   * category the older shape declared.
+   */
+  const shelfGrammar = useMemo(() => draftFromRecord(record?.grammar), [record]);
 
   /** Which record-editing dialog is open, if any. */
   const [dialog, setDialog] = useState<LanguageRecordMode | null>(null);
@@ -405,7 +414,7 @@ export function LanguagePage({ tag, languages, onOpenEntry }: LanguagePageProps)
             {/* One shelf per kind of thing a language names — the badge that
                 used to sit on every row is the tab it is on now. */}
             <LabelShelf
-              grammar={record?.grammar}
+              grammar={shelfGrammar}
               labels={labels}
               languageTag={tag}
               onEdit={guarded(t("auth.reasonGrammar"), () => setGrammarOpen(true))}

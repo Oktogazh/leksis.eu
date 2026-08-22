@@ -202,21 +202,22 @@ const inherent: NonNullable<Grammar["inherent"]> = [
 ];
 
 /**
- * The two named combinations, carried over as axis-less categories.
+ * The two named combinations, carried over as categories with one label each.
  *
- * No `axis` and therefore no `default`: the accepted record declared Number an
- * axis of `{NOUN}`, but the merge asks which value each headword flavour is
- * *cited at*, and Breton has more than one answer — the anv-kadarn stroll is
- * cited in the plural. That is the language's call, made in the editor.
+ * Nothing is said about the number they are cited at: the accepted record
+ * declared Number an axis of `{NOUN}`, and ADR-0020 asks instead which features
+ * *identify* a headword. Breton has more than one answer — the anv-kadarn
+ * stroll is cited in the plural — so the flavours are declared one level deeper
+ * in the editor, which is the language's call and not this script's.
  */
 const categories: NonNullable<Grammar["categories"]> = [
   {
     category: { upos: { value: "NOUN" }, feats: [{ feature: "Gender", value: "Masc" }] },
-    annotations: [{ long: "anv-kadarn gourel", short: "ak. g." }],
+    label: { long: "anv-kadarn gourel", short: "ak. g." },
   },
   {
     category: { upos: { value: "NOUN" }, feats: [{ feature: "Gender", value: "Fem" }] },
-    annotations: [{ long: "anv-kadarn gwregel", short: "ak. gw." }],
+    label: { long: "anv-kadarn gwregel", short: "ak. gw." },
   },
 ];
 

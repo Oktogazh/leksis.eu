@@ -14,10 +14,13 @@ merged into 1 + 2); layer 1 reconciled with what shipped 2026-08-02; layer 2 rec
 reconciled 2026-08-03.
 **For:** The morphology arc (`leksis-evolution` skill). **The next build is layer 6, export — nothing here
 covers it beyond §3's sketch.** Layer 5 is planned in `docs/design/paradigm-rules.md` and reshaped by
-`docs/design/category-axis-merge.md`; both are authoritative over this note for what they cover.
+`docs/design/category-axis-merge.md`; both are authoritative over this note for what they cover —
+and **ADR-0020 is authoritative over the merge note**, having removed the category's `axis` again.
 **Related:** **ADR-0006 (layer 1, accepted)**, **ADR-0007 (layer 2, accepted)**,
 **ADR-0008 (layer 3 + the label inversion — its axes half REMOVED by ADR-0019)**,
 **ADR-0009 (layer 4 — REMOVED by ADR-0019)**, **ADR-0019 (the category–axis merge, accepted)**,
+**ADR-0020 (which removed the merged category's own axis — a category is a bundle, one label and a
+note, and `inherent` alone says what defines a headword)**,
 `lexicons/eu.leksis.entry.json`, `lexicons/eu.leksis.language.json`, `lexicons/eu.leksis.defs.json`,
 ADR-0004 (the labels read model, amended by 0006 and re-keyed by 0010), ADR-0002 (the browser is the write path)
 

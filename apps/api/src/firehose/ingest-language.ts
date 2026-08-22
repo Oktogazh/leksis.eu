@@ -4,8 +4,8 @@ import {
   isValidGrammar,
   isValidLanguageTag,
   normalizeLanguageTag,
+  RETIRED_GRAMMAR_KEYS,
   type Grammar,
-  type GrammarCategory,
   type GrammarInherent,
   type LanguageTranslation,
 } from "@leksis/types";
@@ -76,29 +76,38 @@ interface LanguageDoc {
    * is likewise impossible in an indexed grammar.
    */
   inherent: GrammarInherent[];
-  /**
-   * This version's category declarations, cached for exactly the reason
-   * `inherent` is — and needed since ADR-0019 for exactly the same computation.
-   *
-   * A headword bundle now carries the **default axis value** of the category it
-   * was created through, and that value is part of what identifies a kind of
-   * word. So `headwordKeys` cannot be computed from the inherence rows alone:
-   * it has to know which feature each category varies over and which of its
-   * values the language declared a headword flavour. Only the categories say
-   * that, and the consumer has no record in hand.
-   *
-   * Stored raw, and deliberately the whole row rather than a distilled
-   * (category, axis, defaults) triple: a second shape here would be a second
-   * thing to keep in step with the lexicon, for no saving worth having on a doc
-   * that already caches every label the same grammar declares.
-   */
-  categories: GrammarCategory[];
   createdAt: string;
   indexedAt: string;
   current: boolean;
 }
 
 export type IngestResult = "indexed" | "skipped-duplicate" | "skipped-invalid";
+
+/**
+ * Which declarations of an older shape a `grammar` object still carries — for
+ * the refusal message alone, never for a decision. The three the browser's
+ * `carriesLegacyGrammar` detects, named the way their lexicon named them.
+ */
+function legacyGrammarKeys(grammar: unknown): string[] {
+  if (typeof grammar !== "object" || grammar === null) return [];
+  const stored = grammar as Record<string, unknown>;
+  const found: string[] = [];
+  for (const key of RETIRED_GRAMMAR_KEYS) if (stored[key] !== undefined) found.push(`\`${key}\``);
+  if (Array.isArray(stored.bindings)) found.push("`bindings`");
+  if (
+    Array.isArray(stored.categories) &&
+    stored.categories.some((row) => row !== null && typeof row === "object" && "annotations" in row)
+  ) {
+    found.push("a category's `axis`/`annotations`");
+  }
+  if (
+    Array.isArray(stored.abbreviations) &&
+    stored.abbreviations.some((row) => row !== null && typeof row === "object" && !("value" in row))
+  ) {
+    found.push("an abbreviation with no `value`");
+  }
+  return found;
+}
 
 /**
  * Validate an incoming record (unknown shape — anyone can put anything on
@@ -151,7 +160,25 @@ function parseRecord(record: unknown): {
   // record that contradicts itself.
   let grammar: Grammar | null = null;
   if (r.grammar !== undefined) {
-    if (!isValidGrammar(r.grammar)) return null;
+    if (!isValidGrammar(r.grammar)) {
+      // Named when we can name it. A shape failure is ordinarily silent — the
+      // record could be malformed in any of a dozen ways and none of them is
+      // more useful to print than "invalid" — but the shapes this lexicon has
+      // *left behind* are the one case where a bot's author needs to be told
+      // which, because their record was correct when they wrote it and the
+      // browser's forward map (`migrateGrammar`) is what fixes it. Six issue
+      // kinds moved into this branch with ADR-0020's removal of the axis, so
+      // without this the change would have made ingest quieter, not clearer.
+      const legacy = legacyGrammarKeys(r.grammar);
+      if (legacy.length > 0) {
+        console.warn(
+          `firehose: language "${tag}" rejected — its grammar carries ${legacy.join(", ")}, ` +
+            `declarations this lexicon no longer defines. Republish it through the binding ` +
+            `editor, which maps the record forward, or write the current shape.`,
+        );
+      }
+      return null;
+    }
     // Named in the log, unlike every other failure here: this one is a bot's
     // output being refused row by row, and "invalid record" alone would leave
     // its author nothing to fix.
@@ -210,7 +237,6 @@ export async function ingestLanguage(
     translations: parsed.translations,
     labels,
     inherent: parsed.grammar?.inherent ?? [],
-    categories: parsed.grammar?.categories ?? [],
     createdAt: parsed.createdAt,
     indexedAt: new Date().toISOString(),
     current: true,

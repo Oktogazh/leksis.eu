@@ -35,12 +35,6 @@ const ALL_ISSUE_KINDS: GrammarIssue["kind"][] = [
   "duplicate",
   "unbound-atom",
   "ungrounded-combination",
-  "category-axis-unbound",
-  "category-axis-inherent",
-  "category-default-missing",
-  "category-default-forbidden",
-  "category-default-unbound",
-  "category-duplicate-default",
   "lexicographic-in-grammar",
   "duplicate-abbreviation",
 ];

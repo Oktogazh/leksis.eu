@@ -2,7 +2,7 @@ import {
   compareDefinitionPlaces,
   isValidDefinitionPlace,
   isValidGrammar,
-  withoutRetiredGrammar,
+  migrateGrammar,
   isValidParadigmRecord,
   isValidTag,
   isValidLanguageTag,
@@ -390,14 +390,17 @@ export async function fetchLanguageRecord(
   // safe failure. (The AppView rejects such records at ingest, so an indexed
   // record never hits this.)
   //
-  // **Except the declarations ADR-0019 retired**, which are set aside first.
-  // They are the one case where the AppView's refusal must not become the
-  // editor's: every language declared before the category–axis merge carries
-  // them, and a reader that refused those records would leave each one
-  // unrepairable through the only interface that could repair it. They are set
-  // aside for the check and left on the record, so the editor can forward-map
-  // what maps and say what does not (`draftFromRecord`).
-  if (r.grammar !== undefined && !isValidGrammar(withoutRetiredGrammar(r.grammar))) {
+  // **Except what an older shape of this lexicon declared**, which is mapped
+  // forward before the check. That is the one case where the AppView's refusal
+  // must not become the editor's: every language declared before the
+  // category–axis merge (ADR-0019) or before the axis was removed again
+  // (ADR-0020) carries such rows, and a reader that refused those records would
+  // leave each one unrepairable through the only interface that could repair
+  // it. The record is handed on **as it stands** — the map is what the editor
+  // and the viewers apply on their side, so the concurrency guard and the
+  // "publishing will rewrite this" notice still have the original to compare
+  // against (`draftFromRecord`, `migrateGrammar`).
+  if (r.grammar !== undefined && !isValidGrammar(migrateGrammar(r.grammar))) {
     console.warn(`language record ${recordURI} has a malformed grammar; refusing to load it`);
     return null;
   }

@@ -91,16 +91,16 @@ the arc must not stall loops 5 and 6.
 | Layer | Declares | Status |
 |---|---|---|
 | 1 | Primitives — the atoms this language uses | ✅ ADR-0006 |
-| 2 | Categories — what a headword *is*, what its forms *vary over*, and where its own citation form sits on that axis | ✅ ADR-0007, **merged with layer 3 by ADR-0019** |
+| 2 | Categories — which features define a headword, and what this dictionary calls each | ✅ ADR-0007, **merged with layer 3 by ADR-0019, and the axis removed again by ADR-0020** |
 | ~~3~~ | ~~Axes~~ — folded into layer 2 | **removed** (ADR-0019; was ADR-0008) |
 | ~~4~~ | ~~Layout~~ — moved into the paradigm record | **removed** (ADR-0019; was ADR-0009) |
 | 5 | Rules — generation filling the cells a paradigm's own tables draw | ✅ ADR-0016, reshaped by ADR-0019 |
 | 6 | Export — Hunspell, UniMorph, CoNLL-U | |
 
 > Confirm the actual current position from `CHANGELOG.md` + `git tag` at orient time (step 1) —
-> these ✅ marks are a convenience, not the source of truth. As of **ADR-0019 (v0.28.0, 2026-08-21)**
-> the arc is through layer 5 in its merged shape, and **layer 6 (export) is the next thing to
-> build**. Content loop 6 (search + polish) is where the content sequence stands; search itself is
+> these ✅ marks are a convenience, not the source of truth. As of **ADR-0020 (v0.29.0, 2026-08-22)**
+> the arc is through layer 5 in its merged shape, with the axis removed from layer 2 a revision
+> after it arrived, and **layer 6 (export) is the next thing to build**. Content loop 6 (search + polish) is where the content sequence stands; search itself is
 > its unbuilt half.
 >
 > **One obligation trails the arc rather than blocking it.** The **published lexicons** lag the code
@@ -352,19 +352,21 @@ what it has closed. The closed set, named so a session recognises them on sight:
 3 — labels are single-sourced from the language, and the read model is keyed on the tag) ·
 **identity on the tag, one row per tag per language, enforced by the doc key** ·
 **a lexicographic label set is a flagged feature, excluded from layers 2–4** ·
-**a plain abbreviation stands for no tag and is identified by its short form** ·
+**a plain abbreviation stands for no tag, and its identity is an ASCII `value` distinct from the
+form it prints** (ADR-0020) ·
 **the grammar object on the language record, rules and tables in their
 own lexicon** · **no XPOS as storage** · **`VerbForm=` on a VERB** · **the triage gate before minting** ·
 **the no-orphan rule** · **the layer-1 name→value gate** · **the layer-2 inherence gate, and its enumeration
 prompt is not a constraint** · **inflection classes are minted primitives, declared inherent at layer 2 —
-there is no separate class layer and no `appliesTo`** · **a (category, feature) pair is inherent XOR an
-axis** · **live UD candidate lists with degrade-to-manual** · **sense-level tagging on definition nodes** ·
+there is no separate class layer and no `appliesTo`** · **live UD candidate lists with degrade-to-manual** · **sense-level tagging on definition nodes** ·
 **`categories` order is the author's** · **a label lives on the language, never on an entry** (ADR-0008) ·
 **bare coordinates, re-qualified before use** · **exact → containment → leftover** ·
 **"no such form" ≠ "not entered yet"** ·
 **an inflection class is a minted feature and gets a door, not a mechanism** (ADR-0009) ·
-**a category declares its axis and its defaults together, and never a value inventory** ·
-**a bare part of speech is a category** · **the entry's bundle carries its default axis value** ·
+**a category is a bundle, one label and a note; `inherent` says what defines a headword and the
+paradigm's tables say how it varies** (ADR-0020, which removed ADR-0019's axis) ·
+**one flavour, one category, one abbreviation** · **the entry's bundle carries every identifying
+feature** ·
 **a paradigm selects by exact match on that bundle, and may list several** ·
 **a table is authored cell by cell inside the paradigm record** ·
 **syncretism is one merged cell, never two that agree** ·
@@ -453,7 +455,7 @@ layer at its top; the scope says *what is in and out*, not *how*.
 |---|---|---|
 | **0 — Abbreviations** | homolingual labels bound to nothing: plain abbreviations, and (ADR-0010) lexicographic label sets for register, domain and editorial usage | **shipped** (v0.8); its entry-level site was removed at layer 3, and ADR-0010 gave it a home on the language record |
 | **1 — Primitives** | the atoms this language uses: 14 headword-eligible UPOS, feature *names*, feature *values*. **Minting lives here**, including inflection-class features and their values | **shipped** — see **ADR-0006**, which is authoritative over the design note for this layer |
-| **2 — Categories** | which features are **inherent** to a category, then the headword categories that follow — *and, since ADR-0019, the one feature each category's forms vary over plus the value each of its headword flavours is cited at, one abbreviation per flavour* | **shipped** — see **ADR-0007** and **ADR-0019**, authoritative over the design note for this layer |
+| **2 — Categories** | which features **define a headword** of a category, then the categories that follow, one abbreviation and one note each. *Nothing about how the forms vary: that is the paradigm's tables* | **shipped** — see **ADR-0007** and **ADR-0020** (which removed ADR-0019's axis), authoritative over the design note for this layer |
 | ~~**3 — Axes**~~ | folded into layer 2: an axis is a property of the category, not a declaration beside it | **removed** — ADR-0019 |
 | ~~**4 — Layout**~~ | moved into the paradigm record, which now writes its grid out cell by cell | **removed** — ADR-0019 |
 | **5 — Rules** | Hunspell-shaped rules populating the cells **the paradigm's own tables draw**, overridden by the entry's own `otherForms`; its own lexicon | **shipped** — see **ADR-0016** and **ADR-0019**, authoritative over `docs/design/paradigm-rules.md` for this layer |
@@ -510,8 +512,7 @@ than as validation errors. *Never a whitelist:* an unenumerated combination stay
 decomposition. *Out:* anything concerning forms.
 
 **What layer 2 settled, and layer 3 inherits (ADR-0007), do not re-derive:** `inherent` rows are singular
-`(category, feature)` with a **bare feature name** — which is exactly how a category's `axis` keys, so
-the two read as one relation at two altitudes (and is why ADR-0019 could fold one into the other). **Grounding** is the gate's name: a named combination must be
+`(category, feature)` with a **bare feature name**. **Grounding** is the gate's name: a named combination must be
 reachable by removing one feature at a time, each removal licensed by an inherence declaration, down to a
 bound atom. Completeness ("2 of 3 named") is a **counter and never a constraint**. Categories reach the
 `labels` model through `grammarRows` alone, so **the API cost of the layer was zero** — treat any need
@@ -520,23 +521,28 @@ an authoring surface may pay that round trip where the viewers never do. `Tag` n
 **`eu.leksis.defs`** lexicon, which is where layer 5's paradigms should get it too.
 
 **Layers 3 and 4 no longer exist — ADR-0019 (v0.28.0, 2026-08-21) merged one back and moved the
-other out.** They are kept named here so a session meeting `grammar.axes` or `grammar.layout` in an
+other out, and ADR-0020 (v0.29.0, 2026-08-22) then removed what the merge had brought in.** They are kept named here so a session meeting `grammar.axes` or `grammar.layout` in an
 old document knows what happened rather than trying to build them again.
 
-**What the merge settled, and layer 6 inherits (ADR-0019), do not re-derive:** an axis is a property
-of a **category**, not a declaration beside it, and the value each headword flavour is cited at is
-part of what the category means — `{NOUN, Gender=Masc}` holds an *anv-kadarn gourel* cited in the
-singular and an *anv-kadarn stroll* cited in the plural, one row, two abbreviations, each naming its
-own `default`. A category names its axis feature and its defaults and **never a value inventory**. A
-**single atom is a category** (the old ≥2 floor is gone). The **entry's bundle carries the default**,
-so a record identifies its flavour on its own — which is what makes a paradigm's `selectors` an
-**exact-equality** match against `selectorKeys` (`headwordKeys` computes it) rather than containment
+**What the two revisions settled, and layer 6 inherits (ADR-0019, corrected by ADR-0020), do not
+re-derive:** a category is a **bundle, one label and a note**, and the *only* other layer-2
+declaration is `inherent` — which features define a headword of it, the citation number included.
+ADR-0019 had a per-category `axis` with one abbreviation per value its headwords are cited at;
+ADR-0020 removed it, because the line it drew does not exist: an *anv-kadarn stroll* is cited in the
+**plural**, so `Number` both identifies that headword and is what an ordinary noun's forms range
+over, and the rule refusing that (`category-axis-inherent`) refused the record Breton needs. So
+**one flavour, one category, one abbreviation**, at the depth the tree reaches it —
+`{NOUN, Gender=Masc, Number=Sing}` and `{NOUN, Gender=Masc, Number=Plur}` are two rows. A **single
+atom** is exempt from grounding but useless: its tag is the `pos` row's, so a row for it is a
+`duplicate`. The **entry's bundle carries every identifying feature**, so a record identifies its
+flavour on its own — which is what makes a paradigm's `selectors` an **exact-equality** match
+against `selectorKeys` (`headwordKeys` computes it, from inherence alone) rather than containment
 over `inherentAtoms`, and which retired most-specific-selector precedence entirely: two paradigms
 cannot both reach one entry. Cells are **written out, never derived** — a paradigm's `tables` are
 grids of headings, filler and form cells, each form cell carrying its address and its ordered rules,
 with merging authored the way an HTML table's is; so an exporter walking a language's morphology
-reads *tables*, not a cartesian product it has to reconstruct. `grammarIssues` reports **twelve**
-kinds, not fourteen: six `category-*` kinds replaced the eight the removed arrays carried.
+reads *tables*, not a cartesian product it has to reconstruct. `grammarIssues` reports **six** kinds
+(ADR-0019 said twelve; the six `category-*` kinds went with the axis).
 A reader distinguishes **three** blank states (manual-only · the rule declined · filler the language
 says cannot exist) and marks an asserted form standing **over** a generated one.
 

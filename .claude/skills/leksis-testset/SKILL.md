@@ -259,12 +259,11 @@ its rows here in the same loop.
 | L-10 | bound label, **zero usage** | declared and used by no entry — `count: 0` is legitimate, not a bug |
 | L-11 | layer 2 `inherent` on a bare POS | e.g. Gender inherent to `{NOUN}` |
 | L-12 | layer 2 `inherent` on a **combination** | inherent to `{NOUN, Gender=…}` — sets narrowing depth |
-| L-13 | a **category with no axis** | a ≥2-atom `categories` row naming no axis, so it takes exactly one annotation → renders as **one chip** (exact match). An infinitive is the natural case: it does not vary over anything |
-| L-14 | a bundle **no annotation names** | atoms all bound, matching no declared category tag → renders as **several chips** (decomposition). The unenumerated combination staying authorable |
-| L-15 | a **single-atom** category | a bare part of speech as a category — the ≥2-atom floor ADR-0019 removed, and it had to go, because a category is now also where an axis is declared |
-| L-16 | a category with an axis and **one** annotation | the ordinary case: the default rides into the bundle of every entry created through it |
-| L-17 | a category with an axis and **several** annotations | the merge's motivating case, which two separate declarations could not express: one category whose headwords sit at two values of its own axis, each with its own abbreviation (the *anv-kadarn stroll* beside the ordinary masculine noun) |
-| L-18 | a default that is a **minted value** | provenance re-attached from the `values` row by `categoryTags`, so the chip finds its label and the selector finds the entry |
+| L-13 | a category identified by a feature nothing is cited **at** | a ≥2-atom `categories` row whose second atom names the form itself → renders as **one chip** (exact match). An infinitive is the natural case: there is no second flavour to tell it from |
+| L-14 | a bundle **no category names** | atoms all bound, matching no declared category tag → renders as **several chips** (decomposition). The unenumerated combination staying authorable |
+| L-16 | a category at **one** citation value | the ordinary case: a part of speech plus the value its headwords are cited at, named once — the value rides into the bundle of every entry created through it |
+| L-17 | **two flavours, two categories** | the case the axis existed for, declared the way ADR-0020 declares it: `{NOUN, Gender=Masc, Number=Sing}` and `{NOUN, Gender=Masc, Number=Plur}` are two rows with two abbreviations (the *anv-kadarn stroll* beside the ordinary masculine noun), and the feature telling them apart is declared inherent one level up |
+| L-18 | a category whose bundle carries a **minted value** | the row writes the minting scheme exactly as the entry editor does (`Number=Sgv`, scheme `qtl`), so the atom is bound, the chip finds its label and the selector finds the entry |
 | L-19 | a **multivalue** value, bound | one value spanning two (`Fem,Masc`, `Person=1,2`), which is what a syncretic paradigm cell is addressed by and what gives the merged cell its heading |
 
 ### 3.2 Language records — `qtm` (bare) and `qto` (defective)
@@ -272,41 +271,39 @@ its rows here in the same loop.
 | # | Covers | Fixture requirement |
 |---|---|---|
 | L-20 | **no grammar at all** | `qtm` record with the endonym and no `grammar` key |
-| L-21 | verbatim rendering | `qtm` entries carrying well-formed tags nobody bound → unbound-styled chips |
+| L-21 | an abbreviation's three fields | `qtl`: a row whose ASCII `value` keys it, whose `short` is what the dictionary prints, and whose `note` says when to reach for it — the printed form is editable, the identity is not (ADR-0020) |
+| L-22b | verbatim rendering | `qtm` entries carrying well-formed tags nobody bound → unbound-styled chips |
 | L-22 | the tag worklist | those tags appear on `GET /languages/qtm/labels` as rows **with a count and no `long`** |
 | L-30 | `unbound-feature` | `qto`: a value whose feature name is not bound |
 | L-31 | `unbound-atom` | `qto`: a layer-2 row built on an unbound atom |
-| L-32 | `duplicate` | `qto`: two `categories` rows keying the same category — which would make its axis, and with it the whole cell space, depend on array order |
+| L-32 | `duplicate` | `qto`: two `categories` rows keying the same category — which would make the label a reader sees depend on array order |
 | L-33 | `ungrounded-combination` | `qto`: a named category no inherence chain reaches |
-| L-34 | `category-axis-unbound` | `qto`: an `axis` naming a feature the language never declared it uses |
-| L-35 | `category-axis-inherent` | `qto`: the same (category, feature) declared both ways — a paradigm cannot be built from a coordinate that is also a constant |
-| L-36 | `category-default-missing` | `qto`: an axis is declared and an annotation says nothing about where its headwords sit |
-| L-37 | `category-default-forbidden` | `qto`: no axis, so a `default` names a value of nothing |
-| L-38 | `category-default-unbound` | `qto`: a `default` that is not a bound value of the axis |
-| L-39 | `category-duplicate-default` | `qto`: two annotations of one category at the same default — the only thing that could have told them apart |
 | L-40 | `lexicographic-in-grammar` | `qto`: a feature flagged `lexicographic` declared inherent to a category. "Archaic" is not something a word *is*, and the grammatical layers must never reach for that vocabulary (ADR-0010) |
-| L-41 | `duplicate-abbreviation` | `qto`: two `abbreviations` rows under one short form — two front-matter entries under one headword, keyed on the short form because that *is* the identity (ADR-0010) |
+| L-41 | `duplicate-abbreviation` | `qto`: two `abbreviations` rows under one `value` — two front-matter entries under one identity, which is what a lookup travels through (ADR-0010, re-keyed by ADR-0020) |
 
 All of L-30…L-41 land in **one** `qto` record — they are rows in one `grammar`
 object, and since ADR-0015 that record is **refused whole**, which is what these
 rows assert: `GET /languages/qto/currentRecord` still points at the coherent
-version, and the ingest log names all twelve kinds. The place each kind is
+version, and the ingest log names all six kinds. The place each kind is
 *read* is the binding editor's footer (U-16 below), because that is the surface a
 contributor repairs them in.
 
-**ADR-0019 replaced eight of these kinds with six of its own** (2026-08-21).
+**The kind list has shrunk twice.** ADR-0019 (2026-08-21) retired eight —
 `single-item-binding`, `inherent-axis-conflict`, `empty-axis`,
 `layout-unknown-axis`, `layout-repeated-axis`, `layout-foreign-coordinate`,
-`empty-layout-block` and `layout-too-large` are gone with the `bindings`, `axes`
-and `layout` arrays; the six `category-*` kinds above are the merged
-declaration's own gates. The count fell from fourteen to twelve, and the
-oversize-grid fixture went with `MAX_LAYOUT_CELLS`: a table is now written out
-cell by cell rather than derived from axes, so nobody can produce a million
-cells by declaring one more axis, and the successor cap (`MAX_TABLE_CELLS`) is a
+`empty-layout-block`, `layout-too-large` — with the `bindings`, `axes` and
+`layout` arrays, and added six `category-*` ones of its own, so the count fell
+from fourteen to twelve. ADR-0020 (2026-08-22) then removed those six with the
+axis they were about, leaving **six in total**: everything that can go wrong
+with a bundle, and nothing about what its forms do. The oversize-grid fixture
+went with `MAX_LAYOUT_CELLS` at the first of the two: a table is written out cell
+by cell rather than derived from axes, so nobody can produce a million cells by
+declaring one more axis, and the successor cap (`MAX_TABLE_CELLS`) is a
 `paradigmIssues` kind rather than a `grammarIssues` one.
 
-**Verified 2026-08-16** on the fourteen-kind shape, and rebuilt for the
-twelve-kind one on 2026-08-21. The rewrite was refused — `currentRecord` still
+**Verified 2026-08-16** on the fourteen-kind shape, rebuilt for the twelve-kind
+one on 2026-08-21, and re-cut to six on 2026-08-22 (fixtures updated and
+validated; the browser pass is owed). The rewrite was refused — `currentRecord` still
 served the coherent version's cid — and opening the dialog on `qto` listed every
 kind with Publish disabled. Note `qto`'s *history*
 survives the teardown even though its record does not, so republishing the set
@@ -314,12 +311,12 @@ re-creates this state rather than starting it over. The publisher asserts the re
 if the defective version ever becomes current, so a regression in the ADR-0015
 gate cannot pass silently.
 
-One of these is worth constructing deliberately rather than by accident. L-39
-`category-duplicate-default` is the kind that reports something a record can
-carry *and still render* — two annotations that simply cannot be told apart — so
-it is the one most likely to be dismissed as noise. The fixture exists to prove
-the footer says it, because the alternative is a language whose two
-abbreviations mean the same thing and whose contributors cannot find out why.
+One of these is worth constructing deliberately rather than by accident. L-32
+`duplicate` is the kind that reports something a record can carry *and still
+render* — two rows a reader cannot tell apart — so it is the one most likely to
+be dismissed as noise. The fixture exists to prove the footer says it, because
+the alternative is a language whose two labels mean the same thing and whose
+contributors cannot find out why.
 
 ### 3.3 Entry records
 
@@ -341,7 +338,7 @@ abbreviations mean the same thing and whose contributors cannot find out why.
 | E-14 | node `notes` | free prose before a node's content |
 | E-15 | entry-level `notes` | the evicted editorial label as prose (`arch.`), below the definitions |
 | E-16 | `references` | one with a `url`, one without |
-| E-17 | `otherForms` on the category's axis | one form per value of the axis its category declares; each spelling searchable |
+| E-17 | `otherForms` addressed by a bound feature | one form per value of a feature the language bound; each spelling searchable |
 | E-18 | `otherForms` **off** the axis | a form whose tag matches no cell of any paradigm reaching it → stays in the flat list, not dropped |
 | E-19 | inflected-form search | asserting `GET /entries?q=<a form spelling>` returns the parent entry |
 | E-20 | `todo` queue | exactly **two** entries carrying `todo`, with 1 and 2 items — a known constant to assert the dashboard counter against |
@@ -356,9 +353,9 @@ abbreviations mean the same thing and whose contributors cannot find out why.
 | E-29 | a form matching **no cell** | a form whose address no cell of the reaching paradigm carries → the leftover list *below* the tables. Distinct from E-18, where no paradigm reaches the entry at all |
 | E-30 | `definitions[].examples` — the three citation states | **one** entry, one leaf carrying three examples: one citing **S-01** with a `locator`, one **unsourced** (no `source` at all), one citing **S-02**'s number, which no source record describes. The whole point is that the three render differently on one line each: the short citation form, the sentence alone, and the bare `OCLC <n>` styled unresolved with a "describe it" invitation |
 | E-31 | examples on a **second** leaf, same work | one more leaf citing **S-01** again, with a different locator — the per-number resolution cache, and the DRY claim: one description, two citations, and correcting the source corrects both |
-| E-32 | the bundle carries its **default axis value** | ADR-0019 §1.3: an entry created through an annotation is tagged with that annotation's default on the record itself, so it self-describes without the language record in hand. Verified on **two** entries of one category at **different** defaults, which is the only way the row means anything |
+| E-32 | the bundle carries every **identifying** feature | an entry created through a category is tagged with that category's whole bundle on the record itself, so it self-describes without the language record in hand. Verified on **two** entries whose categories differ only in the value they are cited at, which is the only way the row means anything |
 | E-33 | the sibling **exact match** does not reach | the other flavour of E-32's category, and a paradigm selecting only one of the two → the sibling draws a different table (or none). Containment would have reached both, which is what the merge replaced |
-| E-34 | an axis value the category never declared | a bundle carrying a value of the axis that no annotation names → the headword key **drops** it, so no paradigm reaches the entry. A form's feature written on a headword is noise a rule must not select on |
+| E-34 | a value no category names | a bundle carrying a value of an identifying feature that no category row names → the key **keeps** it (ADR-0020: the contributor said the word is cited so), and no paradigm selects that bundle, so the entry falls back to the flat list |
 
 That is ~34 entries. Stay under 40.
 
@@ -649,7 +646,7 @@ goes out to a PDS. A screenshot or `get_page_text` taken immediately after
 generated forms) and read exactly like a regression. Wait, or read the page
 twice, before concluding anything is broken.
 
-### 7.1 Grammar editor — the Categories tab (ADR-0019, shipped)
+### 7.1 Grammar editor — the Categories tab (ADR-0019, corrected by ADR-0020)
 
 **This section replaced the Layout tab's rows.** The merge removed the Axes and
 Layout tabs entirely — an axis is declared on its category, a table's shape lives
@@ -662,17 +659,19 @@ declaration's own.
 |---|---|---|
 | U-01 | three tabs, not five | Primitives / Categories / Paradigms, and nothing between the last two. A path is derived from the level, so a stale deep link into an axis or a layout level must land somewhere sane rather than blank |
 | U-02 | the walk goes as deep as the declarations do | from a bound part of speech, each inherent feature opens an enumeration of its bound values, and each of those opens **another category's editor** — no naming step in between, which is what the merge removed. A language that has declared nothing still offers its parts of speech |
-| U-03 | declaring an axis | the axis picker offers bound feature names that are **not** lexicographic and **not** inherent for this category; picking one makes the default-value picker appear, and it offers the bound values of that feature |
-| U-04 | the iff rule, as navigation | with no axis there is no default field at all; with one, the annotation form cannot be saved without a default. Neither is reachable as a footer defect from the interface — the way `ragged-table` is unreachable from the grid editor |
-| U-05 | several annotations of one category | "add another abbreviation" produces a second annotation with its own default; the two are listed side by side under one category, and the level says which default each names |
-| U-06 | a **minted** default | choosing a minted value (`Number=Sgv`, scheme `qtl`) round-trips: the record stores it bare, the chip finds its label, and reopening the level shows it selected |
-| U-07 | editing keeps one row per category | changing a category's axis or a label rewrites the existing row in place rather than appending a second one — the defect `duplicate` exists precisely because appending is the easy bug |
-| U-08 | removing an annotation | removing the last annotation of a category removes the category, and returns to the level above |
-| U-09 | the count and sample chips (slice 1) | every category and every annotation row carries its usage count from `GET /languages/:tag/labels`, joined by canonical row key; a non-zero row also carries a random entry's orthography linking to `/entry/<key>`, and a reroll beside it that changes the target. A zero row shows the count and no link, and the hint says counts describe the **saved** grammar, not the draft |
-| U-10 | the no-orphan guard | unbinding a value that a category names as a default is refused at publish, naming the category row |
+| U-03 | declaring what defines a headword | the feature chips offer bound names that are **not** lexicographic and not already declared here; adding one opens an enumeration of its bound values, each leading to a category of its own |
+| U-04 | Bind replaces Publish | on any form level the footer offers **Bind** and no Publish, disabled until the row is complete; binding returns to the level and the footer offers Publish again. No form carries a second Bind of its own (ADR-0020) |
+| U-05 | the whole line of descent | the sidebar of a deep category alternates feature and value all the way down (`ak. / Number= / Sing / Gender= / Masc / Subgender= / Unstable`), every rung navigates, and clicking a parent keeps the rungs above it (ADR-0020) |
+| U-06 | a **minted** value in a category | a category built on `Number=Sgv` (scheme `qtl`) round-trips: the chip finds its label, and the row is reachable from the enumeration under its feature |
+| U-07 | editing keeps one row per category | renaming a category rewrites the existing row in place rather than appending a second one — the defect `duplicate` exists precisely because appending is the easy bug |
+| U-08 | counting the subtree | a branch prints how many categories are declared **below** it at any depth, not how many of its direct children are named — and that count is what blocks withdrawing the declaration they stand on (ADR-0020) |
+| U-09 | the count and sample chips | every category row carries its usage count from `GET /languages/:tag/labels`, joined by canonical row key; a non-zero row also carries a random entry's orthography linking to `/entry/<key>`, and a reroll beside it that changes the target. A zero row shows the count and no link, and the hint says counts describe the **saved** grammar, not the draft |
+| U-10 | the no-orphan guard | unbinding a value a category is built on is refused at publish, naming the category row |
 | U-11 | publishing | the rewritten record round-trips: reopen the dialog and every category is as authored, and the version is **indexed** (it appears in the dashboard's activity feed — a refused one never would) |
-| U-12 | mobile | the whole tab at 375px |
-| U-16 | the defect list (ADR-0015) | open the dialog on **`qto`**, whose live record is the defective rewrite: Publish is disabled and the footer lists **every** kind L-30…L-41 with its own copy — not only the ones this edit would introduce. The *repair* half is still owed — bind the missing atoms and feature names, declare the grounding inherence, give the axis-less annotation's `default` somewhere to go — and confirm the publish then succeeds and indexes. Do it in a session that can afford to leave `qto` repaired, since publishing a coherent `qto` retires the fixture until the defective rewrite is republished |
+| U-12 | mobile | the whole tab at 375px, the dialog filling the screen's height |
+| U-13 | alphabetical lists | every list in the dialog — values, features, abbreviations, categories — reads alphabetically, whatever order the record was written in |
+| U-14 | an older record loads | open the dialog on a language declared before ADR-0019 or ADR-0020: the draft is the forward map, the footer says publishing rewrites the record, and Publish is enabled with nothing touched |
+| U-16 | the defect list (ADR-0015) | open the dialog on **`qto`**, whose live record is the defective rewrite: Publish is disabled and the footer lists **every** kind L-30…L-41 with its own copy — not only the ones this edit would introduce. The *repair* half is still owed — bind the missing atoms and feature names, declare the grounding inherence, remove the duplicate row — and confirm the publish then succeeds and indexes. Do it in a session that can afford to leave `qto` repaired, since publishing a coherent `qto` retires the fixture until the defective rewrite is republished |
 
 
 ### 7.2 Grammar editor — layer 4's sibling, the Inflection classes section
@@ -796,16 +795,17 @@ another revision of it.
 - `packages/types/src/dashboard.ts`, `label.ts` — what the dashboard and labels
   endpoints serve, i.e. what a fixture is asserted against
 - `docs/design/grammatical-tagging.md` + `docs/adr/0006-*`, `0007-*`, `0010-*`,
-  and **`0019-*`** (the category–axis merge, which superseded `0008-*`'s axes and
-  `0009-*`'s layout) — the features the matrix must cover
+  **`0019-*`** (the category–axis merge, which superseded `0008-*`'s axes and
+  `0009-*`'s layout) and **`0020-*`** (which removed the merged category's own
+  axis) — the features the matrix must cover
 - `docs/design/paradigm-rules.md` + `docs/adr/0016-*` — layer 5, reshaped by
   `docs/design/category-axis-merge.md` + ADR-0019, which §3.5 covers
 - `packages/types/src/paradigm.ts` — `generateForms`, `mergeParadigms`,
   `paradigmIssues`, `paradigmRkey`, `paradigmGrid`, `resolveParadigmTables`:
   what a paradigm fixture is asserted against
 - `scripts/fixtures/` — the fixture content, the validator gate and the manifest
-- `packages/types/src/grammar.ts` — `categoryTags`, `headwordKeys`,
-  `placeForms`, `coordTag`: how a category's annotations become labelled tags,
-  which bundle a paradigm's selector is compared with, and where a form lands
+- `packages/types/src/grammar.ts` — `headwordKeys`, `placeForms`, `coordTag`,
+  `migrateGrammar`: which bundle a paradigm's selector is compared with, where a
+  form lands, and how a record written under an older shape is read
 - `apps/web/src/components/GrammarBindingDialog.tsx` — the authoring surfaces
   §7 owes a pass to

@@ -1,4 +1,4 @@
-import type { Grammar } from "@leksis/types";
+import { isValidGrammar, migrateGrammar, type Grammar } from "@leksis/types";
 import { fetchCurrentLanguageRecord } from "./api";
 import { fetchLanguageRecord } from "./atproto-record";
 
@@ -41,7 +41,14 @@ export function fetchLanguageGrammar(tag: string): Promise<Grammar | undefined> 
     const reference = await fetchCurrentLanguageRecord(tag);
     if (reference === null) return undefined;
     const record = await fetchLanguageRecord(reference.recordURI);
-    return record?.grammar;
+    if (record?.grammar === undefined) return undefined;
+    // Mapped forward on the way in, exactly as the editor maps it: a record
+    // written before ADR-0019 or ADR-0020 still describes a real grammar, and a
+    // reader that ignored the rows those shapes hold would print a word's
+    // category as a raw tag while the editor showed its label. The record is
+    // left untouched — this is a reading of it, not a rewrite.
+    const migrated = migrateGrammar(record.grammar);
+    return isValidGrammar(migrated) ? migrated : undefined;
   })().catch((error: unknown) => {
     console.warn(`could not load the declared grammar of "${tag}":`, error);
     cache.delete(tag);

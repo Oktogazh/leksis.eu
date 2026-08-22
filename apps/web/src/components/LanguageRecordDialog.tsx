@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  isValidGrammar,
   LEKSIS_LANGUAGE_COLLECTION,
+  migrateGrammar,
   type LanguageTranslation,
   type LanguageView,
   type LeksisLanguageRecord,
@@ -174,11 +176,22 @@ export function LanguageRecordDialog({
       // from literals would mean the first person to correct a spelling wiped
       // that language's whole grammar declaration — a blast radius of one
       // language, silently.
+      //
+      // **Mapped forward on the way out** (ADR-0020). Pass-through used to mean
+      // "unchanged"; since the grammar object has left two shapes behind, it
+      // means "a shape the AppView refuses" for every language declared before
+      // the change — so a corrected endonym would be written to the PDS, report
+      // success, and be dropped whole at ingest. The map is the same one the
+      // binding editor opens on, so what this publishes is what that editor
+      // would have published, and the names arrive.
+      const migrated = migrateGrammar(record.grammar);
+      const grammar = isValidGrammar(migrated) ? migrated : record.grammar;
       const updated: LeksisLanguageRecord = {
         ...record,
         $type: LEKSIS_LANGUAGE_COLLECTION,
         tag: recordTag,
         translations: merged,
+        ...(grammar !== undefined ? { grammar } : {}),
         createdAt: new Date().toISOString(),
       };
       const res = await agent.com.atproto.repo.putRecord({

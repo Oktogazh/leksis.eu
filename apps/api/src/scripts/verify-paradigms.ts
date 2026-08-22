@@ -62,15 +62,30 @@ const grammar: Grammar = {
     { feature: "Number", value: "Sing", label: { long: "singular", short: "sg." } },
     { feature: "Number", value: "Plur", label: { long: "plural", short: "pl." } },
   ],
-  inherent: [{ category: { upos: { value: "VERB" } }, feature: "Conjugation" }],
-  categories: [
+  // Both features identify a headword here: the conjugation group, and the
+  // number a verb of that group is cited at. Since ADR-0020 that is the only
+  // declaration there is — `Number` being also what the forms vary over is the
+  // ordinary case, and the paradigm's tables are what say so.
+  inherent: [
+    { category: { upos: { value: "VERB" } }, feature: "Conjugation" },
     {
       category: {
         upos: { value: "VERB" },
         feats: [{ feature: "Conjugation", value: "2", scheme: TAG }],
       },
-      axis: "Number",
-      annotations: [{ long: "second conjugation", short: "v2.", default: "Sing" }],
+      feature: "Number",
+    },
+  ],
+  categories: [
+    {
+      category: {
+        upos: { value: "VERB" },
+        feats: [
+          { feature: "Conjugation", value: "2", scheme: TAG },
+          { feature: "Number", value: "Sing" },
+        ],
+      },
+      label: { long: "second conjugation", short: "v2." },
     },
   ],
 };

@@ -18,8 +18,6 @@
 // that second case the record is the newer truth.
 
 import {
-  abbreviationKey,
-  categoryTags,
   posTag,
   tagKey,
   valueTag,
@@ -118,11 +116,24 @@ function featureLabelKey(label: GrammarLabel): string {
   return `feat#${label.short ?? ""}#${label.long}`;
 }
 
+/**
+ * The usage key of a plain abbreviation, joined on the printed pair for the
+ * reason a feature name is (`featureLabelKey`): a served row carries what a
+ * reader sees, not the identity ADR-0020 gave the declaration, and the pair is
+ * what the two sides still share.
+ */
+function abbreviationLabelKey(label: GrammarLabel): string {
+  return `abbr#${label.short ?? ""}#${label.long}`;
+}
+
 /** Canonical key of a served row, or none where it has no counterpart here. */
 function usageKey(row: LabelView): string | null {
   if (row.tag !== undefined) return tagKey(row.tag);
-  if (row.kind === "abbreviation" && row.short !== undefined) {
-    return abbreviationKey({ short: row.short });
+  if (row.kind === "abbreviation" && row.long !== undefined) {
+    return abbreviationLabelKey({
+      long: row.long,
+      ...(row.short !== undefined ? { short: row.short } : {}),
+    });
   }
   if (row.kind === "feature" && row.long !== undefined) {
     return featureLabelKey({ long: row.long, ...(row.short !== undefined ? { short: row.short } : {}) });
@@ -206,7 +217,7 @@ export function labelShelf(grammar: Grammar, labels: readonly LabelView[]): Shel
       "pos",
       posRows(grammar).map((row) => {
         const tag = posTag(row);
-        return shelfRow(usage, tagKey(tag), row.label, tag);
+        return shelfRow(usage, tagKey(tag), row.label, tag, row.note);
       }),
     ),
     groupTab("features", groupsOf(grammar, usage, grammaticalFeatureRows(grammar))),
@@ -214,20 +225,23 @@ export function labelShelf(grammar: Grammar, labels: readonly LabelView[]): Shel
     groupTab("lexical", groupsOf(grammar, usage, lexicalRows(grammar))),
     flatTab(
       "combinations",
-      // One shelf row per **annotation**, not per declaration: a category naming
-      // an axis holds one label per headword flavour of it, and each is a
-      // labelled tag of its own (ADR-0019). `categoryTags` is what re-attaches
-      // the default's provenance, so a minted headword value finds its label.
-      categoryRows(grammar).flatMap((row) =>
-        categoryTags(grammar, row).map((named) =>
-          shelfRow(usage, tagKey(named.tag), named.label, named.tag),
-        ),
+      // One shelf row per declaration, which is what ADR-0020 restored: a
+      // category is one bundle with one label, so a headword flavour cited at a
+      // particular value is a category of its own and lands on its own row.
+      categoryRows(grammar).map((row) =>
+        shelfRow(usage, tagKey(row.category), row.label, row.category, row.note),
       ),
     ),
     flatTab(
       "abbreviations",
       abbreviationRows(grammar).map((row) =>
-        shelfRow(usage, abbreviationKey(row), { long: row.long, short: row.short }),
+        shelfRow(
+          usage,
+          abbreviationLabelKey({ long: row.long, short: row.short }),
+          { long: row.long, short: row.short },
+          undefined,
+          row.note,
+        ),
       ),
     ),
   ];

@@ -4,6 +4,75 @@ All notable changes to Leksis. Each section is one loop — a unit of work, not 
 unit of time: the content loops grow the dictionary outward, the grammar loops
 (the morphology arc) grow the entry deeper, and the two interleave.
 
+## A category says what a headword is, and the tables say how it varies
+
+**ADR-0020**, released as **v0.29.0**. The merge above asked a language to
+separate what a headword *is* from what its forms *vary over*. Breton says they
+are the same feature: an *anv-kadarn stroll* is cited in the **plural**, so
+`Number` identifies that headword — and it is also what an ordinary noun's forms
+range over. The editor enforced the separation and refused the record a
+lexicographer actually needed to write.
+
+So the axis is gone, one revision after arriving.
+
+### The declaration
+
+- **A category is a bundle, one label, and a note.** `annotations` and `axis`
+  are gone; a headword flavour cited differently is a **category of its own**,
+  one step deeper in the tree, with its own abbreviation.
+- **`inherent` is the only layer-2 declaration left.** It answers "which
+  features define a headword of this category", the citation number included. A
+  feature declared there may also vary across the word's forms — that is the
+  ordinary case, and the paradigm's tables are what say which cells exist.
+- **A category can carry a note**, the same free prose a feature and a value
+  already carry: what falls under it, how it is cited, where its border with a
+  sibling falls. **A part of speech can too** — it has no category row of its
+  own (a second row for its tag would be two labels for one thing), so the
+  category editor's shallowest level edits the part of speech's own row, and
+  what you write there is what Primitives shows.
+- **`grammarIssues` reports six kinds, not twelve.** The six `category-*` kinds
+  went with the axis they were about.
+- **An abbreviation has an identity of its own.** `value` (ASCII, never shown)
+  keys the row, `short` is what the dictionary prints, and correcting "udb." to
+  "u.d.b." is now an edit rather than a delete and a re-add. It carries a note
+  too.
+
+Nothing moved on the index: no endpoint, collection or index changed, and the
+language doc lost a cached field. An entry's `selectorKeys` is unchanged
+wherever the language named the flavour — the value that survived as a "declared
+default" now survives as an inherent feature — and **widens in one case**: a
+value of an identifying feature that no category names is now kept rather than
+dropped (a noun tagged `Number=Coll` where nothing declares a collective
+headword keys as all three atoms). It reaches a paradigm only if one selects
+exactly that bundle, which is the same outcome by a more honest route: the
+contributor said the word is cited so.
+
+### The editor
+
+- **Bind replaces Publish while a row is being edited.** The two used to sit on
+  screen together, with the form's own Bind scrolling out of sight above a
+  Publish that discarded it. One primary action at a time.
+- **The sidebar shows the whole line of descent**, derived from the bundle
+  rather than carried on the path, alternating feature and value: `ak. /
+  Number= / Sing / Gender= / Masc / Subgender= / Unstable`. Clicking a parent no
+  longer loses the grandparent.
+- **A branch counts everything below it**, not its direct children. No Breton
+  word is cited as just a singular noun, so the old count printed "0 named" over
+  a feature holding sixteen categories.
+- **Every list is alphabetical**, collated in the language being described. The
+  record keeps the order its author wrote.
+- **The dialog fills a phone's screen** and stands taller on a laptop.
+
+### An older record loads, and publishing converts it
+
+One forward map in `packages/types` now serves the record reader, the viewers,
+the dashboard shelf and the editor, and it covers three generations: ADR-0019's
+`bindings`, this revision's `annotations` (each becomes a category, and the axis
+becomes an inherence row), and an abbreviation with no identity (slugged from
+what it prints). The AppView still refuses such a record, so publishing an
+unchanged draft is what commits the conversion — and the footer says so before
+you press it.
+
 ## A category says where its own headword stands
 
 The morphology arc's structural revision (**ADR-0019**), six slices, released as

@@ -1,16 +1,18 @@
 import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  categoryAxes,
+  formAxes,
   categoryRefinements,
   categoryRoots,
   LEKSIS_ENTRY_COLLECTION,
-  type CategoryAxis,
+  type FormAxis,
   type GrammarValue,
   type LabelView,
   type Grammar,
+  isValidGrammar,
   labelLookup,
   MAX_DEFINITION_EXAMPLES,
+  migrateGrammar,
   normalizeOclc,
   parseTagInput,
   tagKey,
@@ -58,26 +60,28 @@ let nextAnnotationId = 0;
 const SOURCE_SEARCH_DEBOUNCE_MS = 300;
 
 /**
- * Which form this is: one value picked per axis this entry's categories vary
- * over, assembled into a single tag — the form's address in the paradigm
- * ("gen. pl." is one bundle carrying Case=Gen and Number=Plur).
+ * Which form this is: one value picked per feature the language has bound,
+ * assembled into a single tag — the form's address in the paradigm ("gen. pl."
+ * is one bundle carrying Case=Gen and Number=Plur).
  *
  * The axes are **orthogonal dimensions, not a narrowing tree**: unlike the
- * inherent features of a category, where each choice conditions what is offered
- * next, a cell address takes one value from each axis independently. So this
- * offers a selector per axis rather than reusing the category editor's walk.
+ * features that identify a category, where each choice conditions what is
+ * offered next, a cell address takes one value from each feature
+ * independently. So this offers a selector per feature rather than reusing the
+ * category editor's walk.
  *
- * What it offers under each axis is **every bound value of that feature**, not
- * the headword flavours the category named. The two are different questions
- * that ADR-0019 deliberately keeps apart: a `default` says which form of a word
- * is cited as the headword, while this says which form is being written down,
- * and a language cites one cell of a paradigm whose other cells it certainly
- * still has.
+ * What it offers is **every bound grammatical feature of the language**, not a
+ * subset chosen from the entry's own categories. Since ADR-0020 a language no
+ * longer declares what a category's forms vary over — the paradigm's tables
+ * say which cells exist — and the honest fallback beside them is a superset: a
+ * manual path that withheld a coordinate would be worse than one that offers a
+ * coordinate nobody uses. (The rule it replaces would have hidden `Number` from
+ * an *anv-kadarn stroll*, whose headword is identified by it and whose other
+ * form is the singulative.)
  *
- * When no category of this entry reaches a declared axis, it degrades to the
- * flat picker of bound tags plus manual entry — the same documented degradation
- * the category editor has, and what keeps a form labellable in a language whose
- * grammar nobody has declared.
+ * With nothing bound at all it degrades to the flat picker of bound tags plus
+ * manual entry — the same documented degradation the category editor has, and
+ * what keeps a form labellable in a language whose grammar nobody has declared.
  */
 function FormTagEditor({
   tag,
@@ -87,7 +91,7 @@ function FormTagEditor({
 }: {
   tag: Tag | null;
   onChange: (tag: Tag | null) => void;
-  axes: CategoryAxis[];
+  axes: FormAxis[];
   labels: LabelView[];
 }) {
   const { t } = useTranslation();
@@ -226,7 +230,7 @@ function OtherFormsEditor({
 }: {
   forms: OtherFormDraft[];
   onChange: (forms: OtherFormDraft[]) => void;
-  axes: CategoryAxis[];
+  axes: FormAxis[];
   labels: LabelView[];
 }) {
   const { t } = useTranslation();
@@ -952,16 +956,10 @@ function CategoryEditor({
           </div>
           {refinements.map((refinement) => (
             <div key={refinement.feature.feature} className="mt-2">
-              {/* The two steps ask different questions and are labelled so: an
-                  inherent feature asks what the word IS, the axis asks which of
-                  its forms this dictionary prints as the headword. */}
-              <p className="text-xs text-content-subtle">
-                {refinement.kind === "axis"
-                  ? t("createEntry.categoryAxisStep", {
-                      feature: refinement.feature.label.long,
-                    })
-                  : refinement.feature.label.long}
-              </p>
+              {/* One kind of step since ADR-0020: every one of them asks what
+                  the word IS, the citation number of a Breton anv-kadarn
+                  stroll included. */}
+              <p className="text-xs text-content-subtle">{refinement.feature.label.long}</p>
               <ul className="mt-1 flex flex-wrap gap-1.5">
                 {refinement.options.map((option) => (
                   <li key={tagKey(option.tag)}>
@@ -1167,7 +1165,14 @@ export function EntryEditorDialog({
     fetchCurrentLanguageRecord(targetTag)
       .then((ref) => (ref === null ? null : fetchLanguageRecord(ref.recordURI)))
       .then((record) => {
-        if (!cancelled) setGrammar(record?.grammar ?? null);
+        if (cancelled) return;
+        // Read through the same forward map the viewers and the binding editor
+        // use: a language declared before ADR-0019 or ADR-0020 still describes a
+        // real grammar, and an authoring surface that skipped the map would
+        // offer a narrowing tree missing every category the older shape
+        // declared — while the entry page beside it printed those very labels.
+        const migrated = migrateGrammar(record?.grammar);
+        setGrammar(isValidGrammar(migrated) ? migrated : null);
       })
       .catch(() => {});
     return () => {
@@ -1176,15 +1181,13 @@ export function EntryEditorDialog({
   }, [targetTag]);
 
   /**
-   * The axes the form editor offers a selector per — the features the declared
-   * categories this entry's own bundles fall under say their forms vary over.
-   *
-   * Recomputed as the categories change, so picking "anv-kadarn stroll" opens
-   * the number selector on the forms below it without anything being saved
-   * first. Empty is the ordinary state of a language that has declared nothing,
-   * and the editor degrades to its flat picker.
+   * The features the form editor offers a selector per — every grammatical
+   * feature this language has bound values under (ADR-0020, which stopped
+   * filtering them by the entry's own categories). Empty is the ordinary state
+   * of a language that has declared nothing, and the editor degrades to its
+   * flat picker.
    */
-  const formAxes = grammar === null ? [] : categoryAxes(grammar, categories);
+  const formSelectors = grammar === null ? [] : formAxes(grammar);
 
   function onPickLanguage(event: ChangeEvent<HTMLSelectElement>) {
     setPickedTag(event.target.value);
@@ -1608,7 +1611,7 @@ export function EntryEditorDialog({
             <OtherFormsEditor
               forms={otherForms}
               onChange={setOtherForms}
-              axes={formAxes}
+              axes={formSelectors}
               labels={labels}
             />
           </fieldset>

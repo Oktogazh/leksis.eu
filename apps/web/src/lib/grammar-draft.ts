@@ -1,12 +1,13 @@
 import {
   categoryKey,
   inherentKey,
+  isValidGrammar,
+  migrateGrammar,
   RETIRED_GRAMMAR_KEYS,
   tagKey,
   valueTag,
   type Grammar,
   type GrammarAbbreviation,
-  type GrammarAnnotation,
   type GrammarCategory,
   type GrammarFeature,
   type GrammarInherent,
@@ -91,31 +92,31 @@ export function abbreviationRows(grammar: Grammar): GrammarAbbreviation[] {
   return grammar.abbreviations ?? [];
 }
 
-/** The abbreviation with this short form, if any. */
+/** The abbreviation with this identity, if any. */
 export function findAbbreviation(
   grammar: Grammar,
-  short: string,
+  value: string,
 ): GrammarAbbreviation | undefined {
-  return abbreviationRows(grammar).find((row) => row.short === short);
+  return abbreviationRows(grammar).find((row) => row.value === value);
 }
 
 /**
- * Add an abbreviation, replacing any existing one with the same short form —
- * matched on `short` alone, because that is the row's identity and not merely
- * one of its two strings.
+ * Add an abbreviation, replacing any existing one with the same identity —
+ * matched on `value` alone, which is what makes correcting the printed form an
+ * edit rather than a delete-and-re-add (ADR-0020).
  */
 export function upsertAbbreviation(grammar: Grammar, row: GrammarAbbreviation): Grammar {
   const rows = abbreviationRows(grammar);
-  const at = rows.findIndex((r) => r.short === row.short);
+  const at = rows.findIndex((r) => r.value === row.value);
   const abbreviations = at === -1 ? [...rows, row] : rows.map((r, i) => (i === at ? row : r));
   return tidy({ ...grammar, abbreviations });
 }
 
 /** Remove an abbreviation. Nothing references it, so nothing can be orphaned. */
-export function removeAbbreviation(grammar: Grammar, short: string): Grammar {
+export function removeAbbreviation(grammar: Grammar, value: string): Grammar {
   return tidy({
     ...grammar,
-    abbreviations: abbreviationRows(grammar).filter((row) => row.short !== short),
+    abbreviations: abbreviationRows(grammar).filter((row) => row.value !== value),
   });
 }
 
@@ -153,7 +154,7 @@ export function findFeature(grammar: Grammar, feature: string): GrammarFeature |
 /**
  * The identity of a value row *within one language's grammar*: its feature and
  * its own name, with provenance dropped and any multivalue item normalised into
- * UD's order — the same `valueMatchKey` rule an axis is matched by. Scheme is a
+ * UD's order — the same `valueMatchKey` rule a cell coordinate is matched by. Scheme is a
  * property of the row, not part of what tells two rows apart here: two rows for
  * one (feature, value) would be two labels the interface could not tell apart,
  * which is exactly what ADR-0010 keys the labels model to prevent.
@@ -285,9 +286,9 @@ export function categoryRows(grammar: Grammar): GrammarCategory[] {
 
 /**
  * The declaration for exactly this category, if any — matched on the category
- * bundle, which is the row's identity: one row per category, so declaring an
- * axis and naming a headword flavour are two edits to one row rather than two
- * rows.
+ * bundle, which is the row's identity: one row per category, and since ADR-0020
+ * one label per row, so a headword flavour cited differently is a row of its
+ * own rather than a second name on this one.
  */
 export function findCategory(grammar: Grammar, category: Tag): GrammarCategory | undefined {
   const key = categoryKey({ category });
@@ -304,83 +305,24 @@ export function upsertCategory(grammar: Grammar, row: GrammarCategory): Grammar 
 }
 
 /**
- * Declare, or change, the feature a category's forms vary over.
+ * Name a category, or rewrite its name and its note — creating the declaration
+ * when this is its first, which is what makes "name this category" and "edit
+ * this name" one call.
  *
- * **Every annotation loses its `default`**, whichever way the axis moved. A
- * default is an address under one particular feature, so carrying `Sing` across
- * from `Number` to `Case` would keep a string and lose its meaning — and
- * `grammarIssues` would then report an unbound value where what actually
- * happened is that nobody has said yet where these headwords sit. The labels
- * are the contributor's writing and are kept; the addresses are the editor's
- * and are asked for again.
- *
- * A no-op when the category has no row yet: a declaration is carried by its
- * annotations (the lexicon requires at least one), so there is nothing for an
- * axis to ride on until the category is named. The dialog holds a *pending*
- * axis for that case and passes it to `upsertAnnotation`, which is what keeps
- * the draft shape-valid at every moment rather than only at publish time.
+ * One label per category since ADR-0020, so there is no index to write at and
+ * no annotation list to keep in order: the bundle is the identity and the label
+ * is what is written on it.
  */
-export function setCategoryAxis(
+export function nameCategory(
   grammar: Grammar,
   category: Tag,
-  axis: string | undefined,
+  label: GrammarCategory["label"],
+  note?: string,
 ): Grammar {
-  const row = findCategory(grammar, category);
-  if (row === undefined || row.axis === axis) return grammar;
   return upsertCategory(grammar, {
     category,
-    ...(axis !== undefined ? { axis } : {}),
-    annotations: row.annotations.map(({ long, short }) => ({
-      long,
-      ...(short !== undefined ? { short } : {}),
-    })),
-  });
-}
-
-/**
- * Write one annotation of a category, creating the declaration when this is its
- * first — an index past the end appends, which is how "add another abbreviation"
- * and "edit this one" are the same call.
- *
- * `axis` is used **only when the row is being created**: an existing row's own
- * axis wins, because changing it is `setCategoryAxis`' business and doing it
- * here as a side effect of naming would silently drop the other annotations'
- * defaults.
- */
-export function upsertAnnotation(
-  grammar: Grammar,
-  category: Tag,
-  index: number,
-  annotation: GrammarAnnotation,
-  axis?: string,
-): Grammar {
-  const row = findCategory(grammar, category);
-  const annotations = row === undefined ? [] : [...row.annotations];
-  if (index >= 0 && index < annotations.length) annotations[index] = annotation;
-  else annotations.push(annotation);
-  const declared = row?.axis ?? axis;
-  return upsertCategory(grammar, {
-    category,
-    ...(declared !== undefined ? { axis: declared } : {}),
-    annotations,
-  });
-}
-
-/**
- * Remove one annotation. Removing the **last** one withdraws the declaration
- * itself: a category with no annotation names nothing, and the lexicon refuses
- * it outright (`minLength: 1`), so leaving an empty row behind would be leaving
- * a draft that publishes into silence.
- */
-export function removeAnnotation(grammar: Grammar, category: Tag, index: number): Grammar {
-  const row = findCategory(grammar, category);
-  if (row === undefined) return grammar;
-  const annotations = row.annotations.filter((_, i) => i !== index);
-  if (annotations.length === 0) return removeCategory(grammar, category);
-  return upsertCategory(grammar, {
-    category,
-    ...(row.axis !== undefined ? { axis: row.axis } : {}),
-    annotations,
+    label,
+    ...(note !== undefined && note !== "" ? { note } : {}),
   });
 }
 
@@ -396,92 +338,59 @@ export function removeCategory(grammar: Grammar, category: Tag): Grammar {
   });
 }
 
-// ---- loading a record written before the merge ---------------------------
+// ---- loading a record written before the current shape --------------------
 
 /**
- * A `grammar` object as some record on a PDS actually holds it — which may be
- * any shape at all, and in practice is often the pre-ADR-0019 one.
- */
-type StoredGrammar = Grammar & {
-  /** Layer 2's combinations, renamed `categories` by ADR-0019. */
-  bindings?: { tag: Tag; label: { long: string; short?: string } }[];
-  /** Layer 3's standalone axes, retired by ADR-0019. */
-  axes?: unknown;
-  /** Layer 4's table shapes, moved into the paradigm record by ADR-0019. */
-  layout?: unknown;
-};
-
-/**
- * The draft to open the binding editor on, from the grammar a record carries.
- *
- * **This is the only migration path a pre-merge record has, and it has to be
- * here rather than at ingest.** The AppView refuses a record still carrying
- * `axes` or `layout` (they declare things this lexicon no longer defines), and
- * it ignores `bindings` the way it ignores any renamed field. So a contributor
- * opening a language declared before the merge would otherwise load those keys
- * into the draft invisibly, see no defect — `grammarIssues` cannot report a
- * field it does not know — and have every publish silently refused.
- *
- * Two different acts, deliberately not one:
- *
- * - **`bindings` is carried forward**, one category per row with a single
- *   annotation. That is exactly the shape this editor writes for a named
- *   combination, and a one-atom row maps too: a bare part of speech is a
- *   headword category now, which is what the merge inverted. Nothing is lost
- *   and nobody has to retype a label.
- * - **`axes` and `layout` are dropped.** They cannot be carried forward, and
- *   pretending otherwise would be worse than losing them. An axis's *feature*
- *   could be moved onto its category, but which of its values a headword sits at
- *   — the whole point of the merge — is a lexicographic judgement nobody has
- *   made yet, so the guessed category would be incoherent on arrival. A layout
- *   has no home here at all: its cells belong to a paradigm record.
- *
- * The dropped declarations stay on the record until the contributor publishes
- * over them, so nothing is destroyed by opening the dialog.
- */
-/**
- * Whether a loaded record still holds any declaration ADR-0019 retired — so the
- * editor can say that publishing will rewrite it.
+ * Whether a loaded record still holds a declaration this lexicon has left
+ * behind — so the editor can say that publishing will rewrite it.
  *
  * Worth telling a contributor, because the alternative is a Publish button that
  * is enabled the moment the dialog opens, with nothing on screen changed and an
  * `axes` declaration quietly going away when they press it. That a rewrite is
  * *needed* does not make it something to do behind their back.
+ *
+ * Three generations answer yes: ADR-0019's `bindings`, `axes` and `layout`, and
+ * ADR-0020's per-flavour `annotations` and short-form-keyed abbreviations.
  */
-export function carriesRetiredGrammar(grammar: Grammar | undefined): boolean {
+export function carriesLegacyGrammar(grammar: Grammar | undefined): boolean {
   if (grammar === undefined) return false;
-  const stored = grammar as StoredGrammar & Record<string, unknown>;
-  if ((stored.bindings ?? []).length > 0) return true;
-  return RETIRED_GRAMMAR_KEYS.some((key) => stored[key] !== undefined);
+  const stored = grammar as Record<string, unknown>;
+  if (Array.isArray(stored.bindings) && stored.bindings.length > 0) return true;
+  if (RETIRED_GRAMMAR_KEYS.some((key) => stored[key] !== undefined)) return true;
+  const categories = stored.categories;
+  if (
+    Array.isArray(categories) &&
+    categories.some((row) => row !== null && typeof row === "object" && "annotations" in row)
+  ) {
+    return true;
+  }
+  const abbreviations = stored.abbreviations;
+  return (
+    Array.isArray(abbreviations) &&
+    abbreviations.some(
+      (row) => row !== null && typeof row === "object" && !("value" in row),
+    )
+  );
 }
 
+/**
+ * The draft to open the binding editor on, from the grammar a record carries.
+ *
+ * **The forward map is `migrateGrammar` in packages/types** — shared with the
+ * record reader, so an old record renders the same way it edits — and this adds
+ * only what is the editor's business: tidying the arrays a map may have emptied,
+ * and refusing to hand over a shape the checker cannot recognise, which would
+ * otherwise reach the publish button as a record the AppView drops.
+ *
+ * The dropped declarations stay on the record until the contributor publishes
+ * over them, so nothing is destroyed by opening the dialog.
+ */
 export function draftFromRecord(grammar: Grammar | undefined): Grammar {
   if (grammar === undefined) return {};
-  const stored = grammar as StoredGrammar;
-  const carried = (stored.bindings ?? [])
-    .filter((row) => row.tag !== undefined && typeof row.label?.long === "string")
-    .map((row) => ({
-      category: row.tag,
-      annotations: [
-        {
-          long: row.label.long,
-          ...(row.label.short !== undefined ? { short: row.label.short } : {}),
-        },
-      ],
-    }));
-  // A row already in `categories` wins: a record carrying both is one whose
-  // author has begun the rewrite, and their newer declaration is the truth.
-  const declared = categoryRows(grammar);
-  const declaredKeys = new Set(declared.map((row) => categoryKey(row)));
-  return tidy({
-    pos: grammar.pos,
-    features: grammar.features,
-    values: grammar.values,
-    inherent: grammar.inherent,
-    categories: [
-      ...declared,
-      ...carried.filter((row) => !declaredKeys.has(categoryKey(row))),
-    ],
-    abbreviations: grammar.abbreviations,
-  });
+  const migrated = migrateGrammar(grammar);
+  if (!isValidGrammar(migrated)) {
+    console.warn("a language record's grammar could not be mapped forward; opening it empty");
+    return {};
+  }
+  return tidy(migrated);
 }

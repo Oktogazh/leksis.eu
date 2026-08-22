@@ -304,7 +304,7 @@ export const entryFixtures: EntryFixture[] = [
     handle: "lxt-12",
     covers: ["E-06", "E-18", "E-34", "L-14"],
     expect:
-      "A collective-only noun. Its bundle `{NOUN, Gender=Masc, Number=Coll}` is built entirely of atoms the language bound, and the masculine category's annotations name `Sing` and `Plur` and never `Coll` — so no exact match exists and it renders as THREE chips by decomposition, which is the unenumerated combination staying authorable. The same fact governs the headword key: an axis value the category never declared as a default is a form's feature written on a headword, so it is dropped, the key is the bare `{NOUN, Gender=Masc}`, and no paradigm reaches this entry. Both of its forms therefore print in the flat list, neither dropped.",
+      "A collective-only noun. Its bundle `{NOUN, Gender=Masc, Number=Coll}` is built entirely of atoms the language bound, and the language names a masculine noun cited in the singular and one cited in the plural but none cited in the collective — so no exact match exists and it renders as THREE chips by decomposition, which is the unenumerated combination staying authorable. The headword key keeps all three atoms since ADR-0020 (`Number` is inherent to `{NOUN, Gender=Masc}`, so a noun cited in the collective is saying what it is), and no paradigm selects that bundle. Both of its forms therefore print in the flat list, neither dropped.",
     record: {
       languageID: "qtl",
       orthography: ["mor", "lxt-12"],

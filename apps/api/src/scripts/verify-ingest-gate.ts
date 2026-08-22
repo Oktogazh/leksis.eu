@@ -4,10 +4,12 @@
 // that the previous version stays current when one is, and that the coherent
 // and lenient cases still index. Deleted once the change is verified.
 //
-// Extended by ADR-0019 (the category–axis merge) with the new coherence kinds a
-// `categories` row can break, the outright refusal of the retired `axes` and
-// `layout` arrays, the headword bundle an entry is indexed under
-// (`selectorKeys`), and the slice-2 stopgap that gates paradigm ingest off.
+// Extended by ADR-0019 (the category–axis merge) with the outright refusal of
+// the retired `axes` and `layout` arrays and the headword bundle an entry is
+// indexed under (`selectorKeys`), then by ADR-0020, which removed the axis
+// itself: a category is a bundle with one label, so what a `categories` row can
+// break is what any bundle can break, and a row still carrying the ADR-0019
+// shape is refused as malformed rather than judged as incoherent.
 //
 //   ARANGO_URL=http://127.0.0.1:8529 ARANGO_PASSWORD=… npx tsx src/scripts/verify-ingest-gate.ts
 
@@ -17,7 +19,6 @@ import { db } from "../db";
 import { ingestLanguage } from "../firehose/ingest-language";
 import { ingestEntry } from "../firehose/ingest-entry";
 import { ingestSource } from "../firehose/ingest-source";
-import { ingestParadigm } from "../firehose/ingest-paradigm";
 
 const DID = "did:plc:gatebot";
 const TAG = "x-gate";
@@ -137,16 +138,13 @@ async function main(): Promise<void> {
       "skipped-invalid",
   );
 
-  // ADR-0019's categories. The old two-atom floor is gone, so a category may be
-  // a bare part of speech — but only usefully *with an axis*, because only then
-  // does its annotation name a bundle of its own. Axis-less, it is a second
-  // label for the tag the `pos` row already binds, and one row per tag per
-  // language is the policy the labels model is keyed on (ADR-0010). The retired
-  // `single-item-binding` kind is therefore not missed: `duplicate` says the
-  // same thing, about the defect that is actually there.
+  // A category is a bundle with one label. The two-atom floor is gone, so a bare
+  // part of speech is a legitimate category — but naming one that the `pos` row
+  // already names is two labels for one tag, and one row per tag per language is
+  // the policy the labels model is keyed on (ADR-0010).
   const posOnly: Grammar = {
     ...coherent,
-    categories: [{ category: { upos: { value: "NOUN" } }, annotations: [{ long: "noun again" }] }],
+    categories: [{ category: { upos: { value: "NOUN" } }, label: { long: "noun again" } }],
   };
   check(
     "a bare part of speech named a second time is refused",
@@ -155,22 +153,57 @@ async function main(): Promise<void> {
   );
   check("and the coherent version stays current", (await currentCid()) === "cid2");
 
-  const axisUnbound: Grammar = {
+  const ungrounded: Grammar = {
     ...coherent,
     categories: [
       {
-        category: { upos: { value: "NOUN" } },
-        axis: "Number",
-        annotations: [{ long: "noun", default: "Sing" }],
+        category: { upos: { value: "NOUN" }, feats: [{ feature: "Gender", value: "Fem" }] },
+        label: { long: "feminine noun", short: "nf." },
       },
     ],
   };
   check(
-    "a category whose axis feature is unbound is refused",
-    (await ingestLanguage(DID, languageURI(TAG), "cid6", languageRecord(axisUnbound))) ===
+    "a category no inherence chain reaches is refused",
+    (await ingestLanguage(DID, languageURI(TAG), "cid6", languageRecord(ungrounded))) ===
       "skipped-invalid",
   );
   check("and the coherent version is still current", (await currentCid()) === "cid2");
+
+  const unboundAtom: Grammar = {
+    ...coherent,
+    inherent: [{ category: { upos: { value: "NOUN" } }, feature: "Gender" }],
+    categories: [
+      {
+        category: { upos: { value: "NOUN" }, feats: [{ feature: "Gender", value: "Neut" }] },
+        label: { long: "neuter noun" },
+      },
+    ],
+  };
+  check(
+    "a category built on an unbound value is refused",
+    (await ingestLanguage(DID, languageURI(TAG), "cid7", languageRecord(unboundAtom))) ===
+      "skipped-invalid",
+  );
+
+  const duplicated: Grammar = {
+    ...coherent,
+    inherent: [{ category: { upos: { value: "NOUN" } }, feature: "Gender" }],
+    categories: [
+      {
+        category: { upos: { value: "NOUN" }, feats: [{ feature: "Gender", value: "Fem" }] },
+        label: { long: "feminine noun", short: "nf." },
+      },
+      {
+        category: { upos: { value: "NOUN" }, feats: [{ feature: "Gender", value: "Fem" }] },
+        label: { long: "feminine noun, again", short: "nf.2" },
+      },
+    ],
+  };
+  check(
+    "two rows for one category are refused",
+    (await ingestLanguage(DID, languageURI(TAG), "cid8", languageRecord(duplicated))) ===
+      "skipped-invalid",
+  );
 
   const numbered: Grammar = {
     ...coherent,
@@ -182,101 +215,87 @@ async function main(): Promise<void> {
     ],
   };
 
-  const defaultUnbound: Grammar = {
-    ...numbered,
-    categories: [
-      {
-        category: { upos: { value: "NOUN" } },
-        axis: "Number",
-        annotations: [{ long: "noun", default: "Coll" }],
-      },
-    ],
-  };
+  // The ADR-0019 row shape, refused as **malformed** rather than incoherent: it
+  // declares an axis this lexicon no longer defines, so indexing it would
+  // silently drop what its author said about the headword flavours. The editor
+  // takes the opposite path and maps it forward (`migrateGrammar`).
   check(
-    "a default naming an unbound value is refused",
-    (await ingestLanguage(DID, languageURI(TAG), "cid7", languageRecord(defaultUnbound))) ===
-      "skipped-invalid",
-  );
-
-  const defaultMissing: Grammar = {
-    ...numbered,
-    categories: [
-      { category: { upos: { value: "NOUN" } }, axis: "Number", annotations: [{ long: "noun" }] },
-    ],
-  };
-  check(
-    "an annotation with no default under an axis is refused",
-    (await ingestLanguage(DID, languageURI(TAG), "cid8", languageRecord(defaultMissing))) ===
-      "skipped-invalid",
-  );
-
-  const defaultForbidden: Grammar = {
-    ...numbered,
-    categories: [
-      {
-        category: { upos: { value: "NOUN" } },
-        annotations: [{ long: "noun", default: "Sing" }],
-      },
-    ],
-  };
-  check(
-    "a default with no axis to belong to is refused",
-    (await ingestLanguage(DID, languageURI(TAG), "cid9", languageRecord(defaultForbidden))) ===
-      "skipped-invalid",
-  );
-
-  const duplicateDefault: Grammar = {
-    ...numbered,
-    categories: [
-      {
-        category: { upos: { value: "NOUN" } },
-        axis: "Number",
-        annotations: [
-          { long: "noun", short: "n.", default: "Sing" },
-          { long: "collective noun", short: "str.", default: "Sing" },
+    "a category still carrying `axis` and `annotations` is refused",
+    (await ingestLanguage(
+      DID,
+      languageURI(TAG),
+      "cid9",
+      languageRecord({
+        ...numbered,
+        categories: [
+          {
+            category: { upos: { value: "NOUN" } },
+            axis: "Number",
+            annotations: [{ long: "noun", default: "Sing" }],
+          },
         ],
-      },
-    ],
-  };
-  check(
-    "two annotations sharing a default are refused",
-    (await ingestLanguage(DID, languageURI(TAG), "cid10", languageRecord(duplicateDefault))) ===
-      "skipped-invalid",
+      } as unknown as Grammar),
+    )) === "skipped-invalid",
   );
 
-  const axisInherent: Grammar = {
-    ...numbered,
-    inherent: [{ category: { upos: { value: "NOUN" } }, feature: "Number" }],
-    categories: [
-      {
-        category: { upos: { value: "NOUN" } },
-        axis: "Number",
-        annotations: [{ long: "noun", default: "Sing" }],
-      },
-    ],
-  };
+  // An abbreviation whose identity is not an identifier: the shape check, not a
+  // judgement about what a dictionary may print (ADR-0020).
   check(
-    "a feature both inherent to a category and its axis is refused",
-    (await ingestLanguage(DID, languageURI(TAG), "cid11", languageRecord(axisInherent))) ===
-      "skipped-invalid",
+    "an abbreviation whose `value` is not an identifier is refused",
+    (await ingestLanguage(
+      DID,
+      languageURI(TAG),
+      "cid10",
+      languageRecord({
+        ...coherent,
+        abbreviations: [{ value: "u.d.b.", short: "udb.", long: "un dra bennak" }],
+      }),
+    )) === "skipped-invalid",
+  );
+  check(
+    "and the same row with an identifier indexes",
+    (await ingestLanguage(
+      DID,
+      languageURI(TAG),
+      "cid11",
+      languageRecord({
+        ...coherent,
+        abbreviations: [{ value: "udb", short: "udb.", long: "un dra bennak" }],
+      }),
+    )) === "indexed",
   );
 
+  // The two headword flavours the merge was for, declared the way ADR-0020
+  // declares them: the feature that tells them apart is inherent, one level
+  // down, and each flavour is a category with its own abbreviation.
   const merged: Grammar = {
     ...numbered,
-    inherent: [{ category: { upos: { value: "NOUN" } }, feature: "Gender" }],
+    inherent: [
+      { category: { upos: { value: "NOUN" } }, feature: "Gender" },
+      {
+        category: { upos: { value: "NOUN" }, feats: [{ feature: "Gender", value: "Fem" }] },
+        feature: "Number",
+      },
+    ],
     categories: [
       {
         category: { upos: { value: "NOUN" }, feats: [{ feature: "Gender", value: "Fem" }] },
-        axis: "Number",
-        annotations: [
-          { long: "feminine noun", short: "nf.", default: "Sing" },
-          { long: "feminine collective noun", short: "nf. str.", default: "Plur" },
-        ],
+        label: { long: "feminine noun", short: "nf." },
+      },
+      {
+        category: {
+          upos: { value: "NOUN" },
+          feats: [
+            { feature: "Gender", value: "Fem" },
+            { feature: "Number", value: "Plur" },
+          ],
+        },
+        label: { long: "feminine collective noun", short: "nf. str." },
       },
     ],
   };
   check(
-    "one category with two headword flavours indexes",
+    "one category per headword flavour indexes",
     (await ingestLanguage(DID, languageURI(TAG), "cid12", languageRecord(merged))) === "indexed",
   );
   check("and becomes current", (await currentCid()) === "cid12");
@@ -411,9 +430,9 @@ async function main(): Promise<void> {
   // ---- the headword bundle an entry is indexed under --------------------
   //
   // ADR-0019's other half: an entry's `selectorKeys` is the bundle a paradigm's
-  // selector is compared with, exactly. It keeps the part of speech, the
-  // features the language declares inherent, and the default axis value — and
-  // nothing else, which is what the second entry below checks.
+  // selector is compared with, exactly. It keeps the part of speech and the
+  // features the language declares inherent — and nothing else, which is what
+  // the second entry below checks.
   check(
     "the merged grammar is current again",
     (await ingestLanguage(DID, languageURI(TAG), "cid17", languageRecord(merged))) === "indexed",
@@ -440,7 +459,7 @@ async function main(): Promise<void> {
   );
   const strollKeys = await selectorKeysOf(entryURI("stroll"));
   check(
-    "its headword key carries the inherent gender and the default number",
+    "its headword key carries both inherent features",
     strollKeys.length === 1 &&
       strollKeys[0] === "upos=ud:NOUN|ud:Gender=Fem|ud:Number=Plur",
     JSON.stringify(strollKeys),
@@ -470,27 +489,6 @@ async function main(): Promise<void> {
     "and that feature is left out of its headword key",
     noiseKeys.length === 1 && noiseKeys[0] === "upos=ud:NOUN|ud:Gender=Fem",
     JSON.stringify(noiseKeys),
-  );
-
-  // ---- the paradigm stopgap ---------------------------------------------
-  //
-  // Slice 2 of ADR-0019 gates paradigm ingest off: the lexicon's v2 shape lands
-  // in slice 4, and indexing a v1 record now would generate forms against a cell
-  // space nothing declares. Delete this check when the gate goes.
-  check(
-    "a well-formed paradigm record is refused while the merge lands",
-    (await ingestParadigm(
-      DID,
-      `at://${DID}/eu.leksis.paradigm/${TAG}-0000000000000000`,
-      "cid1",
-      {
-        $type: "eu.leksis.paradigm",
-        languageID: TAG,
-        selector: { upos: { value: "NOUN" } },
-        rules: [{ coords: [{ feature: "Number", value: "Sing" }], strip: "ad" }],
-        createdAt: "2026-08-21T10:00:00Z",
-      },
-    )) === "skipped-invalid",
   );
 
   await reset();

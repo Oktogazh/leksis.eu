@@ -25,8 +25,7 @@ import type { IngestResult } from "./ingest-language";
 //
 // The doc is a reference, with **one cache**: the tables themselves. That is a
 // departure from the design note's "the doc is reference-only", and it is
-// forced by the same constraint that put `inherent` (and now `categories`) on
-// the language doc — the expansion job runs inside the firehose consumer, which
+// forced by the same constraint that put `inherent` on the language doc — the expansion job runs inside the firehose consumer, which
 // is a single sequential writer, and resolving a paradigm record from its
 // author's PDS once per ingested entry would put a stranger's server in the
 // middle of this AppView's write path. So the consumer reads tables from here;

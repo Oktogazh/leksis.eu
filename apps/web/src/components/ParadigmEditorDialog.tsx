@@ -1452,7 +1452,7 @@ function CoordsPicker({
  *
  * Deliberately the **entry editor's own walk** (`categoryRoots` /
  * `categoryRefinements`) rather than a flat list of the language's declared
- * annotations. The two would nearly agree, and where they differ the walk is
+ * categories. The two would nearly agree, and where they differ the walk is
  * right: it produces exactly the bundles an entry can be created with — a bare
  * part of speech included, which a language that has declared no category still
  * has — and a paradigm whose selector no entry can carry reaches nothing.
@@ -1530,11 +1530,7 @@ function SelectorPicker({
           {refinements.map((refinement) => (
             <div key={refinement.feature.feature} className="mt-2">
               <p className="text-[0.7rem] text-content-subtle">
-                {refinement.kind === "axis"
-                  ? t("paradigmEditor.selectorAxisStep", {
-                      feature: refinement.feature.label.long,
-                    })
-                  : refinement.feature.label.long}
+                {refinement.feature.label.long}
               </p>
               <ul className="mt-1 flex flex-wrap gap-1.5">
                 {refinement.options.map((option) => (

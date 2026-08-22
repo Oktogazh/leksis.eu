@@ -1,6 +1,7 @@
 // Contract for the `grammar` sub-object of an eu.leksis.language record —
 // layers 1 and 2 of the grammar layer (docs/design/grammatical-tagging.md,
-// revised by docs/design/category-axis-merge.md).
+// revised by docs/design/category-axis-merge.md and then by ADR-0020, which
+// wins over both).
 //
 // A language declares the grammatical vocabulary it uses by *binding* each
 // atom to a homolingual label. Binding is not merely labelling: it is how a
@@ -18,39 +19,37 @@
 // exactly one home:
 //
 //   pos      — a part of speech this language uses
-//   features — a feature *name*: the axis header, and the gate below
+//   features — a feature *name*: the header a table prints, and the gate below
 //   values   — a value, stating which feature it is an option of
 //
 // Layer 2 declares what those atoms combine into, in two more arrays:
 //
 //   inherent   — "for this category, this feature is inherent": a property of
 //                the word itself rather than of one of its forms
-//   categories — a headword category and the label(s) a reader sees for it:
-//                the atoms it is made of, the feature its forms vary over, and
-//                which value of that feature each of its headwords sits at
+//   categories — a headword category and the one label a reader sees for it
 //
 // The two are gated the same way layer 1 gates a value behind its feature
 // name: a category of two or more atoms has to be reachable through the
 // inherence declarations that build it up. One rule at two levels — which is
 // why both render as navigation in the editor rather than as validation errors.
 //
-// **A category's axis and its default values live on the category itself**
-// (ADR-0019, which retired the standalone `axes` and `layout` arrays). Real
-// conventions couple what a headword *is* with where it sits on the axis its
-// forms range over: Breton nouns are cited in the singular, collective-only
-// nouns in the collective, and an *anv-kadarn stroll* in the plural with its
-// singulative derived by rule. Three headword flavours of one category, each
-// abbreviated differently — which two separate declarations could not express,
-// because neither of them holds a label.
+// **Nothing here says what a word's forms vary over** (ADR-0020, which removed
+// the per-category `axis` ADR-0019 had just introduced, one revision after the
+// standalone `axes` and `layout` arrays went). The line an axis drew — this
+// feature identifies the word, that one varies across its forms — is not one a
+// language can draw: Breton cites an ordinary noun in the singular, a
+// collective-only noun in the collective, and an *anv-kadarn stroll* in the
+// **plural**, so `Number` both identifies those headwords and is what their
+// forms range over. Three flavours are therefore three **categories**, one
+// abbreviation each, at the depth the inherence tree reaches them.
 //
-// So each annotation of a category is a **labelled tag**: the category plus its
-// own default axis value, which is exactly what an entry created through it
+// So a category is a **labelled tag**, exactly what an entry created through it
 // carries. That is what makes the entry record self-describing and what makes a
 // paradigm's selector an exact match rather than a containment test.
 //
 // The *shape* of the inflection tables is declared nowhere here: it belongs to
 // the eu.leksis.paradigm record, which defines its cells one by one, because
-// real conjugation tables are not cartesian products of their axes.
+// real conjugation tables are not cartesian products of anything.
 //
 // Two more things a dictionary prints are declared here and take part in none
 // of that cascade, because they are lexicography rather than grammar:
@@ -80,9 +79,7 @@ import {
   type Tag,
   type TagFeat,
   type TagUpos,
-  FEATS_VALUE_SEPARATOR,
   FEATURE_NAME_PATTERN,
-  FEATURE_VALUE_PATTERN,
 } from "./tag.js";
 
 /**
@@ -117,6 +114,17 @@ export interface GrammarPos {
   scheme?: string;
   label: GrammarLabel;
   references?: GrammarReference[];
+  /**
+   * Free homolingual prose about the part of speech — see
+   * {@link GrammarValue.note}, whose reasoning it shares.
+   *
+   * It lives here rather than on a category because **a bare part of speech has
+   * no category row to live on**: its tag is the one this row binds, so a
+   * `categories` row for it would be a `duplicate`. The editor's category level
+   * therefore reads and writes *this* row when the bundle is a bare part of
+   * speech — one fact, one home, reachable through both doors.
+   */
+  note?: string;
 }
 
 /**
@@ -144,9 +152,8 @@ export interface GrammarFeature {
    * extension". Its values are ordinary tags an entry or a sense may carry, and
    * they render and bind exactly like any other; what the flag withholds is
    * participation in the grammatical layers. A lexicographic feature is never
-   * inherent to a category, never the axis of one and never part of a
-   * category's own bundle, because none of those describe it: "by extension" is
-   * not something a word *is* nor something its forms *vary over*.
+   * inherent to a category and never part of a category's own bundle, because
+   * neither describes it: "by extension" is not something a word *is*.
    *
    * It is a flag on a feature rather than a sixth array because the machinery
    * is a feature's exactly — one name, several values, one label each — and a
@@ -227,69 +234,44 @@ export interface GrammarInherent {
 }
 
 /**
- * One label of a category, and the axis value the headwords it names sit at.
+ * A headword category this language names: what a word *is*, and what this
+ * dictionary calls it.
  *
- * The same two halves a `GrammarLabel` has, plus the `default` that makes
- * several of them distinguishable within one category — which is the whole
- * point of ADR-0019's merge. `{NOUN, Gender=Masc}` with axis `Number` holds one
- * annotation defaulting to `Sing` ("anv-kadarn gourel") and another defaulting
- * to `Plur` (*anv-kadarn stroll*), and those are two different labelled tags
- * over one declaration.
- *
- * `default` is **required iff the category names an axis** and forbidden
- * otherwise: without an axis there is no value for it to name, and with one
- * there is no way to tell two annotations apart. Both halves of that are
- * reported by `grammarIssues` rather than refused as malformed, because a
- * record missing one is a record whose meaning is *undecidable*, not one that
- * cannot be read.
- */
-export interface GrammarAnnotation {
-  /** Full form — the only required half, as on a `GrammarLabel`. */
-  long: string;
-  /** Abbreviated display form, shown instead of `long` where present. */
-  short?: string;
-  /**
-   * The value of the category's `axis` a headword named by this annotation
-   * carries. Bare — matched by name, with provenance re-attached from the
-   * `values` row that bound it (`categoryTags`), exactly as a cell coordinate
-   * is.
-   */
-  default?: string;
-}
-
-/**
- * A headword category this language names: what a word *is*, what its forms
- * vary over, and where its own citation form sits on that axis.
- *
- * **One row per category, and it carries the labels.** French `{NOUN,
+ * **One row per category, and it carries one label.** French `{NOUN,
  * Gender=Fem}` → "nf."; a language that prints "n. f." instead binds the two
  * atoms separately and never writes a row here — decomposition renders it, and
  * a synthesised label nobody authored is precisely what the rendering chain
  * refuses to invent.
  *
- * **A single atom is allowed** (ADR-0019 removed the old two-atom floor): a
- * part of speech on its own is a headword category like any other, and it has
- * to be, because a category is now also where an axis is declared — `{NOUN}`
- * varying over `Number` is the ordinary case, not a special one.
+ * **A single atom is allowed** by the shape, but has no use: its tag is the one
+ * the `pos` row binds, so a row for it is a `duplicate`. The editor's category
+ * level edits that `pos` row instead — same label, same note, one home.
  *
- * `axis` names the feature this category's forms range over. It is **not** an
- * inventory: what values exist is layer 1's business, and which cells are
- * printed is the paradigm record's, so a category says only which feature
- * varies and where its headwords sit. That is the minimum that cannot be
- * derived from anything else, and it is why the standalone `axes` array is
- * gone.
+ * **What a category never declares is what its forms vary over.** ADR-0019 put
+ * an `axis` here and one annotation per headword flavour of it; ADR-0020 took
+ * both away, because the distinction was not one a language can draw. Breton's
+ * *anv-kadarn stroll* is cited in the plural, so `Number` identifies that
+ * headword — and it is also what an ordinary noun's forms range over. A feature
+ * that is a constant here and a coordinate there is the ordinary case, not a
+ * contradiction, so the only honest declaration is the one that says which
+ * features **define** the headword (`inherent`), and the paradigm's own tables
+ * say which cells exist. One flavour, one category, one abbreviation.
  */
 export interface GrammarCategory {
   category: Tag;
+  /** How this dictionary names the category — its one labelled tag. */
+  label: GrammarLabel;
   /**
-   * Bare name of the feature this category's forms vary over. Matched by name
-   * and never by scheme, exactly as an `inherent` row's feature is, and
-   * mutually exclusive with inherence on the same category — a paradigm cannot
-   * be built from a coordinate that is also a constant.
+   * Free homolingual prose about the category — see {@link GrammarValue.note},
+   * whose reasoning it shares exactly. `label` *names* the category and is
+   * sized for a chip; this is the paragraph a printed dictionary puts under the
+   * heading in its front matter, and the one a contributor needs before
+   * choosing between two categories that look alike.
+   *
+   * Content, indexed nowhere: it rides to a reader on the language record the
+   * dashboard already resolves from its author's PDS.
    */
-  axis?: string;
-  /** At least one, one per headword flavour; each is a labelled tag of its own. */
-  annotations: GrammarAnnotation[];
+  note?: string;
 }
 
 /**
@@ -304,8 +286,7 @@ export interface GrammarCategory {
  * built without it would match nothing and find no label.
  *
  * It lives here rather than with the paradigm shapes because the re-qualifying
- * step needs the grammar, and because a category's `default` is joined to its
- * `values` row by exactly the same rule.
+ * step needs the grammar.
  */
 export interface LayoutCoord {
   feature: string;
@@ -319,22 +300,38 @@ export interface LayoutCoord {
  * pick from a list — and the one row of the whole object that stands for no tag
  * at all.
  *
- * **The short form is the identity.** Every other row here is identified by
- * what it binds and merely *carries* a label; an abbreviation binds nothing, so
- * its abbreviated form is what it is. Asking a contributor to supply a tag for
- * it would be asking them to describe "udb." as a grammatical category, which
- * it is not. That is also why `short` is required where a label's is optional:
- * an abbreviation with nothing to abbreviate is just a word.
+ * **`value` is the identity and `short` is what is printed** (ADR-0020, which
+ * split them). Every other row here already separates the two — a `values` row
+ * keys on `Sgv` and prints "una." — and an abbreviation now does too, for the
+ * reason that split exists anywhere: an identifier is ASCII and shapeless where
+ * a printed form is neither. "u.d.b." carries stops, a Cyrillic or Greek
+ * tradition abbreviates in its own script, and a key made of either travels
+ * badly through a document key and a URL. Keying on the printed form also made
+ * *correcting* it impossible: changing "udb." to "u.d.b." was deleting one row
+ * and adding another.
  *
  * It carries no `scheme`. Provenance answers "which tagset is this from", and
  * for an abbreviation the answer is always the same one: this language's own
  * lexicographic tradition.
  */
 export interface GrammarAbbreviation {
-  /** The abbreviated form — the row's identity, unique within a language. */
+  /**
+   * The row's identity, unique within a language: ASCII letters and digits, the
+   * shape of an identifier rather than of a printed abbreviation
+   * ({@link ABBREVIATION_VALUE_PATTERN}). Never displayed to a reader.
+   */
+  value: string;
+  /** The abbreviated form, exactly as this dictionary prints it. */
   short: string;
   /** What it stands for, written out. */
   long: string;
+  /**
+   * Free homolingual prose about what the abbreviation covers — the same field
+   * a feature, a value and a category carry, for the same reason: `long` is the
+   * expansion, and an expansion is not always an explanation. "un dra bennak"
+   * says what "udb." unfolds to and not when a contributor should reach for it.
+   */
+  note?: string;
   references?: GrammarReference[];
 }
 
@@ -380,8 +377,6 @@ export const GRAMMAR_LIMITS = {
   inherent: 512,
   categories: 1024,
   abbreviations: 512,
-  /** Annotations of one category — one per headword flavour of it. */
-  annotations: 16,
   /** Coordinates of one cell address. */
   coords: 16,
   /** References on one row. */
@@ -411,14 +406,28 @@ export function valueTag(row: { feature: string; value: string; scheme?: string 
 export type GrammarRowKind = "pos" | "feature" | "value" | "combination" | "abbreviation";
 
 /**
- * Canonical key of an abbreviation row — its short form, **prefixed**, for the
- * reason `axisKey` is prefixed: an abbreviation shares one key space with every
+ * The shape an abbreviation's identity must take: ASCII letters and digits,
+ * starting with either.
+ *
+ * Deliberately **not** one of the tag patterns, and deliberately looser than
+ * `FEATURE_VALUE_PATTERN`: an abbreviation is not a tag, so requiring an
+ * initial capital would be borrowing UD's convention for something UD has no
+ * opinion about, and "udb" reads better as itself than as "Udb". What it does
+ * borrow is the part that matters — an identifier with no stops, no spaces and
+ * no script of its own, so it survives a document key and a URL where the
+ * printed form ("u.d.b.", "сущ.") would not.
+ */
+export const ABBREVIATION_VALUE_PATTERN = /^[A-Za-z0-9]+$/;
+
+/**
+ * Canonical key of an abbreviation row — its identity, **prefixed**, for the
+ * reason `categoryKey` is: an abbreviation shares one key space with every
  * tag a language binds, and `abbr#` is what guarantees it can never be mistaken
  * for one. A tag lookup asking for this key gets nothing, which is correct: an
  * abbreviation stands for no tag, so no tag should ever resolve to it.
  */
-export function abbreviationKey(row: { short: string }): string {
-  return `abbr#${row.short}`;
+export function abbreviationKey(row: { value: string }): string {
+  return `abbr#${row.value}`;
 }
 
 /**
@@ -449,13 +458,12 @@ export function inherentKey(row: GrammarInherent): string {
 }
 
 /**
- * Stable identity of a category **declaration** — the row, not the labelled
- * tags it produces.
+ * Stable identity of a category **declaration** — the row, not the tag it
+ * labels.
  *
- * Deliberately **prefixed**, for the reason the retired `axisKey` was: a
- * declaration and the annotation tags hanging off it would otherwise key the
- * same string, and an issue reported against the row ("this axis is not bound")
- * must not read as an issue against one of its labels. It is also what makes
+ * Deliberately **prefixed**: a declaration and the tag it names would otherwise
+ * key the same string, and an issue reported against the row ("this atom is not
+ * bound") must not read as an issue against the label. It is also what makes
  * "two rows for one category" reportable at all.
  */
 export function categoryKey(row: { category: Tag }): string {
@@ -464,10 +472,10 @@ export function categoryKey(row: { category: Tag }): string {
 
 /**
  * A feature value's identity for matching, with provenance deliberately
- * dropped and any multivalue item's values normalised into UD's order. An axis
- * names its values bare, so this is the only way it can reach the `values` rows
- * that bound them — and it is the same "by name, never by scheme" rule that
- * already lets a value minted on a UD feature find that feature.
+ * dropped and any multivalue item's values normalised into UD's order. A cell
+ * coordinate names its value bare, so this is the only way it can reach the
+ * `values` row that bound it — and it is the same "by name, never by scheme"
+ * rule that already lets a value minted on a UD feature find that feature.
  */
 function valueMatchKey(feature: string, value: string): string {
   return tagKey(valueTag({ feature, value }));
@@ -538,16 +546,18 @@ export function grammarRows(grammar: Grammar): GrammarRow[] {
   // and into the renderer's lookup through this one function, and a language's
   // "nf." lands on the same shelf as its "n.".
   //
-  // **One row per annotation, not per declaration.** A category naming an axis
-  // holds one label per default value of it, and each is a labelled tag of its
-  // own — the category plus that value — which is exactly the bundle an entry
-  // created through it carries. That is what keeps `resolveTag`'s exact branch
-  // reachable after the merge, with no change to the read model's shape or key
-  // space (ADR-0019).
+  // **One row per declaration** — which is what ADR-0020 restored by removing
+  // the axis: a category is one bundle with one label, so a headword flavour
+  // cited at a particular value of a feature is a category of its own, named on
+  // its own row, and `resolveTag`'s exact branch finds it without anything here
+  // having to synthesise a tag.
   for (const row of grammar.categories ?? []) {
-    for (const { tag, label } of categoryTags(grammar, row)) {
-      rows.push({ kind: "combination", key: tagKey(tag), label, tag });
-    }
+    rows.push({
+      kind: "combination",
+      key: tagKey(row.category),
+      label: row.label,
+      tag: row.category,
+    });
   }
   // An abbreviation flows through here for the same reason a combination does:
   // it is a row like any other, so it reaches the language's label list with no
@@ -581,17 +591,6 @@ function boundFeatureNames(grammar: Grammar): Set<string> {
   return new Set((grammar.features ?? []).map((row) => row.feature));
 }
 
-/**
- * The feature values this language has bound, keyed so a bare (feature, value)
- * pair can find them — the layer-1 inventory a category's `default` draws from.
- * Distinct from `boundAtomKeys`, which keys on the full tag including scheme:
- * a category in an `inherent` or `categories` row carries its provenance and is
- * matched exactly, while a bare default does not carry any and cannot be.
- */
-function boundValueKeys(grammar: Grammar): Set<string> {
-  return new Set((grammar.values ?? []).map((row) => valueMatchKey(row.feature, row.value)));
-}
-
 /** Whether this language declares `feature` inherent to exactly this category. */
 export function isInherent(grammar: Grammar, category: Tag, feature: string): boolean {
   const key = tagKey(category);
@@ -613,74 +612,16 @@ export function categoryRow(grammar: Grammar, category: Tag): GrammarCategory | 
   return (grammar.categories ?? []).find((row) => tagKey(row.category) === key);
 }
 
-/** Whether this language declares `feature` the axis of exactly this category. */
-export function isAxis(grammar: Grammar, category: Tag, feature: string): boolean {
-  return categoryRow(grammar, category)?.axis === feature;
-}
-
-/** One annotation of a category, as the labelled tag it stands for. */
-export interface CategoryTag {
-  tag: Tag;
-  label: GrammarLabel;
-  annotation: GrammarAnnotation;
-}
-
-/**
- * The labelled tags one category declaration produces — one per annotation.
- *
- * The tag is the category itself when nothing narrows it, and the category plus
- * `{axis: default}` when the annotation names a default. That second case is
- * the whole of ADR-0019's merge, and the reason this needs the grammar rather
- * than the row alone: the default is stored **bare** and its provenance is
- * re-attached from the `values` row that bound it, exactly as `coordTag`
- * re-qualifies a cell coordinate. Without that step a minted `Number=Sgv`
- * headword would key differently from the tag the entry editor writes, so the
- * label would never be found.
- *
- * An annotation naming a default on a category with no axis is skipped: it
- * addresses no feature, `grammarIssues` says so, and inventing a tag for it
- * would put an unaddressable row on the language's own label shelf.
- */
-export function categoryTags(grammar: Grammar, row: GrammarCategory): CategoryTag[] {
-  const out: CategoryTag[] = [];
-  for (const annotation of row.annotations ?? []) {
-    if (annotation.default !== undefined && row.axis === undefined) continue;
-    const feats = [...(row.category.feats ?? [])];
-    if (row.axis !== undefined && annotation.default !== undefined) {
-      const scheme = resolveCoord(grammar, {
-        feature: row.axis,
-        value: annotation.default,
-      })?.scheme;
-      feats.push({
-        feature: row.axis,
-        value: annotation.default,
-        ...(scheme !== undefined ? { scheme } : {}),
-      });
-    }
-    const tag: Tag = {
-      ...(row.category.upos !== undefined ? { upos: row.category.upos } : {}),
-      ...(feats.length > 0 ? { feats } : {}),
-    };
-    const short = annotation.short;
-    out.push({
-      tag,
-      label: { long: annotation.long, ...(short !== undefined ? { short } : {}) },
-      annotation,
-    });
-  }
-  return out;
-}
-
 // ---- layer 5: which entries a paradigm reaches ---------------------------
 //
 // A paradigm selects the entries it generates forms for by **exact match** on
 // the headword bundle (ADR-0019, which replaced containment over the entry's
-// inherent atoms). The bundle now carries the default axis value, so it fully
-// identifies a kind of headword: `{NOUN}` selects only entries whose headword
-// bundle is literally a bare noun, and the *anv-kadarn stroll* flavour
-// `{NOUN, Gender=Masc, Number=Plur}` is a different paradigm rather than a more
-// specific one. That is what removes the whole most-specific-wins machinery:
-// two paradigms cannot both reach one entry.
+// inherent atoms). The bundle carries every feature the language declares
+// identifying, so it fully identifies a kind of headword: `{NOUN}` selects only
+// entries whose headword bundle is literally a bare noun, and the *anv-kadarn
+// stroll* flavour `{NOUN, Gender=Masc, Number=Plur}` is a different paradigm
+// rather than a more specific one. That is what removes the whole
+// most-specific-wins machinery: two paradigms cannot both reach one entry.
 //
 // Both sides are reduced to the same scheme-blind key, which is what lets the
 // AppView store an entry's on its doc and answer "every entry this new rule
@@ -723,61 +664,45 @@ export function headwordMatchKey(tag: Tag): string {
 /**
  * The **headword keys** of an entry: one per category bundle it carries, each
  * the scheme-blind key of that bundle stripped to what identifies a kind of
- * word — its part of speech, the features the language declares inherent for
- * it, and the default axis value where the language declares one.
+ * word — its part of speech and the features the language declares inherent
+ * for it.
  *
- * The filter is the point, and ADR-0019 widened it by exactly one term.
- * `categories` is lexeme-level, but nothing stops a record from carrying a
- * form's feature there, and an atom that is neither inherent nor a declared
- * default is noise a rule must not select on. What survives is precisely the
- * bundle a paradigm's `selector` is compared with.
+ * The filter is the point. `categories` is lexeme-level, but nothing stops a
+ * record from carrying a form's feature there, and an atom the language never
+ * declared identifying is noise a rule must not select on. What survives is
+ * precisely the bundle a paradigm's `selector` is compared with.
  *
- * Both declarations are read **per category and by containment**, so a
- * declaration on `{NOUN}` reaches an entry categorised `{NOUN, Gender=Fem}`,
- * and a default declared for `{NOUN, Gender=Masc}` is kept on an entry that
- * also names its declension. A default is admitted only when the language
- * actually declared **that value** for the axis — a value the category's own
- * annotations never name is a form's feature written on a headword, not a
- * flavour of it.
+ * **One declaration decides it, since ADR-0020**: `inherent`. ADR-0019 had a
+ * second term here — an axis value the category named as one of its defaults —
+ * and removing the axis removed it. Nothing is lost: the value that identified
+ * an *anv-kadarn stroll* is now declared the way every other identifying
+ * feature is, `Number` inherent to `{NOUN, Gender=Masc}`, so the same bundle
+ * survives the filter through the rule that was always there.
+ *
+ * Inherence is read **per category and by containment**, so a declaration on
+ * `{NOUN}` reaches an entry categorised `{NOUN, Gender=Fem}`, and one on
+ * `{NOUN, Gender=Masc}` reaches an entry that also names its declension.
  *
  * The part of speech needs no declaration of any kind: it is what a paradigm
  * minimally selects on, and requiring it to be bound first would make every
  * paradigm of a language whose labels nobody has written yet silently inert.
  *
- * Takes the two declaration arrays rather than the whole grammar because the
- * caller is the firehose consumer, which holds them cached on the language doc
+ * Takes a declarations object rather than the whole grammar because the caller
+ * is the firehose consumer, which holds `inherent` cached on the language doc
  * and has no record in hand. Deduped and sorted, so one entry's stored value is
  * stable and two runs cannot differ on ordering alone.
  */
 export function headwordKeys(
-  declarations: {
-    inherent?: readonly GrammarInherent[];
-    categories?: readonly GrammarCategory[];
-  },
+  declarations: { inherent?: readonly GrammarInherent[] },
   categories: readonly Tag[],
 ): string[] {
   const inherent = declarations.inherent ?? [];
-  const declared = declarations.categories ?? [];
   const keys = new Set<string>();
   for (const category of categories) {
     const held = heldKeys([category]);
-    const feats = (category.feats ?? []).filter((feat) => {
-      const isInherentHere = inherent.some(
-        (row) => row.feature === feat.feature && held.has(tagKey(row.category)),
-      );
-      if (isInherentHere) return true;
-      const wanted = valueMatchKey(feat.feature, feat.value);
-      return declared.some(
-        (row) =>
-          row.axis === feat.feature &&
-          held.has(tagKey(row.category)) &&
-          (row.annotations ?? []).some(
-            (annotation) =>
-              annotation.default !== undefined &&
-              valueMatchKey(feat.feature, annotation.default) === wanted,
-          ),
-      );
-    });
+    const feats = (category.feats ?? []).filter((feat) =>
+      inherent.some((row) => row.feature === feat.feature && held.has(tagKey(row.category))),
+    );
     const bundle: Tag = {
       ...(category.upos !== undefined ? { upos: category.upos } : {}),
       ...(feats.length > 0 ? { feats } : {}),
@@ -1195,7 +1120,7 @@ export function grammarLookup(grammar: Grammar): Map<string, GrammarLabel> {
  *   orphans its values.
  * - `duplicate` — two rows sharing a canonical key, which makes the label a
  *   tag resolves to depend on array order. Also two **category declarations**
- *   for one category, which would make its axis depend on array order.
+ *   for one category, which would make its label depend on array order.
  * - `unbound-atom` — a layer-2 row built on an atom layer 1 does not bind: a
  *   category can only be made of what the language has declared it uses.
  * - `ungrounded-combination` — a category of two or more atoms that no chain of
@@ -1203,39 +1128,21 @@ export function grammarLookup(grammar: Grammar): Map<string, GrammarLabel> {
  *   `unbound-feature` one level up. A single-atom category needs no grounding —
  *   a part of speech on its own is a headword category, which is what ADR-0019
  *   dropped the old two-atom floor for.
- * - `category-axis-unbound` — a category naming an axis whose feature nobody
- *   bound. The cascade's mirror at this altitude, and what makes unbinding a
- *   feature some category varies over show up as an orphan rather than silently
- *   flattening a paradigm.
- * - `category-axis-inherent` — the same feature declared both inherent to a
- *   category and the axis of it: the language says it both identifies the word
- *   and varies across its forms, and a paradigm cannot be built from a
- *   coordinate that is also a constant. Successor of the retired
- *   `inherent-axis-conflict`, now that the axis lives on the category. The
- *   apparent counterexample resolves through the keying rather than through
- *   this rule — `Number` is the axis of `{NOUN}` and inherent to
- *   `{NOUN, Number=Ptan}`, which are different categories and never meet here.
- * - `category-default-missing` — a category names an axis and one of its
- *   annotations does not say which value of it that headword carries. There is
- *   then no tag for the label to name, so it would reach a reader through
- *   nothing.
- * - `category-default-forbidden` — the mirror: an annotation names a default on
- *   a category with no axis, so the value belongs to no feature at all.
- * - `category-default-unbound` — a default naming a value nobody bound under
- *   that feature. The layer-1 gate again, one altitude up.
- * - `category-duplicate-default` — two annotations of one category sharing a
- *   default. The default is what tells them apart, so two labels for one
- *   headword flavour make which one a reader sees depend on array order.
  * - `lexicographic-in-grammar` — a lexicographic label set, or one of its
  *   values, used where the grammatical layers expect a grammatical feature: as
- *   an inherent feature, as a category's axis, or inside a category's own
- *   bundle. The flag says this vocabulary describes usage rather than form, so
- *   a paradigm cannot be built from it — a table of "archaic" against "by
- *   extension" addresses no cell.
- * - `duplicate-abbreviation` — two abbreviations sharing a short form. Distinct
+ *   an inherent feature, or inside a category's own bundle. The flag says this
+ *   vocabulary describes usage rather than form, so a paradigm cannot be built
+ *   from it — a table of "archaic" against "by extension" addresses no cell.
+ * - `duplicate-abbreviation` — two abbreviations sharing an identity. Distinct
  *   from `duplicate` because the defect is different: a duplicate label makes a
- *   *tag* resolve by array order, while two `udb.` rows are two entries in the
- *   front matter under one headword, and the short form is the identity here.
+ *   *tag* resolve by array order, while two rows under one `value` are two
+ *   entries in the front matter under one headword.
+ *
+ * **Six kinds, where ADR-0019 reported twelve.** The six `category-*` kinds it
+ * added were all defects of the axis and its defaults, and ADR-0020 removed
+ * what they were about. A category is a bundle with a label again, so what can
+ * go wrong with one is what can go wrong with any bundle: an unbound atom, no
+ * grounding, a duplicate, or lexicographic vocabulary where grammar belongs.
  */
 export interface GrammarIssue {
   kind:
@@ -1243,23 +1150,16 @@ export interface GrammarIssue {
     | "duplicate"
     | "unbound-atom"
     | "ungrounded-combination"
-    | "category-axis-unbound"
-    | "category-axis-inherent"
-    | "category-default-missing"
-    | "category-default-forbidden"
-    | "category-default-unbound"
-    | "category-duplicate-default"
     | "lexicographic-in-grammar"
     | "duplicate-abbreviation";
   /** Canonical key of the offending row. */
   key: string;
-  /** The feature name at fault, on an `unbound-feature` or axis issue. */
+  /** The feature name at fault, on an `unbound-feature` issue. */
   feature?: string;
   /**
-   * The unbound atom, written the way UD writes it, on an `unbound-atom`
-   * issue — or the offending default on a `category-default-*` one. One row can
-   * be built on several unbound atoms, so this is part of the issue's identity
-   * rather than a decoration.
+   * The unbound atom, written the way UD writes it, on an `unbound-atom` issue.
+   * One row can be built on several unbound atoms, so this is part of the
+   * issue's identity rather than a decoration.
    */
   atom?: string;
 }
@@ -1329,9 +1229,10 @@ export function grammarIssues(grammar: Grammar): GrammarIssue[] {
     }
   }
 
-  // Two abbreviations under one short form are two front-matter entries under
-  // one headword. Keyed on the short form because that *is* the identity, so
-  // there is nothing else the second row could be distinguished by.
+  // Two abbreviations under one identity are two front-matter entries under one
+  // headword. Keyed on `value` rather than on the printed form since ADR-0020:
+  // two rows may legitimately print alike in two traditions, and it is the key
+  // a reader's lookup travels through that must be unique.
   const seenAbbreviations = new Set<string>();
   const flaggedAbbreviations = new Set<string>();
   for (const row of grammar.abbreviations ?? []) {
@@ -1362,20 +1263,19 @@ export function grammarIssues(grammar: Grammar): GrammarIssue[] {
     }
   }
 
-  // Layer 2's categories, which since ADR-0019 also carry what layer 3 used to
-  // declare on its own. Every check here is the cascade's: the category's atoms
-  // must be bound and grounded, its axis must be a bound feature it does not
-  // also declare inherent, and every annotation's default must be a bound value
-  // of that axis.
-  const boundValues = boundValueKeys(grammar);
+  // Layer 2's categories. Every check here is the cascade's, and since ADR-0020
+  // that is all of them: the category's atoms must be bound and grounded, and it
+  // must be made of grammar rather than of lexicographic vocabulary. What a
+  // category says about its forms is nothing at all — the paradigm's tables say
+  // it — so there is no longer an axis to be unbound, inherent, or missing a
+  // default.
   const seenCategories = new Set<string>();
   const flaggedCategories = new Set<string>();
   for (const row of grammar.categories ?? []) {
     const key = categoryKey(row);
     if (seenCategories.has(key)) {
-      // A second row for one category makes its axis — and with it the whole
-      // cell space of that category — depend on array order, which is the same
-      // defect a duplicate label is.
+      // A second row for one category makes the label a reader sees depend on
+      // array order, which is the same defect a duplicate binding is.
       if (!flaggedCategories.has(key)) {
         flaggedCategories.add(key);
         issues.push({ kind: "duplicate", key });
@@ -1400,51 +1300,6 @@ export function grammarIssues(grammar: Grammar): GrammarIssue[] {
       !isGroundedCombination(grammar, row.category)
     ) {
       issues.push({ kind: "ungrounded-combination", key });
-    }
-
-    if (row.axis !== undefined) {
-      if (!boundNames.has(row.axis)) {
-        issues.push({ kind: "category-axis-unbound", key, feature: row.axis });
-      }
-      lexicographicFeature(key, row.axis);
-      if (isInherent(grammar, row.category, row.axis)) {
-        issues.push({ kind: "category-axis-inherent", key, feature: row.axis });
-      }
-    }
-
-    // The iff rule of the annotation's `default`, and the uniqueness that makes
-    // two annotations of one category tell each other apart. Both are reported
-    // per annotation, because that is the row a contributor edits.
-    const defaults = new Set<string>();
-    for (const annotation of row.annotations ?? []) {
-      if (row.axis === undefined) {
-        if (annotation.default !== undefined) {
-          issues.push({ kind: "category-default-forbidden", key, atom: annotation.default });
-        }
-        continue;
-      }
-      if (annotation.default === undefined) {
-        issues.push({ kind: "category-default-missing", key, feature: row.axis });
-        continue;
-      }
-      const valueKey = valueMatchKey(row.axis, annotation.default);
-      if (!boundValues.has(valueKey)) {
-        issues.push({
-          kind: "category-default-unbound",
-          key,
-          feature: row.axis,
-          atom: formatTagVerbatim(valueTag({ feature: row.axis, value: annotation.default })),
-        });
-      }
-      if (defaults.has(valueKey)) {
-        issues.push({
-          kind: "category-duplicate-default",
-          key,
-          feature: row.axis,
-          atom: annotation.default,
-        });
-      }
-      defaults.add(valueKey);
     }
   }
 
@@ -1641,73 +1496,51 @@ export function inherentFeatures(grammar: Grammar, category: Tag): GrammarFeatur
 export interface CategoryRefinement {
   feature: GrammarFeature;
   options: CategoryOption[];
-  /**
-   * Which of the two declarations put this step in the tree.
-   *
-   * `inherent` asks what the word **is** — its gender, its conjugation group —
-   * and its options are every bound value of the feature, because a language
-   * binding a value has said a word can have it. `axis` asks which form of it
-   * the dictionary **cites**, and its options are only the flavours the
-   * category itself named: an axis has no declared inventory (that is layer 1's
-   * business), so what makes `Number=Plur` a headword rather than a form is the
-   * annotation saying so. Kept apart because the two read differently to a
-   * contributor and the entry editor labels them differently.
-   */
-  kind: "inherent" | "axis";
 }
 
-/** A feature an entry's forms vary over, with the values it can take. */
-export interface CategoryAxis {
+/** A feature a form can be addressed by, with the values it can take. */
+export interface FormAxis {
   feature: GrammarFeature;
   /** Every value layer 1 bound under it, in record order. */
   values: GrammarValue[];
 }
 
 /**
- * The axes reaching these category bundles — what the `otherForms` editor
- * offers one selector per.
+ * The features the `otherForms` editor offers one selector per — every
+ * grammatical feature this language bound that has at least one bound value.
  *
- * Read **by containment**, exactly as `headwordKeys` reads the same rows: a
- * category declared on `{NOUN}` reaches an entry categorised
- * `{NOUN, Gender=Fem}`, and one declared on `{NOUN, Gender=Masc}` reaches an
- * *anv-kadarn stroll* whose bundle also carries the `Number=Plur` that named
- * it. That is what lets a language declare the axis once, at the depth it
- * belongs to, instead of on every flavour beneath it.
+ * **Not filtered by the entry's own categories, since ADR-0020.** It used to
+ * read the `axis` each declared category named, which is gone — and gone
+ * because the filter it fed was wrong wherever it mattered most. Breton's
+ * *anv-kadarn stroll* is identified by `Number=Plur` and inflects for `Number`
+ * all the same, so a rule that offered a feature only where it was *not*
+ * identifying would have hidden the one selector that noun's other form needs.
  *
- * The value inventory is layer 1's and not the category's (ADR-0019): a
- * category says only which feature varies, so what a form can be is every
- * bound value of it. A cell address is not the same thing as a headword
- * flavour, which is why the annotations' `default`s are deliberately not what
- * is offered here.
+ * What is offered is therefore a superset, and deliberately: the authoritative
+ * statement of which cells exist is the paradigm's tables, this is the manual
+ * path beside them, and a manual path that withholds a coordinate is worse than
+ * one that offers a coordinate nobody uses. Lexicographic label sets are still
+ * absent — "archaic" addresses no cell — and so is any feature with nothing
+ * bound under it, which would draw an empty selector.
  *
- * An axis naming an unbound feature, or a lexicographic label set, is skipped
- * rather than shown unnamed — the same rule `inherentFeatures` applies, for the
- * same reason: an orphan is repaired in the binding editor, never worked around
- * in the entry editor.
+ * An empty result is the ordinary state of a language that has bound nothing,
+ * and the editor degrades to its flat picker plus manual entry.
  */
-export function categoryAxes(grammar: Grammar, categories: readonly Tag[]): CategoryAxis[] {
-  const held = heldKeys(categories);
-  const features = grammar.features ?? [];
-  const seen = new Set<string>();
-  const out: CategoryAxis[] = [];
-  for (const row of grammar.categories ?? []) {
-    if (row.axis === undefined || seen.has(row.axis)) continue;
-    if (!held.has(tagKey(row.category))) continue;
-    const feature = features.find((f) => f.feature === row.axis);
-    if (feature === undefined || feature.lexicographic === true) continue;
-    seen.add(row.axis);
-    out.push({
-      feature,
-      values: (grammar.values ?? []).filter((value) => value.feature === row.axis),
-    });
+export function formAxes(grammar: Grammar): FormAxis[] {
+  const out: FormAxis[] = [];
+  for (const feature of grammar.features ?? []) {
+    if (feature.lexicographic === true) continue;
+    const values = (grammar.values ?? []).filter((value) => value.feature === feature.feature);
+    if (values.length === 0) continue;
+    out.push({ feature, values });
   }
-  return out.filter((axis) => axis.values.length > 0);
+  return out;
 }
 
 /**
  * The next step of the entry editor's narrowing tree, from a category — a
  * **derived view of layers 1 and 2**, never a separate declaration: the
- * inherence rows and the named combinations are what generate it, and nothing
+ * inherence rows and the named categories are what generate it, and nothing
  * extra is authored to get it.
  *
  * Each option is this category plus one bound value of an inherent feature.
@@ -1716,26 +1549,19 @@ export function categoryAxes(grammar: Grammar, categories: readonly Tag[]): Cate
  * would turn layer 2 into a whitelist, which is exactly what it must not be.
  * A feature already present in the category is not offered again.
  *
- * Since ADR-0019 the category's own **axis** is one more step of the same walk,
- * appended last because it asks the last question: which form of the word this
- * dictionary cites. Its options are the category's annotations rather than the
- * feature's bound values — the reverse of the rule above, and deliberately so.
- * An inherent feature has a value inventory; an axis does not, so the only
- * thing that makes `Number=Plur` a headword rather than a form is an annotation
- * saying so, with the abbreviation that names it. Choosing one emits the full
- * bundle **including that value**, which is what makes an anv-kadarn stroll
- * self-describing on its own record and what a paradigm's selector matches.
+ * **One kind of step, since ADR-0020.** ADR-0019 appended a second one for the
+ * category's axis, whose options were the flavours it had named; with the axis
+ * gone, the feature that says an *anv-kadarn stroll* is cited in the plural is
+ * declared inherent like any other, and the walk that reaches it is this one.
+ * A contributor's clicks are unchanged — noun, masculine, plural — and what
+ * they emit is the same bundle.
  */
 export function categoryRefinements(grammar: Grammar, category: Tag): CategoryRefinement[] {
   const present = new Set((category.feats ?? []).map((feat) => feat.feature));
-  // Every labelled tag the language's categories produce, annotations included:
-  // a refinement lands on one of them when the language named that combination,
-  // and a category's own default-carrying annotations are labelled tags like any
-  // other (ADR-0019).
+  // Every category the language has named, so a refinement landing on one shows
+  // its own label rather than the added atom's.
   const named = new Map(
-    (grammar.categories ?? []).flatMap((row) =>
-      categoryTags(grammar, row).map(({ tag, label }) => [tagKey(tag), label] as const),
-    ),
+    (grammar.categories ?? []).map((row) => [tagKey(row.category), row.label] as const),
   );
 
   const refinements: CategoryRefinement[] = [];
@@ -1755,22 +1581,7 @@ export function categoryRefinements(grammar: Grammar, category: Tag): CategoryRe
         named: label !== undefined,
       });
     }
-    if (options.length > 0) refinements.push({ feature, options, kind: "inherent" });
-  }
-
-  // The axis, last. Skipped when the bundle already carries that feature — a
-  // walk cannot ask twice — and when the feature is unbound or lexicographic,
-  // for the reason `inherentFeatures` skips those: an orphan is repaired in the
-  // binding editor, not routed around here.
-  const row = categoryRow(grammar, category);
-  if (row?.axis !== undefined && !present.has(row.axis)) {
-    const feature = (grammar.features ?? []).find((f) => f.feature === row.axis);
-    if (feature !== undefined && feature.lexicographic !== true) {
-      const options = categoryTags(grammar, row)
-        .filter(({ annotation }) => annotation.default !== undefined)
-        .map(({ tag, label }) => ({ tag, label, named: true }));
-      if (options.length > 0) refinements.push({ feature, options, kind: "axis" });
-    }
+    if (options.length > 0) refinements.push({ feature, options });
   }
   return refinements;
 }
@@ -1824,17 +1635,6 @@ export function isValidLayoutCoord(value: unknown): boolean {
 }
 
 /**
- * A bare feature **value**, on its own — a category annotation's `default`,
- * which names no feature of its own because the category's `axis` names it.
- * Multivalue is accepted for the reason a coordinate accepts it: a headword may
- * legitimately span two values of its axis.
- */
-function isValidValueString(value: unknown): boolean {
-  if (typeof value !== "string" || value === "") return false;
-  return value.split(FEATS_VALUE_SEPARATOR).every((part) => FEATURE_VALUE_PATTERN.test(part));
-}
-
-/**
  * Whether an unknown value is a well-formed `grammar` object — **shape and
  * cardinality**, never vocabulary. A row is never rejected for naming an item
  * absent from a UD snapshot, which is what lets a language with no published
@@ -1854,7 +1654,7 @@ export function isValidGrammar(value: unknown): value is Grammar {
       if (!isPlainObject(row)) return false;
       if (!isValidTagUpos({ value: row.value, scheme: row.scheme })) return false;
       if (!isValidLabel(row.label) || !isValidScheme(row.scheme)) return false;
-      if (!isValidReferences(row.references)) return false;
+      if (!isValidReferences(row.references) || !isValidNote(row.note)) return false;
     }
   }
 
@@ -1871,9 +1671,12 @@ export function isValidGrammar(value: unknown): value is Grammar {
     }
   }
 
-  // An abbreviation is the one row with no tag to check, so both of its strings
-  // are required — a row missing either says nothing at all, where every other
-  // shape failure here would be losing information the record does carry.
+  // An abbreviation is the one row with no tag to check, so all three of its
+  // strings are required — a row missing any of them says nothing at all, where
+  // every other shape failure here would be losing information the record does
+  // carry. `value` is checked against its own pattern for the reason a feature
+  // name is checked against UD's: it is an identifier, and a malformed one
+  // becomes an unreachable row rather than a visible mistake.
   if (value.abbreviations !== undefined) {
     if (
       !Array.isArray(value.abbreviations) ||
@@ -1883,9 +1686,12 @@ export function isValidGrammar(value: unknown): value is Grammar {
     }
     for (const row of value.abbreviations) {
       if (!isPlainObject(row)) return false;
+      if (typeof row.value !== "string" || !ABBREVIATION_VALUE_PATTERN.test(row.value)) {
+        return false;
+      }
       if (typeof row.short !== "string" || row.short.trim() === "") return false;
       if (typeof row.long !== "string" || row.long.trim() === "") return false;
-      if (!isValidReferences(row.references)) return false;
+      if (!isValidReferences(row.references) || !isValidNote(row.note)) return false;
     }
   }
 
@@ -1912,14 +1718,15 @@ export function isValidGrammar(value: unknown): value is Grammar {
     }
   }
 
-  // Layer 2's categories. An annotation whose `default` says nothing coherent —
-  // absent where the axis needs one, present where there is no axis — is
-  // well-formed and merely undecidable, so like the retired empty axis it
-  // belongs to `grammarIssues` rather than here. Both cost the record its place
-  // in the index (ADR-0015); what the split still buys is a *diagnosis* — an
-  // issue is named, kind by kind, in the ingest log and in the editor, where
-  // "malformed grammar" could only say that something, somewhere, could not be
-  // read.
+  // Layer 2's categories: a bundle, its label, and prose about it. Since
+  // ADR-0020 that is the whole shape — the `axis` and the `annotations` array
+  // are gone, and with them every undecidable state they could be in.
+  //
+  // A row carrying the ADR-0019 shape therefore fails here, which is the
+  // deliberate half of the change: it declares an axis this lexicon no longer
+  // defines, so indexing it would silently drop what its author said about the
+  // headword flavours. An *editor* loading one has the opposite answer — see
+  // `migrateGrammar`, which maps it forward so publishing converts it.
   if (value.categories !== undefined) {
     if (!Array.isArray(value.categories) || value.categories.length > GRAMMAR_LIMITS.categories) {
       return false;
@@ -1927,24 +1734,7 @@ export function isValidGrammar(value: unknown): value is Grammar {
     for (const row of value.categories) {
       if (!isPlainObject(row)) return false;
       if (!isValidTag(row.category)) return false;
-      if (row.axis !== undefined) {
-        if (typeof row.axis !== "string" || !FEATURE_NAME_PATTERN.test(row.axis)) return false;
-      }
-      // `annotations` is the row: a category with none names nothing at all, so
-      // unlike an undecidable default this is a shape failure, exactly as the
-      // lexicon's `minLength` says.
-      if (!Array.isArray(row.annotations)) return false;
-      if (row.annotations.length === 0 || row.annotations.length > GRAMMAR_LIMITS.annotations) {
-        return false;
-      }
-      for (const annotation of row.annotations) {
-        if (!isPlainObject(annotation)) return false;
-        if (typeof annotation.long !== "string" || annotation.long.trim() === "") return false;
-        if (annotation.short !== undefined && typeof annotation.short !== "string") return false;
-        if (annotation.default !== undefined && !isValidValueString(annotation.default)) {
-          return false;
-        }
-      }
+      if (!isValidLabel(row.label) || !isValidNote(row.note)) return false;
     }
   }
 
@@ -1956,11 +1746,59 @@ export function isValidGrammar(value: unknown): value is Grammar {
   // and indexing it would silently drop half of what its author declared.
   //
   // An *editor* loading such a record has the opposite problem and the opposite
-  // answer — see `withoutRetiredGrammar`.
+  // answer — see `migrateGrammar`.
   for (const key of RETIRED_GRAMMAR_KEYS) {
     if (value[key] !== undefined) return false;
   }
   return true;
+}
+
+/**
+ * A `grammar` object as some record on a PDS actually holds it: any shape at
+ * all, and in practice often one of the two this lexicon has already left
+ * behind. Only the fields the forward map reads are named.
+ */
+interface StoredGrammar {
+  /** Layer 2's combinations, renamed `categories` by ADR-0019. */
+  bindings?: unknown;
+  categories?: unknown;
+  abbreviations?: unknown;
+  inherent?: unknown;
+  values?: unknown;
+  [key: string]: unknown;
+}
+
+/** A legacy category row: ADR-0019's axis and its per-flavour annotations. */
+interface LegacyCategory {
+  category?: unknown;
+  axis?: unknown;
+  annotations?: { long?: unknown; short?: unknown; default?: unknown }[];
+}
+
+/**
+ * The `values` row a bare (feature, value) pair names, from an unvalidated
+ * array — the migration's own `resolveCoord`, which cannot use that one because
+ * what it is holding is not a `Grammar` yet.
+ */
+function storedValueScheme(values: unknown, feature: string, value: string): string | undefined {
+  if (!Array.isArray(values)) return undefined;
+  const wanted = valueMatchKey(feature, value);
+  for (const row of values) {
+    if (!isPlainObject(row)) continue;
+    if (typeof row.feature !== "string" || typeof row.value !== "string") continue;
+    if (row.feature !== feature) continue;
+    if (valueMatchKey(row.feature, row.value) !== wanted) continue;
+    return typeof row.scheme === "string" ? row.scheme : undefined;
+  }
+  return undefined;
+}
+
+/** An identifier from a printed abbreviation: ASCII letters and digits, or none. */
+function abbreviationSlug(short: string): string {
+  return short
+    .normalize("NFD")
+    .replace(/[^A-Za-z0-9]/g, "")
+    .slice(0, 64);
 }
 
 /**
@@ -1971,21 +1809,152 @@ export function isValidGrammar(value: unknown): value is Grammar {
 export const RETIRED_GRAMMAR_KEYS = ["axes", "layout"] as const;
 
 /**
- * The same object with the retired declarations removed — what an **editor**
- * validates, where the AppView validates the record as it stands.
+ * The same object mapped forward onto the shape this lexicon defines now — what
+ * an **editor** validates and edits, where the AppView validates the record as
+ * it stands.
  *
  * The asymmetry is deliberate and it is the ADR-0015 rule read from both sides.
- * The index refuses such a record, because indexing it would silently drop half
- * of what its author declared. An editor must do the reverse: refusing to *load*
- * it would leave every language declared before the merge permanently
- * unrepairable through the interface, which is precisely the deadlock ADR-0015
- * exists to prevent. So the retired keys are set aside for the shape check, the
- * record is still handed over carrying them, and it is the editor's business to
- * say what publishing will drop.
+ * The index refuses a record declaring something this lexicon no longer defines,
+ * because indexing it would silently drop half of what its author said. An
+ * editor must do the reverse: refusing to *load* it would leave every language
+ * declared before the change permanently unrepairable through the only
+ * interface that could repair it — precisely the deadlock ADR-0015 exists to
+ * prevent. So the record is mapped forward on the way in, and publishing is what
+ * commits the conversion.
+ *
+ * Four maps, all of them lossless except where the source was already a defect:
+ *
+ * - **`axes` and `layout` are dropped** (ADR-0019). They declare things no
+ *   lexicon defines any more; a layout's cells belong to a paradigm record.
+ * - **`bindings` becomes a category** (ADR-0019), one row per binding, its label
+ *   carried across unchanged.
+ * - **A category's `annotations` become categories** (ADR-0020). Each annotation
+ *   is a headword flavour, so each becomes a category of its own: the row's
+ *   bundle plus the axis value that annotation named, carrying that
+ *   annotation's label. The axis's provenance is re-attached from the `values`
+ *   row that bound it, exactly as `coordTag` re-qualifies a coordinate — without
+ *   which a minted `Number=Sgv` flavour would key differently from what the
+ *   entry editor writes. And the axis itself becomes an **inherence
+ *   declaration** on the parent, which is what keeps the new categories grounded
+ *   and what keeps `headwordKeys` returning the same bundle it did before.
+ * - **An abbreviation gains an identity** (ADR-0020), slugged from the form it
+ *   was keyed on. Two rows slugging alike are numbered apart rather than
+ *   collapsed: they were two rows and they stay two.
+ *
+ * Everything it does not recognise is passed through untouched, so a genuinely
+ * malformed grammar is still malformed afterwards and `isValidGrammar` still
+ * refuses it. This maps shapes forward; it does not clean records up.
  */
-export function withoutRetiredGrammar(grammar: unknown): unknown {
+export function migrateGrammar(grammar: unknown): unknown {
   if (!isPlainObject(grammar)) return grammar;
-  const out: Record<string, unknown> = { ...grammar };
+  const stored = grammar as StoredGrammar;
+  const out: StoredGrammar = { ...stored };
   for (const key of RETIRED_GRAMMAR_KEYS) delete out[key];
+
+  const categories: unknown[] = [];
+  const inherent: unknown[] = Array.isArray(stored.inherent) ? [...stored.inherent] : [];
+  const inherentKeys = new Set(
+    inherent
+      .filter(isPlainObject)
+      .filter((row) => isValidTag(row.category) && typeof row.feature === "string")
+      .map((row) => inherentKey({ category: row.category as Tag, feature: row.feature as string })),
+  );
+  const declare = (category: Tag, feature: string): void => {
+    const key = inherentKey({ category, feature });
+    if (inherentKeys.has(key)) return;
+    inherentKeys.add(key);
+    inherent.push({ category, feature });
+  };
+
+  // A binding is a category with the same label, so it maps straight across.
+  if (Array.isArray(stored.bindings)) {
+    for (const row of stored.bindings) {
+      if (!isPlainObject(row) || !isValidTag(row.tag) || !isValidLabel(row.label)) continue;
+      categories.push({ category: row.tag, label: row.label });
+    }
+  }
+
+  if (Array.isArray(stored.categories)) {
+    for (const row of stored.categories) {
+      if (!isPlainObject(row)) continue;
+      const legacy = row as LegacyCategory;
+      if (legacy.annotations === undefined || row.label !== undefined) {
+        categories.push(row);
+        continue;
+      }
+      if (!isValidTag(legacy.category) || !Array.isArray(legacy.annotations)) {
+        categories.push(row);
+        continue;
+      }
+      const category = legacy.category;
+      const axis = typeof legacy.axis === "string" ? legacy.axis : undefined;
+      for (const annotation of legacy.annotations) {
+        if (!isPlainObject(annotation) || typeof annotation.long !== "string") continue;
+        const label: GrammarLabel = {
+          long: annotation.long,
+          ...(typeof annotation.short === "string" ? { short: annotation.short } : {}),
+        };
+        const value = typeof annotation.default === "string" ? annotation.default : undefined;
+        if (axis === undefined || value === undefined) {
+          categories.push({ category, label });
+          continue;
+        }
+        const scheme = storedValueScheme(stored.values, axis, value);
+        categories.push({
+          category: {
+            ...(category.upos !== undefined ? { upos: category.upos } : {}),
+            feats: [
+              ...(category.feats ?? []),
+              { feature: axis, value, ...(scheme !== undefined ? { scheme } : {}) },
+            ],
+          },
+          label,
+        });
+        // What told the flavours apart is now what identifies them, so the
+        // declaration that used to read "these forms vary over Number" is
+        // rewritten as "Number is part of what this headword is".
+        declare(category, axis);
+      }
+    }
+  }
+
+  // Two rows for one category would be a `duplicate` the editor cannot repair
+  // one half of, since a category is addressed by its bundle: the first wins.
+  // The only way to reach this is a record that was already reported duplicate.
+  const seen = new Set<string>();
+  const deduped = categories.filter((row) => {
+    if (!isPlainObject(row) || !isValidTag(row.category)) return true;
+    const key = tagKey(row.category);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  if (deduped.length > 0 || stored.categories !== undefined) out.categories = deduped;
+  if (inherent.length > 0) out.inherent = inherent;
+  delete out.bindings;
+
+  if (Array.isArray(stored.abbreviations)) {
+    // Seeded with the identities the record already carries, not only with the
+    // ones this pass mints: a half-converted record (one row hand-written as
+    // `udb`, one still legacy printing "udb.") would otherwise slug the second
+    // onto the first and produce a `duplicate-abbreviation` nobody could see,
+    // since only one of the two rows is reachable by its identity.
+    const taken = new Set<string>(
+      stored.abbreviations
+        .filter(isPlainObject)
+        .map((row) => row.value)
+        .filter((value): value is string => typeof value === "string"),
+    );
+    out.abbreviations = stored.abbreviations.map((row, index) => {
+      if (!isPlainObject(row) || typeof row.value === "string") return row;
+      const short = typeof row.short === "string" ? row.short : "";
+      const slug = abbreviationSlug(short);
+      let value = slug === "" ? `abbr${index + 1}` : slug;
+      for (let n = 2; taken.has(value); n++) value = `${slug === "" ? "abbr" : slug}${n}`;
+      taken.add(value);
+      return { ...row, value };
+    });
+  }
+
   return out;
 }
