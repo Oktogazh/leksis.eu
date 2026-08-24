@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
   grammarIssues,
   grammarLookup,
   featureDocUrl,
   ABBREVIATION_VALUE_PATTERN,
+  FEATS_SEPARATOR,
   formatTagVerbatim,
   posTag,
   resolveTag,
@@ -708,6 +709,20 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
     return categoryLabel(category)?.long ?? t("grammar.l2Decomposed");
   }
 
+  /**
+   * Whether a category row survives the filter: **its full form, its
+   * abbreviation, or the bundle itself.**
+   *
+   * The bundle is in there because it is what a category *is*, and because it
+   * is the only handle on the rows nothing has named — a level that renders
+   * from its parts has no name to search for, and `VerbForm` is exactly what a
+   * contributor knows about it.
+   */
+  function categoryHit(category: Tag): boolean {
+    const label = categoryLabel(category);
+    return hit(label?.long, label?.short, formatTagVerbatim(category));
+  }
+
   /** Display text of a category: bound labels where they exist, else verbatim. */
   function categoryText(category: Tag): string {
     return resolveTag(category, draftLookup)
@@ -1401,46 +1416,49 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
     // once as its part of speech and once as its own row.
     const posKeys = new Set(pos.map((row) => tagKey(posTag(row))));
     const declared = categoryRows(draft).filter((row) => !posKeys.has(tagKey(row.category)));
-    const rows = sorted(
+    const all = sorted(
       [...pos.map((row) => posTag(row)), ...declared.map((row) => row.category)],
       (category) => categoryLabel(category)?.long ?? formatTagVerbatim(category),
     );
+    const rows = all.filter((category) => categoryHit(category));
     return (
       <>
         <p className="mb-3 text-xs text-content-subtle">{t("grammar.l2RootHint")}</p>
         {pos.length === 0 ? (
           <p className="text-sm text-content-muted">{t("grammar.l2NoPos")}</p>
         ) : (
-          <ul className="space-y-1.5">
-            {rows.map((category) => {
-              const below = descendantCategories(category).length;
-              return (
-                <li key={tagKey(category)} className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setPath({ at: "l2category", category })}
-                    className={`${stackedLevelButton} min-w-0 flex-1`}
-                  >
-                    <LabelLines label={categoryLabel(category)} fallback={t("grammar.l2Decomposed")} />
-                    {/* The bundle itself, in the notation an entry carries it
-                        in — a category is a part of speech plus features, and
-                        which ones is the question its name cannot answer. */}
-                    <span className="truncate font-mono text-xs text-content-subtle">
-                      {formatTagVerbatim(category)}
-                    </span>
-                    {/* The whole subtree, not the direct children: an
-                        intermediate level nobody named still leads somewhere,
-                        and a count of its children alone would read as an
-                        empty branch (ADR-0020). */}
-                    <span className="text-xs text-content-subtle">
-                      {t("grammar.l2SubcategoryCount", { count: below })}
-                    </span>
-                  </button>
-                  {usageFor(category)}
-                </li>
-              );
-            })}
-          </ul>
+          <>
+            <FilterRow
+              query={query}
+              setQuery={setQuery}
+              placeholder={t("grammar.l2FilterPlaceholder")}
+            />
+            {rows.length > 0 && (
+              <ul className="space-y-1.5">
+                {rows.map((category) => (
+                  <li key={tagKey(category)} className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPath({ at: "l2category", category })}
+                      className={`${levelButton} min-w-0 flex-1`}
+                    >
+                      <LabelLines
+                        label={categoryLabel(category)}
+                        fallback={t("grammar.l2Decomposed")}
+                        collapse
+                        className="flex-1"
+                      />
+                      <CategoryMeta
+                        tag={category}
+                        below={descendantCategories(category).length}
+                      />
+                    </button>
+                    {usageFor(category)}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         )}
       </>
     );
@@ -1604,10 +1622,13 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
    * Breton word is ever *just* a singular noun.
    */
   function renderL2Feature(category: Tag, feature: string) {
-    const values = sorted(valueRows(draft, feature), (row) => row.value);
-    const named = values.filter(
+    const all = sorted(valueRows(draft, feature), (row) => row.value);
+    // Counted over the whole set, never over what the filter left: the sentence
+    // says how far this language has got, which is not a fact about a query.
+    const named = all.filter(
       (value) => findCategory(draft, combinationTag(category, value)) !== undefined,
     ).length;
+    const values = all.filter((value) => categoryHit(combinationTag(category, value)));
     return (
       <>
         <p className="mb-3 text-xs text-content-subtle">
@@ -1615,45 +1636,57 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
             feature,
             category: categoryText(category),
             bound: named,
-            total: values.length,
+            total: all.length,
           })}
         </p>
-        {values.length === 0 ? (
+        {all.length === 0 ? (
           <p className="text-sm text-content-muted">{t("grammar.l2NoValues", { feature })}</p>
         ) : (
-          <ul className="space-y-1.5">
-            {values.map((value) => {
-              const combination = combinationTag(category, value);
-              const label = categoryLabel(combination);
-              const below = descendantCategories(combination).length;
-              return (
-                <li key={tagKey(combination)} className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setPath({ at: "l2category", category: combination })}
-                    // **Named rows carry the accent border.** This level is the
-                    // one place the two states stand side by side — a language
-                    // names some values of a feature and leaves the rest to
-                    // render from their parts — and which is which is the whole
-                    // question a contributor opens it with. A word for it in the
-                    // row was already there and read as one row among four.
-                    className={`${stackedLevelButton} min-w-0 flex-1 ${
-                      label !== undefined ? "border-primary" : ""
-                    }`}
-                  >
-                    <LabelLines label={label} fallback={t("grammar.l2Decomposed")} />
-                    <span className="truncate font-mono text-xs text-content-subtle">
-                      {formatTagVerbatim(combination)}
-                    </span>
-                    <span className="text-xs text-content-subtle">
-                      {t("grammar.l2SubcategoryCount", { count: below })}
-                    </span>
-                  </button>
-                  {usageFor(combination)}
-                </li>
-              );
-            })}
-          </ul>
+          <>
+            <FilterRow
+              query={query}
+              setQuery={setQuery}
+              placeholder={t("grammar.l2FilterPlaceholder")}
+            />
+            {values.length > 0 && (
+              <ul className="space-y-1.5">
+                {values.map((value) => {
+                  const combination = combinationTag(category, value);
+                  const label = categoryLabel(combination);
+                  return (
+                    <li key={tagKey(combination)} className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPath({ at: "l2category", category: combination })}
+                        // **Named rows carry the accent border.** This level is
+                        // the one place the two states stand side by side — a
+                        // language names some values of a feature and leaves the
+                        // rest to render from their parts — and which is which is
+                        // the whole question a contributor opens it with. A word
+                        // for it in the row was already there and read as one row
+                        // among four.
+                        className={`${levelButton} min-w-0 flex-1 ${
+                          label !== undefined ? "border-primary" : ""
+                        }`}
+                      >
+                        <LabelLines
+                          label={label}
+                          fallback={t("grammar.l2Decomposed")}
+                          collapse
+                          className="flex-1"
+                        />
+                        <CategoryMeta
+                          tag={combination}
+                          below={descendantCategories(combination).length}
+                        />
+                      </button>
+                      {usageFor(combination)}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </>
         )}
       </>
     );
@@ -2466,14 +2499,25 @@ function LabelLines({
   label,
   fallback,
   align,
+  collapse,
+  className,
 }: {
   label: GrammarLabel | undefined;
   /** What to print where nothing has been named. Nothing renders without one. */
   fallback?: string;
   /** `end` for the right-hand cell of a two-column row. */
   align?: "end";
+  /**
+   * **Drop to the abbreviation alone on a phone.** A category row carries four
+   * things and a phone has room for two, so the narrow layout keeps the two a
+   * contributor navigates by — the abbreviation and the bundle — and the full
+   * form comes back at `sm`. Where a row has no abbreviation the full form is
+   * the only name there is, so it stays whatever the width.
+   */
+  collapse?: boolean;
+  className?: string;
 }) {
-  const wrap = `flex min-w-0 flex-col ${align === "end" ? "shrink-0 items-end text-right" : ""}`;
+  const wrap = `flex min-w-0 flex-col ${align === "end" ? "shrink-0 items-end text-right" : ""} ${className ?? ""}`;
   if (label === undefined) {
     return fallback === undefined ? null : (
       <span className={wrap}>
@@ -2481,12 +2525,79 @@ function LabelLines({
       </span>
     );
   }
+  const hideLong = collapse === true && label.short !== undefined;
   return (
     <span className={wrap}>
-      <span className="truncate text-sm text-content">{label.long}</span>
+      {/* Revealed on hover, because the column it sits in is now shared with
+          the bundle beside it and a long name is genuinely cut. */}
+      <span
+        title={label.long}
+        className={`truncate text-sm text-content ${hideLong ? "hidden sm:block" : ""}`}
+      >
+        {label.long}
+      </span>
       {label.short !== undefined && (
-        <span className="truncate text-xs text-content-subtle">{label.short}</span>
+        // Promoted to the row's own line while the full form is hidden, and
+        // demoted back to a second line beside it from `sm` up. Written as a
+        // base utility plus its `sm:` override rather than two conditional
+        // classes, so nothing depends on which of two same-specificity
+        // utilities Tailwind happens to emit last.
+        <span
+          className={
+            hideLong
+              ? "truncate text-sm text-content sm:text-xs sm:text-content-subtle"
+              : "truncate text-xs text-content-subtle"
+          }
+        >
+          {label.short}
+        </span>
       )}
+    </span>
+  );
+}
+
+/**
+ * The right-hand cell of a category row: **what the bundle is, and how much
+ * sits under it.**
+ *
+ * Both used to sit under the name, bottom-left, which put the two facts a
+ * contributor scans a category list for at the end of a four-line row. On the
+ * right they line up down the list and read as columns.
+ *
+ * The count is the half that goes on a phone: it is a fact *about* the tree,
+ * where the bundle is the row's identity and the only thing an unnamed
+ * category can be recognised by.
+ */
+function CategoryMeta({ tag, below }: { tag: Tag; below: number }) {
+  const { t } = useTranslation();
+  // **Wrapped between its items, never through one.** A deep bundle runs to
+  // `NOUN Gender=Fem|Number=Sing|Subgender=Unstable`, and Unicode gives a line
+  // break no opportunity inside that — `|` is an ordinary letter to the
+  // algorithm — so the browser either pushed the name out of the row or broke
+  // the tag at an arbitrary character. Splitting it into its own items, each
+  // unbreakable and the separator kept with the item it follows, puts the break
+  // exactly where a reader would put it. Capped at three fifths of the row so a
+  // long bundle can never crowd out the name beside it.
+  const items = formatTagVerbatim(tag)
+    .split(" ")
+    .flatMap((chunk) =>
+      chunk.split(FEATS_SEPARATOR).map((item, i, all) => (i < all.length - 1 ? `${item}|` : item)),
+    );
+  return (
+    <span className="flex max-w-[60%] flex-col items-end text-right">
+      <span className="flex flex-wrap justify-end gap-x-1 font-mono text-xs text-content-subtle">
+        {items.map((item, i) => (
+          <span key={i} className="whitespace-nowrap">
+            {item}
+          </span>
+        ))}
+      </span>
+      {/* The whole subtree, not the direct children: an intermediate level
+          nobody named still leads somewhere, and a count of its children alone
+          would read as an empty branch (ADR-0020). */}
+      <span className="hidden text-xs text-content-subtle sm:block">
+        {t("grammar.l2SubcategoryCount", { count: below })}
+      </span>
     </span>
   );
 }
@@ -2508,6 +2619,44 @@ function LabelLines({
  * the levels below already replace a row on its key rather than growing a
  * second one, so the gate would cost more than it protects.
  */
+function FilterRow({
+  query,
+  setQuery,
+  placeholder,
+  hint,
+  children,
+}: {
+  query: string;
+  setQuery: (value: string) => void;
+  placeholder: string;
+  hint?: string;
+  /** The Add button, where the level has something to declare. */
+  children?: ReactNode;
+}) {
+  return (
+    <div className="mb-3 border-b pb-3">
+      <div className="flex gap-2">
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={placeholder}
+          className={inputClass}
+        />
+        {children}
+      </div>
+      {hint !== undefined && <p className="mt-1 text-xs text-content-subtle">{hint}</p>}
+    </div>
+  );
+}
+
+/**
+ * The same bar with an Add button — the primitives levels, where what the
+ * filter fails to find is something this language can declare on the spot.
+ *
+ * The categories tab uses the bare `FilterRow`: a category is not typed into
+ * existence, it is walked into by naming a value of a feature, so a button
+ * there would offer something no level can do.
+ */
 function FilterAddRow({
   query,
   setQuery,
@@ -2528,27 +2677,21 @@ function FilterAddRow({
   const trimmed = query.trim();
   const valid = trimmed !== "" && (pattern === undefined || pattern.test(trimmed));
   return (
-    <div className="mb-3 border-b pb-3">
-      <div className="flex gap-2">
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={placeholder}
-          className={inputClass}
-        />
-        <button
-          type="button"
-          disabled={!valid}
-          onClick={() => onAdd(trimmed)}
-          className="shrink-0 rounded-lg border px-3 py-2 text-sm text-content hover:border-primary disabled:opacity-50"
-        >
-          {t("grammar.add")}
-        </button>
-      </div>
-      <p className="mt-1 text-xs text-content-subtle">
-        {t("grammar.filterHint")} {hint}
-      </p>
-    </div>
+    <FilterRow
+      query={query}
+      setQuery={setQuery}
+      placeholder={placeholder}
+      hint={`${t("grammar.filterHint")} ${hint}`}
+    >
+      <button
+        type="button"
+        disabled={!valid}
+        onClick={() => onAdd(trimmed)}
+        className="shrink-0 rounded-lg border px-3 py-2 text-sm text-content hover:border-primary disabled:opacity-50"
+      >
+        {t("grammar.add")}
+      </button>
+    </FilterRow>
   );
 }
 

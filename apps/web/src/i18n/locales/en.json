@@ -788,6 +788,7 @@
     "udLoading": "Looking up what Universal Dependencies documents…",
     "add": "Add",
     "filterHint": "Typing filters the list below; when nothing is left, Add declares what you typed.",
+    "l2FilterPlaceholder": "Filter by name, abbreviation or tag…",
     "mintPosPlaceholder": "NEWPOS",
     "mintPosHint": "Capitals and digits, starting with a letter. Only for a part of speech none of the above covers.",
     "addFeaturePlaceholder": "Gender",
