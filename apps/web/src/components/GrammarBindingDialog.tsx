@@ -45,7 +45,6 @@ import {
   addInherent,
   carriesLegacyGrammar,
   categoryRows,
-  classRows,
   draftFromRecord,
   findAbbreviation,
   findCategory,
@@ -101,20 +100,19 @@ type Path =
   | { at: "root" }
   | { at: "pos" }
   | { at: "posForm"; value: string }
+  // Inflection classes have no door of their own: a declension or a
+  // conjugation group IS a minted feature, so it was always listed here as
+  // well as under its own heading, and one row in two places is one row a
+  // contributor can edit twice and find twice. What the class door added was a
+  // hint and a pre-ticked mint box, both of which the features level can carry.
   | { at: "features" }
-  // Inflection classes: the same three levels as a feature, reached through
-  // their own door because UD has nothing to suggest for them. `minting` says a
-  // form was opened through that door, which is the only thing the shared
-  // levels cannot work out for themselves — a class not yet bound has no row to
-  // read a scheme from.
-  | { at: "classes" }
-  // Lexicographic label sets — register, domain, usage. A third door onto the
-  // same three levels, for the same reason the classes door exists: the
-  // machinery is a feature's, and only what a contributor is *shown* differs.
-  // `lexical` plays the part `minting` plays above, and for the same reason.
+  // Lexicographic label sets — register, domain, usage. A second door onto the
+  // same three levels: the machinery is a feature's, and only what a
+  // contributor is *shown* differs. `lexical` is what a form opened through it
+  // carries, because a set not yet bound has no row to read the flag from.
   | { at: "lexical" }
   | { at: "feature"; feature: string }
-  | { at: "featureForm"; feature: string; minting?: boolean; lexical?: boolean }
+  | { at: "featureForm"; feature: string; lexical?: boolean }
   | { at: "values"; feature: string }
   | { at: "valueForm"; feature: string; value: string }
   // Plain abbreviations. Two levels, not three: an abbreviation has no values
@@ -276,6 +274,15 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
    */
   const [syncing, setSyncing] = useState<string | null>(null);
   const [form, setForm] = useState<LabelDraft>(emptyLabel);
+  /**
+   * What the filter bar at the top of a primitives level holds.
+   *
+   * One piece of state for every level rather than one each, because it is
+   * cleared on every move: a query is about the list in front of you, and a
+   * filter left behind on a level you walked away from is a list that looks
+   * empty for a reason nothing on screen explains.
+   */
+  const [query, setQuery] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /**
@@ -436,6 +443,25 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
     form.long.trim() !== "" &&
     (path.at !== "abbreviationForm" || form.short.trim() !== "");
 
+  useEffect(() => {
+    setQuery("");
+  }, [path]);
+
+  /**
+   * Whether a row survives the filter — any of the strings it is scanned by
+   * containing what was typed, case-insensitively.
+   *
+   * Deliberately a substring match and not a prefix one: a contributor looking
+   * for a value types what they remember of it, which is as often the middle of
+   * a homolingual label as the head of a UD identifier. An empty query matches
+   * everything, so the bar is a filter only while something is in it.
+   */
+  function hit(...fields: (string | undefined)[]): boolean {
+    const needle = query.trim().toLowerCase();
+    if (needle === "") return true;
+    return fields.some((field) => (field ?? "").toLowerCase().includes(needle));
+  }
+
   /** Seed the binding form whenever a form level is opened. */
   function openForm(next: Path) {
     let existing;
@@ -475,12 +501,14 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
       return;
     }
     // A new row starts with the mint box ticked wherever minting is the only
-    // coherent answer: an inflection class or a lexicographic label set, which
-    // UD has no terms for, and any value of a feature that is itself minted —
-    // UD cannot document a value of a feature it does not define. Everywhere
-    // else it starts unticked, so minting stays a deliberate act.
+    // coherent answer: a lexicographic label set, which UD has no terms for,
+    // and any value of a feature that is itself minted — UD cannot document a
+    // value of a feature it does not define. Everywhere else it starts
+    // unticked, so minting stays a deliberate act. An inflection class is now
+    // added through the features level like any other, so it is ticked by
+    // hand — the box is the one thing that says a name is this language's own.
     const mintedByDefault =
-      (next.at === "featureForm" && (next.minting === true || next.lexical === true)) ||
+      (next.at === "featureForm" && next.lexical === true) ||
       (next.at === "valueForm" && findFeature(draft, next.feature)?.scheme !== undefined);
     setForm(
       existing === undefined
@@ -652,6 +680,32 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
   /** A feature's homolingual label, for the trail's hover text. */
   function featureTitle(feature: string): string | undefined {
     return findFeature(draft, feature)?.label.long;
+  }
+
+  /**
+   * The label a category is listed under — **its own, never one assembled from
+   * its parts.**
+   *
+   * `categoryText` renders a tag the way a *reader* meets it, which includes
+   * decomposing an unnamed bundle into the labels of its atoms: `{NOUN,
+   * Number=Sing}` comes out "ak. un." That is right on an entry and wrong here,
+   * where the question on every row is whether this dictionary has named this
+   * category — and a decomposition answers it with something that looks exactly
+   * like a name nobody wrote. So the categories tab reads the declaration and
+   * says so when there is none.
+   *
+   * On the shallowest level the declaration is the `pos` row's (`barePos`),
+   * the same row Primitives shows.
+   */
+  function categoryLabel(category: Tag): GrammarLabel | undefined {
+    const bare = barePos(category);
+    const row = bare !== undefined ? findPos(draft, bare) : findCategory(draft, category);
+    return row?.label;
+  }
+
+  /** The same as a heading: the full form, or the notice that there is none. */
+  function categoryHeading(category: Tag): string {
+    return categoryLabel(category)?.long ?? t("grammar.l2Decomposed");
   }
 
   /** Display text of a category: bound labels where they exist, else verbatim. */
@@ -835,8 +889,6 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
     } else if (path.at === "l2categoryForm") {
       crumbs.push({ label: t("grammar.l2NameCrumb"), go: path });
     }
-  } else if (path.at === "classes") {
-    crumbs.push({ label: t("grammar.classesLevel"), go: { at: "classes" } });
   } else if (path.at === "lexical") {
     crumbs.push({ label: t("grammar.lexicalLevel"), go: { at: "lexical" } });
   } else if (path.at === "abbreviations" || path.at === "abbreviationForm") {
@@ -846,24 +898,18 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
     }
   } else if (path.at !== "root" && path.at !== "l2root" && path.at !== "l5root") {
     // Which section a feature sits under is **derived from the row**, not
-    // remembered: a lexicographic set says so on the row, a class is any other
-    // minted feature, and a UD one leads back to the features level. The trail
-    // is then still right when the dialog is reopened, and there is no section
-    // state to keep in step with the draft.
+    // remembered: a lexicographic set says so on the row, and everything else —
+    // a UD feature and a minted inflection class alike — leads back to the
+    // features level. The trail is then still right when the dialog is
+    // reopened, and there is no section state to keep in step with the draft.
     const row = path.at === "features" ? undefined : findFeature(draft, path.feature);
     const asLexical =
       path.at !== "features" &&
       (row?.lexicographic === true || (path.at === "featureForm" && path.lexical === true));
-    const asClass =
-      !asLexical &&
-      path.at !== "features" &&
-      (row?.scheme !== undefined || (path.at === "featureForm" && path.minting === true));
     crumbs.push(
       asLexical
         ? { label: t("grammar.lexicalLevel"), go: { at: "lexical" } }
-        : asClass
-          ? { label: t("grammar.classesLevel"), go: { at: "classes" } }
-          : { label: t("grammar.featuresLevel"), go: { at: "features" } },
+        : { label: t("grammar.featuresLevel"), go: { at: "features" } },
     );
     if (path.at !== "features") {
       crumbs.push({ label: path.feature, go: { at: "feature", feature: path.feature } });
@@ -892,14 +938,6 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
             <span className="font-medium text-content">{t("grammar.featuresLevel")}</span>
             <span className="text-xs text-content-subtle">
               {t("grammar.featuresCount", { count: grammaticalFeatureRows(draft).length })}
-            </span>
-          </button>
-        </li>
-        <li>
-          <button type="button" onClick={() => setPath({ at: "classes" })} className={levelButton}>
-            <span className="font-medium text-content">{t("grammar.classesLevel")}</span>
-            <span className="text-xs text-content-subtle">
-              {t("grammar.classesCount", { count: classRows(draft).length })}
             </span>
           </button>
         </li>
@@ -940,39 +978,43 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
    * as an issue only for a record authored somewhere else.
    */
   function renderLexical() {
-    const rows = sorted(lexicalRows(draft), (row) => row.feature);
+    const all = sorted(lexicalRows(draft), (row) => row.label.long);
+    const rows = all.filter((row) => hit(row.feature, row.label.long, row.label.short));
     return (
       <>
         <p className="mb-3 text-xs text-content-subtle">{t("grammar.lexicalHint")}</p>
-        {rows.length === 0 ? (
+        <FilterAddRow
+          query={query}
+          setQuery={setQuery}
+          placeholder={t("grammar.addLexicalPlaceholder")}
+          pattern={FEATURE_NAME_PATTERN}
+          hint={t("grammar.addLexicalHint")}
+          onAdd={(feature) => openForm({ at: "featureForm", feature, lexical: true })}
+        />
+        {all.length === 0 && (
           <p className="text-sm text-content-muted">{t("grammar.lexicalEmpty")}</p>
-        ) : (
+        )}
+        {rows.length > 0 && (
           <ul className="space-y-1.5">
             {rows.map((row) => (
               <li key={row.feature}>
                 <button
                   type="button"
                   onClick={() => setPath({ at: "feature", feature: row.feature })}
-                  className={levelButton}
+                  className={stackedLevelButton}
                 >
-                  <span className="flex min-w-0 items-baseline gap-2">
-                    <span className="font-mono text-sm text-content">{row.feature}</span>
-                    <span className="truncate text-xs text-content-subtle">{row.label.long}</span>
+                  <span className="flex w-full items-baseline justify-between gap-3">
+                    <LabelLines label={row.label} />
+                    <span className="shrink-0 text-xs text-content-subtle">
+                      {t("grammar.valuesCount", { count: valueRows(draft, row.feature).length })}
+                    </span>
                   </span>
-                  <span className="text-xs text-content-subtle">
-                    {t("grammar.valuesCount", { count: valueRows(draft, row.feature).length })}
-                  </span>
+                  <span className="font-mono text-xs text-content-subtle">{row.feature}</span>
                 </button>
               </li>
             ))}
           </ul>
         )}
-        <AddRow
-          placeholder={t("grammar.addLexicalPlaceholder")}
-          pattern={FEATURE_NAME_PATTERN}
-          hint={t("grammar.addLexicalHint")}
-          onAdd={(feature) => openForm({ at: "featureForm", feature, lexical: true })}
-        />
       </>
     );
   }
@@ -988,13 +1030,24 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
    * "udb." to "u.d.b." without losing the row (ADR-0020).
    */
   function renderAbbreviations() {
-    const rows = sorted(abbreviationRows(draft), (row) => row.short);
+    // Sorted on the full form, which is the line a contributor now reads first.
+    const all = sorted(abbreviationRows(draft), (row) => row.long);
+    const rows = all.filter((row) => hit(row.value, row.short, row.long));
     return (
       <>
         <p className="mb-3 text-xs text-content-subtle">{t("grammar.abbreviationsHint")}</p>
-        {rows.length === 0 ? (
+        <FilterAddRow
+          query={query}
+          setQuery={setQuery}
+          placeholder={t("grammar.addAbbreviationPlaceholder")}
+          pattern={ABBREVIATION_VALUE_PATTERN}
+          hint={t("grammar.addAbbreviationHint")}
+          onAdd={(value) => openForm({ at: "abbreviationForm", value })}
+        />
+        {all.length === 0 && (
           <p className="text-sm text-content-muted">{t("grammar.abbreviationsEmpty")}</p>
-        ) : (
+        )}
+        {rows.length > 0 && (
           <ul className="space-y-1.5">
             {rows.map((row) => {
               const note = row.note?.trim() ?? "";
@@ -1005,10 +1058,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
                     onClick={() => openForm({ at: "abbreviationForm", value: row.value })}
                     className={`${stackedLevelButton} min-w-0 flex-1`}
                   >
-                    <span className="flex w-full items-baseline justify-between gap-3">
-                      <span className="font-mono text-sm text-content">{row.short}</span>
-                      <span className="truncate text-sm text-content">{row.long}</span>
-                    </span>
+                    <LabelLines label={{ long: row.long, short: row.short }} />
                     {note !== "" && (
                       <span className="line-clamp-2 whitespace-pre-line text-xs text-content-subtle">
                         {note}
@@ -1029,127 +1079,67 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
             })}
           </ul>
         )}
-        <AddRow
-          placeholder={t("grammar.addAbbreviationPlaceholder")}
-          pattern={ABBREVIATION_VALUE_PATTERN}
-          hint={t("grammar.addAbbreviationHint")}
-          onAdd={(value) => openForm({ at: "abbreviationForm", value })}
-        />
-      </>
-    );
-  }
-
-  /**
-   * Inflection classes: a declension, a conjugation group, a mutation class.
-   *
-   * The machinery is a feature's exactly — one name, one label, several values —
-   * and that is the point: a class is a **minted feature and nothing more**, so
-   * it needs no storage of its own and the entry editor already offers it
-   * through layer 2 without knowing this section exists. What differs is only
-   * what a contributor is shown: **nothing is fetched from UD**, because UD
-   * defines no paradigm object, so a class and every one of its members is
-   * necessarily this language's own declaration. No minted badge either — here
-   * it would be on every row, saying nothing.
-   */
-  function renderClasses() {
-    const rows = sorted(classRows(draft), (row) => row.feature);
-    return (
-      <>
-        <p className="mb-3 text-xs text-content-subtle">{t("grammar.classesHint")}</p>
-        {rows.length === 0 ? (
-          <p className="text-sm text-content-muted">{t("grammar.classesEmpty")}</p>
-        ) : (
-          <ul className="space-y-1.5">
-            {rows.map((row) => (
-              <li key={row.feature}>
-                <button
-                  type="button"
-                  onClick={() => setPath({ at: "feature", feature: row.feature })}
-                  className={levelButton}
-                >
-                  <span className="flex min-w-0 items-baseline gap-2">
-                    <span className="font-mono text-sm text-content">{row.feature}</span>
-                    <span className="truncate text-xs text-content-subtle">{row.label.long}</span>
-                  </span>
-                  <span className="text-xs text-content-subtle">
-                    {t("grammar.valuesCount", { count: valueRows(draft, row.feature).length })}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-        <AddRow
-          placeholder={t("grammar.addClassPlaceholder")}
-          pattern={FEATURE_NAME_PATTERN}
-          hint={t("grammar.addClassHint")}
-          onAdd={(feature) => openForm({ at: "featureForm", feature, minting: true })}
-        />
       </>
     );
   }
 
   function renderPos() {
-    // UD's own list keeps UD's order — it is fixed, grouped open-then-closed,
-    // and a contributor learns where a tag sits. What a language minted has no
-    // order of its own, so it is alphabetical like every other list here.
-    const minted = sorted(
-      posRows(draft).filter((row) => !HEADWORD_UPOS.some((u) => u.value === row.value)),
+    // **Alphabetical, UD's inventory and this language's own in one list.** UD
+    // groups its tags open-class-then-closed, which is an order you have to
+    // have learnt before it helps you find anything, and appending the minted
+    // ones made a second alphabet under the first. What tells a minted tag
+    // apart is its badge, not where it sits.
+    const rows = sorted(
+      [
+        ...HEADWORD_UPOS.map((upos) => ({ value: upos.value, gloss: upos.gloss })),
+        ...posRows(draft)
+          .filter((row) => !HEADWORD_UPOS.some((u) => u.value === row.value))
+          .map((row) => ({ value: row.value, gloss: undefined })),
+      ],
       (row) => row.value,
     );
     return (
       <>
         <p className="mb-3 text-xs text-content-subtle">{t("grammar.posHint")}</p>
         <ul className="space-y-1.5">
-          {HEADWORD_UPOS.map((upos) => {
-            const bound = findPos(draft, upos.value);
+          {rows.map((row) => {
+            const bound = findPos(draft, row.value);
             // An unbound part of speech still has usage to report — entries may
             // carry NOUN in a language that never said what to call it, and
             // that gap is exactly what the naming worklist is about. So the tag
             // is built from the row where there is one and from the identifier
             // where there is not; with no scheme either way, they key alike.
-            const rowTag = posTag(bound ?? { value: upos.value });
+            const rowTag = posTag(bound ?? { value: row.value });
             return (
-              <li key={upos.value} className="flex items-center gap-2">
+              <li key={row.value} className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => openForm({ at: "posForm", value: upos.value })}
+                  onClick={() => openForm({ at: "posForm", value: row.value })}
                   className={`${levelButton} flex-1`}
                 >
                   <span className="flex min-w-0 items-baseline gap-2">
-                    <span className="font-mono text-sm text-content">{upos.value}</span>
+                    <span className="font-mono text-sm text-content">{row.value}</span>
                     {/* UD's English gloss: UI chrome for the contributor
-                        choosing what to bind, never entry content. */}
-                    <span className="truncate text-xs text-content-subtle">{upos.gloss}</span>
+                        choosing what to bind, never entry content. A tag this
+                        language minted has none, and says so instead. */}
+                    {row.gloss !== undefined ? (
+                      <span className="truncate text-xs text-content-subtle">{row.gloss}</span>
+                    ) : (
+                      <span className="text-xs text-warning">{t("grammar.mintedBadge")}</span>
+                    )}
                   </span>
                   {bound === undefined ? (
-                    <span className="text-xs text-content-subtle">{t("grammar.unbound")}</span>
-                  ) : (
-                    <span className="text-sm text-content">
-                      {bound.label.short ?? bound.label.long}
+                    <span className="shrink-0 text-xs text-content-subtle">
+                      {t("grammar.unbound")}
                     </span>
+                  ) : (
+                    <LabelLines label={bound.label} align="end" />
                   )}
                 </button>
                 {usageFor(rowTag)}
               </li>
             );
           })}
-          {minted.map((row) => (
-            <li key={row.value} className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => openForm({ at: "posForm", value: row.value })}
-                className={`${levelButton} flex-1`}
-              >
-                <span className="flex min-w-0 items-baseline gap-2">
-                  <span className="font-mono text-sm text-content">{row.value}</span>
-                  <span className="text-xs text-warning">{t("grammar.mintedBadge")}</span>
-                </span>
-                <span className="text-sm text-content">{row.label.short ?? row.label.long}</span>
-              </button>
-              {usageFor(posTag(row))}
-            </li>
-          ))}
         </ul>
         <AddRow
           placeholder={t("grammar.mintPosPlaceholder")}
@@ -1162,48 +1152,63 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
   }
 
   function renderFeatures() {
-    const rows = sorted(grammaticalFeatureRows(draft), (row) => row.feature);
+    // Inflection classes are in here: a declension or a conjugation group is a
+    // minted feature and nothing more, so it was always listed here as well as
+    // behind its own door. One list, with the badge saying which names this
+    // language declared itself.
+    const all = sorted(grammaticalFeatureRows(draft), (row) => row.label.long);
+    const rows = all.filter((row) => hit(row.feature, row.label.long, row.label.short));
     return (
       <>
         <p className="mb-3 text-xs text-content-subtle">{t("grammar.featuresHint")}</p>
-        {rows.length === 0 ? (
+        <FilterAddRow
+          query={query}
+          setQuery={setQuery}
+          placeholder={t("grammar.addFeaturePlaceholder")}
+          pattern={FEATURE_NAME_PATTERN}
+          hint={t("grammar.addFeatureHint")}
+          onAdd={(feature) => openForm({ at: "featureForm", feature })}
+        />
+        {all.length === 0 && (
           <p className="text-sm text-content-muted">{t("grammar.featuresEmpty")}</p>
-        ) : (
+        )}
+        {rows.length > 0 && (
           <ul className="space-y-1.5">
             {rows.map((row) => (
               <li key={row.feature}>
                 <button
                   type="button"
                   onClick={() => setPath({ at: "feature", feature: row.feature })}
-                  className={levelButton}
+                  className={stackedLevelButton}
                 >
+                  <span className="flex w-full items-baseline justify-between gap-3">
+                    <LabelLines label={row.label} />
+                    <span className="shrink-0 text-xs text-content-subtle">
+                      {t("grammar.valuesCount", { count: valueRows(draft, row.feature).length })}
+                    </span>
+                  </span>
                   <span className="flex min-w-0 items-baseline gap-2">
-                    <span className="font-mono text-sm text-content">{row.feature}</span>
+                    <span className="font-mono text-xs text-content-subtle">{row.feature}</span>
                     {row.scheme !== undefined && (
                       <span className="text-xs text-warning">{t("grammar.mintedBadge")}</span>
                     )}
-                  </span>
-                  <span className="text-xs text-content-subtle">
-                    {t("grammar.valuesCount", { count: valueRows(draft, row.feature).length })}
                   </span>
                 </button>
               </li>
             ))}
           </ul>
         )}
+        {/* Filtered by the same bar: what a contributor types is a name they
+            are looking for, and it is as likely to be documented by UD as
+            already bound here. */}
         <Candidates
           title={t("grammar.udFeatures")}
           loading={udLoading}
           items={udFeatures
             .filter((row) => findFeature(draft, row.feature) === undefined)
+            .filter((row) => hit(row.feature, row.gloss))
             .map((row) => ({ key: row.feature, label: row.feature, hint: row.gloss }))}
           onPick={(feature) => openForm({ at: "featureForm", feature })}
-        />
-        <AddRow
-          placeholder={t("grammar.addFeaturePlaceholder")}
-          pattern={FEATURE_NAME_PATTERN}
-          hint={t("grammar.addFeatureHint")}
-          onAdd={(feature) => openForm({ at: "featureForm", feature })}
         />
       </>
     );
@@ -1277,16 +1282,10 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
               onClick={() => {
                 setDraft(removeFeature(draft, feature));
                 // Back to the section that lists it, worked out from the row
-                // rather than remembered: a lexicographic set says so, any
-                // other minted feature is an inflection class, and a UD one
-                // belongs with the features.
-                setPath(
-                  bound.lexicographic === true
-                    ? { at: "lexical" }
-                    : bound.scheme === undefined
-                      ? { at: "features" }
-                      : { at: "classes" },
-                );
+                // rather than remembered: a lexicographic set says so, and
+                // every other feature — minted or borrowed — belongs with the
+                // features.
+                setPath(bound.lexicographic === true ? { at: "lexical" } : { at: "features" });
               }}
               className="text-sm text-danger hover:text-danger disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -1304,7 +1303,10 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
   }
 
   function renderValues(feature: string) {
-    const values = sorted(valueRows(draft, feature), (row) => row.value);
+    const all = sorted(valueRows(draft, feature), (row) => row.label.long);
+    const values = all.filter((row) =>
+      hit(row.value, `${feature}=${row.value}`, row.label.long, row.label.short),
+    );
     // A minted feature's values are the members of an inflection class (or of
     // whatever else this language named): necessarily minted themselves, and
     // with nothing in UD to offer.
@@ -1320,9 +1322,18 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
               ? t("grammar.classValuesHint", { feature })
               : t("grammar.valuesHint", { feature })}
         </p>
-        {values.length === 0 ? (
+        <FilterAddRow
+          query={query}
+          setQuery={setQuery}
+          placeholder={t("grammar.addValuePlaceholder")}
+          pattern={FEATURE_VALUE_PATTERN}
+          hint={t("grammar.addValueHint")}
+          onAdd={(value) => openForm({ at: "valueForm", feature, value })}
+        />
+        {all.length === 0 && (
           <p className="text-sm text-content-muted">{t("grammar.valuesEmpty")}</p>
-        ) : (
+        )}
+        {values.length > 0 && (
           <ul className="space-y-1.5">
             {values.map((row) => {
               const note = row.note?.trim() ?? "";
@@ -1333,20 +1344,16 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
                     onClick={() => openForm({ at: "valueForm", feature, value: row.value })}
                     className={`${stackedLevelButton} flex-1`}
                   >
-                    <span className="flex w-full items-center justify-between gap-3">
-                      <span className="flex min-w-0 items-baseline gap-2">
-                        <span className="font-mono text-sm text-content">
-                          {feature}={row.value}
-                        </span>
-                        {/* Under a minted feature every value is minted, so the
-                            badge would be on every row and say nothing. */}
-                        {row.scheme !== undefined && !minted && (
-                          <span className="text-xs text-warning">{t("grammar.mintedBadge")}</span>
-                        )}
+                    <LabelLines label={row.label} />
+                    <span className="flex min-w-0 items-baseline gap-2">
+                      <span className="font-mono text-xs text-content-subtle">
+                        {feature}={row.value}
                       </span>
-                      <span className="text-sm text-content">
-                        {row.label.short ?? row.label.long}
-                      </span>
+                      {/* Under a minted feature every value is minted, so the
+                          badge would be on every row and say nothing. */}
+                      {row.scheme !== undefined && !minted && (
+                        <span className="text-xs text-warning">{t("grammar.mintedBadge")}</span>
+                      )}
                     </span>
                     {/* Clamped, not omitted: a set may run to hundreds of values
                         — an imported abbreviation list awaiting decisions does —
@@ -1370,16 +1377,11 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
             loading={udLoading}
             items={udValues
               .filter((v) => findValue(draft, feature, v.value) === undefined)
+              .filter((v) => hit(v.value, v.gloss))
               .map((v) => ({ key: v.value, label: v.value, hint: v.gloss }))}
             onPick={(value) => openForm({ at: "valueForm", feature, value })}
           />
         )}
-        <AddRow
-          placeholder={t("grammar.addValuePlaceholder")}
-          pattern={FEATURE_VALUE_PATTERN}
-          hint={t("grammar.addValueHint")}
-          onAdd={(value) => openForm({ at: "valueForm", feature, value })}
-        />
       </>
     );
   }
@@ -1400,14 +1402,8 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
     const posKeys = new Set(pos.map((row) => tagKey(posTag(row))));
     const declared = categoryRows(draft).filter((row) => !posKeys.has(tagKey(row.category)));
     const rows = sorted(
-      [
-        ...pos.map((row) => ({
-          category: posTag(row),
-          heading: row.label.short ?? row.label.long,
-        })),
-        ...declared.map((row) => ({ category: row.category, heading: categoryText(row.category) })),
-      ],
-      (row) => row.heading,
+      [...pos.map((row) => posTag(row)), ...declared.map((row) => row.category)],
+      (category) => categoryLabel(category)?.long ?? formatTagVerbatim(category),
     );
     return (
       <>
@@ -1416,8 +1412,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
           <p className="text-sm text-content-muted">{t("grammar.l2NoPos")}</p>
         ) : (
           <ul className="space-y-1.5">
-            {rows.map(({ category, heading }) => {
-              const row = findCategory(draft, category);
+            {rows.map((category) => {
               const below = descendantCategories(category).length;
               return (
                 <li key={tagKey(category)} className="flex items-center gap-2">
@@ -1426,21 +1421,20 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
                     onClick={() => setPath({ at: "l2category", category })}
                     className={`${stackedLevelButton} min-w-0 flex-1`}
                   >
-                    <span className="flex items-baseline justify-between gap-3">
-                      <span className="truncate text-sm text-content">{heading}</span>
-                      {/* The whole subtree, not the direct children: an
-                          intermediate level nobody named still leads somewhere,
-                          and a count of its children alone would read as an
-                          empty branch (ADR-0020). */}
-                      <span className="shrink-0 text-xs text-content-subtle">
-                        {t("grammar.l2SubcategoryCount", { count: below })}
-                      </span>
+                    <LabelLines label={categoryLabel(category)} fallback={t("grammar.l2Decomposed")} />
+                    {/* The bundle itself, in the notation an entry carries it
+                        in — a category is a part of speech plus features, and
+                        which ones is the question its name cannot answer. */}
+                    <span className="truncate font-mono text-xs text-content-subtle">
+                      {formatTagVerbatim(category)}
                     </span>
-                    {row !== undefined && (
-                      <span className="truncate text-xs text-content-subtle">
-                        {row.label.short ?? row.label.long}
-                      </span>
-                    )}
+                    {/* The whole subtree, not the direct children: an
+                        intermediate level nobody named still leads somewhere,
+                        and a count of its children alone would read as an
+                        empty branch (ADR-0020). */}
+                    <span className="text-xs text-content-subtle">
+                      {t("grammar.l2SubcategoryCount", { count: below })}
+                    </span>
                   </button>
                   {usageFor(category)}
                 </li>
@@ -1484,7 +1478,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
     return (
       <>
         <div className="mb-3">
-          <p className="text-sm font-medium text-content">{categoryText(category)}</p>
+          <p className="text-sm font-medium text-content">{categoryHeading(category)}</p>
           <p className="mt-0.5 font-mono text-xs text-content-subtle">
             {formatTagVerbatim(category)}
           </p>
@@ -1513,14 +1507,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
               onClick={() => openForm({ at: "l2categoryForm", category })}
               className={`${stackedLevelButton} min-w-0 flex-1`}
             >
-              <span className="flex w-full items-baseline justify-between gap-3">
-                <span className="truncate text-sm text-content">
-                  {named.label.short ?? named.label.long}
-                </span>
-                {named.label.short !== undefined && (
-                  <span className="truncate text-xs text-content-subtle">{named.label.long}</span>
-                )}
-              </span>
+              <LabelLines label={named.label} />
               {note !== "" && (
                 <span className="line-clamp-2 whitespace-pre-line text-xs text-content-subtle">
                   {note}
@@ -1637,27 +1624,29 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
           <ul className="space-y-1.5">
             {values.map((value) => {
               const combination = combinationTag(category, value);
-              const bound = findCategory(draft, combination);
+              const label = categoryLabel(combination);
               const below = descendantCategories(combination).length;
               return (
                 <li key={tagKey(combination)} className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() => setPath({ at: "l2category", category: combination })}
-                    className={`${levelButton} min-w-0 flex-1`}
+                    // **Named rows carry the accent border.** This level is the
+                    // one place the two states stand side by side — a language
+                    // names some values of a feature and leaves the rest to
+                    // render from their parts — and which is which is the whole
+                    // question a contributor opens it with. A word for it in the
+                    // row was already there and read as one row among four.
+                    className={`${stackedLevelButton} min-w-0 flex-1 ${
+                      label !== undefined ? "border-primary" : ""
+                    }`}
                   >
-                    <span className="flex min-w-0 items-baseline gap-2">
-                      <span className="text-sm text-content">{categoryText(combination)}</span>
-                      <span className="truncate font-mono text-xs text-content-subtle">
-                        {formatTagVerbatim(combination)}
-                      </span>
+                    <LabelLines label={label} fallback={t("grammar.l2Decomposed")} />
+                    <span className="truncate font-mono text-xs text-content-subtle">
+                      {formatTagVerbatim(combination)}
                     </span>
-                    <span className="shrink-0 text-xs text-content-subtle">
-                      {below > 0
-                        ? t("grammar.l2SubcategoryCount", { count: below })
-                        : bound === undefined
-                          ? t("grammar.l2Decomposed")
-                          : (bound.label.short ?? bound.label.long)}
+                    <span className="text-xs text-content-subtle">
+                      {t("grammar.l2SubcategoryCount", { count: below })}
                     </span>
                   </button>
                   {usageFor(combination)}
@@ -1741,7 +1730,7 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
     return (
       <>
         <div className="mb-3">
-          <p className="text-sm font-medium text-content">{categoryText(category)}</p>
+          <p className="text-sm font-medium text-content">{categoryHeading(category)}</p>
           <p className="mt-0.5 font-mono text-xs text-content-subtle">
             {formatTagVerbatim(category)}
           </p>
@@ -2033,8 +2022,6 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
         return renderPos();
       case "features":
         return renderFeatures();
-      case "classes":
-        return renderClasses();
       case "lexical":
         return renderLexical();
       case "abbreviations":
@@ -2465,9 +2452,114 @@ function Candidates({
 }
 
 /**
+ * A label as a list row reads it: **the full form first, the abbreviation under
+ * it.**
+ *
+ * Every one of these lists used to print `short ?? long`, which hid the full
+ * form on exactly the rows that had been named most carefully — a language that
+ * had said "anv-kadarn" showed "ak." and nothing else, and the only way to read
+ * back what a row meant was to open it. The abbreviation is what the dictionary
+ * prints; the full form is what a contributor scans a list for, so both are on
+ * the row and the full one leads.
+ */
+function LabelLines({
+  label,
+  fallback,
+  align,
+}: {
+  label: GrammarLabel | undefined;
+  /** What to print where nothing has been named. Nothing renders without one. */
+  fallback?: string;
+  /** `end` for the right-hand cell of a two-column row. */
+  align?: "end";
+}) {
+  const wrap = `flex min-w-0 flex-col ${align === "end" ? "shrink-0 items-end text-right" : ""}`;
+  if (label === undefined) {
+    return fallback === undefined ? null : (
+      <span className={wrap}>
+        <span className="truncate text-sm text-content-muted">{fallback}</span>
+      </span>
+    );
+  }
+  return (
+    <span className={wrap}>
+      <span className="truncate text-sm text-content">{label.long}</span>
+      {label.short !== undefined && (
+        <span className="truncate text-xs text-content-subtle">{label.short}</span>
+      )}
+    </span>
+  );
+}
+
+/**
+ * The bar a primitives level opens with: **one field that filters the list
+ * below and mints what it does not find.**
+ *
+ * It used to be two things in two places — a list, then an "add" field under
+ * it — which broke down at the size these lists actually reach: an imported
+ * abbreviation set runs to hundreds of rows, so the field was a scroll away
+ * from the list it added to, and the only way to check whether something was
+ * already declared was to read the whole thing. Typing narrows the list, and
+ * when nothing is left below, what was typed is what there is to declare.
+ *
+ * **Add is gated on the shape alone, never on whether the row already exists.**
+ * A duplicate is a legitimate thing to reach for — the same name minted under
+ * this language's own scheme, a value re-declared after being withdrawn — and
+ * the levels below already replace a row on its key rather than growing a
+ * second one, so the gate would cost more than it protects.
+ */
+function FilterAddRow({
+  query,
+  setQuery,
+  placeholder,
+  pattern,
+  hint,
+  onAdd,
+}: {
+  query: string;
+  setQuery: (value: string) => void;
+  placeholder: string;
+  /** The shape the identifier must take, as `AddRow`'s. */
+  pattern?: RegExp;
+  hint: string;
+  onAdd: (value: string) => void;
+}) {
+  const { t } = useTranslation();
+  const trimmed = query.trim();
+  const valid = trimmed !== "" && (pattern === undefined || pattern.test(trimmed));
+  return (
+    <div className="mb-3 border-b pb-3">
+      <div className="flex gap-2">
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={placeholder}
+          className={inputClass}
+        />
+        <button
+          type="button"
+          disabled={!valid}
+          onClick={() => onAdd(trimmed)}
+          className="shrink-0 rounded-lg border px-3 py-2 text-sm text-content hover:border-primary disabled:opacity-50"
+        >
+          {t("grammar.add")}
+        </button>
+      </div>
+      <p className="mt-1 text-xs text-content-subtle">
+        {t("grammar.filterHint")} {hint}
+      </p>
+    </div>
+  );
+}
+
+/**
  * The "add an item nobody has bound yet" row. Validates against the shape UD
  * requires before letting a name through, so a typo becomes visible here
  * rather than as an unrenderable tag later.
+ *
+ * Still the parts-of-speech level's, where there is nothing to filter: that
+ * list is UD's seventeen tags, whole and always shown, and minting one is the
+ * rare act it looks like at the bottom of them.
  */
 function AddRow({
   placeholder,
