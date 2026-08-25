@@ -572,7 +572,14 @@ export function GrammarBindingDialog({ tag, onClose, onPublished }: GrammarBindi
       );
       setPath({ at: "abbreviations" });
     } else if (path.at === "posForm") {
-      setDraft(upsertPos(draft, { value: path.value, label, ...extra }));
+      // `...noted` is not optional here, however little a part of speech looks
+      // like it needs explaining: a `pos` row has carried a note since
+      // ADR-0020, the category editor's shallowest level writes that same row
+      // (see `barePos`), and this form has shown the field — seeded from the
+      // row — ever since. Omitted, it did not merely fail to save what was
+      // typed: it dropped a note written through the other door on every
+      // rebind.
+      setDraft(upsertPos(draft, { value: path.value, label, ...extra, ...noted }));
       setPath({ at: "pos" });
     } else if (path.at === "featureForm") {
       // Whether a row is a lexicographic set is decided once, when it is
